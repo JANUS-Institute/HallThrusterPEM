@@ -1,0 +1,12 @@
+name: hall_pem
+channels:
+  - defaults
+dependencies:
+  - python=3.10
+  - numpy
+  - scipy
+  - pip:
+      - juliacall
+      - juliapkg
+      - matplotlib
+prefix: C:\Users\eckel\anaconda3\envs\hall_pem
