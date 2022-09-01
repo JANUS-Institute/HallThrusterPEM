@@ -23,6 +23,7 @@ There are two main types of data contained in these subfolders
 Performance/operational data is contained in each directory in a file called `performance.json`.
 This contains a vector as a top-level object, with each element being one operating condition from the reference in that directory. 
 The fields contained in each operating condition object are:
+
     - "background_pressure_Torr"
     - "anode_mass_flow_rate_mg_s"
     - "cathode_mass_flow_rate_mg_s"
