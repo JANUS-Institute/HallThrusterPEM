@@ -2,15 +2,13 @@
     "parameters": {
         "PT_norm": 1.0,
         "Pstar_norm": 1.0,
-        "V_vac": 20.0
+        "V_vac": 20.0,
+        "cathode_electron_temp_eV": 3.0
     },
     "design": {
         "PB_norm": 1.0
     },
     "simulation": {
 
-    },
-    "other": {
-        "Te": 5.0
     }
 }

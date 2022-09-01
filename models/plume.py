@@ -14,16 +14,18 @@ from utils import data_load, data_write
 
 def current_density_model(plume_input='plume_input.json', thruster_input=None, write_output=True):
     logger.info('Running plume model')
+
     # Load plume inputs
     inputs = data_load(plume_input)
     theta = []
     for param, value in inputs['parameters'].items():
         theta.append(value)
     P_B = inputs['design']['PB_norm']
-    I_B0 = inputs['other']['I_B0']
+    I_B0 = inputs['other']['I_B0']      # A
     r = np.array(inputs['other']['r'])
     alpha = np.array([alpha_val * np.pi/180 for alpha_val in inputs['other']['alpha']])
     sigma_cex = inputs['other']['sigma_cex']
+    A = np.pi * (inputs['design']['outer_radius'] ** 2 - inputs['design']['inner_radius'] ** 2)  # m^2
 
     # Load inputs from thruster model
     if thruster_input:
@@ -34,6 +36,7 @@ def current_density_model(plume_input='plume_input.json', thruster_input=None, w
             if 'niui' in param:
                 charge_num = int(param.split('_')[1])
                 I_B0 += Q_E * charge_num * grid_sol[-1]
+        I_B0 = I_B0 * A  # Total current
 
     # Compute model prediction
     n = theta[4] * P_B + theta[5]

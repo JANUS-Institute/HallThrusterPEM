@@ -15,7 +15,7 @@ from utils import data_load, data_write
 
 def main():
     N = [50, 50]
-    loc = [np.linspace(0.001, 0.01, N[0]), np.linspace(-90, 90, N[1])]
+    loc = [np.linspace(0.5, 1.5, N[0]), np.linspace(-90, 90, N[1])]
     pt_grids = np.meshgrid(*loc)
     x_loc = np.vstack([grid.ravel() for grid in pt_grids]).T  # (np.prod(Nx), x_dim)
     r_vec = x_loc[:, 0]

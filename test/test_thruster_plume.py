@@ -8,14 +8,20 @@ sys.path.append('..')
 logging.basicConfig(level=logging.INFO)
 
 # Custom imports
+from models.cc import cathode_coupling_model as cc_model
 from models.thruster import hall_thruster_jl_model as thruster_model
 from models.plume import current_density_model as plume_model
 from utils import data_load, data_write
 
 
+# TODO: More consistent way to input parameters common to multiple models (PB, Te, geometry, etc.)
+
 def main():
+    # Run cathode model
+    cc_model(cc_input='cc_input.json')
+
     # Run thruster model
-    thruster_model(thruster_input='thruster_input.json')  # produces thruster_output.json
+    thruster_model(thruster_input='thruster_input.json', cc_input='cc_output.json')  # produces thruster_output.json
 
     # Run plume model on thruster output
     j_ion = plume_model(plume_input='plume_input.json', thruster_input='thruster_output.json')
