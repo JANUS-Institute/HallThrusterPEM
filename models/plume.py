@@ -3,40 +3,47 @@
 import numpy as np
 from scipy.special import erfi
 import logging
-import sys
 
 Q_E = 1.602176634e-19   # Fundamental charge (C)
 logger = logging.getLogger(__name__)
-sys.path.append('..')
-
-from utils import data_load, data_write
 
 
-def current_density_model(plume_input='plume_input.json', thruster_input=None, write_output=True):
+def current_density_model(plume_input, N=50):
     logger.info('Running plume model')
 
     # Load plume inputs
-    inputs = data_load(plume_input)
-    theta = []
-    for param, value in inputs['parameters'].items():
-        theta.append(value)
-    P_B = inputs['design']['PB_norm']
-    I_B0 = inputs['other']['I_B0']      # A
-    r = np.array(inputs['other']['r'])
-    alpha = np.array([alpha_val * np.pi/180 for alpha_val in inputs['other']['alpha']])
-    sigma_cex = inputs['other']['sigma_cex']
-    A = np.pi * (inputs['design']['outer_radius'] ** 2 - inputs['design']['inner_radius'] ** 2)  # m^2
+    theta = [plume_input['c0'], plume_input['c1'], plume_input['c2'], plume_input['c3'], plume_input['c4'],
+             plume_input['c5']]
+    P_B = plume_input['background_pressure_Torr'] / plume_input['p_ref']
+    I_B0 = plume_input['I_B0']
+    sigma_cex = plume_input['sigma_cex']
 
-    # Load inputs from thruster model
-    if thruster_input:
-        thruster_data = data_load(thruster_input)
-        I_B0 = 0
-        # Sum ion current density over all ion charge states at thruster exit
-        for param, grid_sol in thruster_data[0].items():
-            if 'niui' in param:
-                charge_num = int(param.split('_')[1])
-                I_B0 += Q_E * charge_num * grid_sol[-1]
-        I_B0 = I_B0 * A  # Total current
+    # Format the prediction locations
+    if len(plume_input['r_m']) == 1 == len(plume_input['alpha_deg']):
+        # Predict at one location
+        r = np.atleast_1d(plume_input['r_m'])
+        alpha = np.atleast_1d(plume_input['alpha_deg'])
+    elif len(plume_input['r_m']) == 1 and len(plume_input['alpha_deg']) == 2:
+        # Predict over a sweep of angles
+        alpha = np.linspace(*plume_input['alpha_deg'], N)
+        r = np.ones(N) * plume_input['r_m'][0]
+    elif len(plume_input['r_m']) == 2 and len(plume_input['alpha_deg']) == 1:
+        # Predict over a sweep of radii
+        r = np.linspace(*plume_input['r_m'], N)
+        alpha = np.ones(N) * plume_input['alpha_deg'][0]
+    elif len(plume_input['r_m']) == 2 == len(plume_input['alpha_deg']):
+        # Predict over a grid of r, alpha
+        loc = [np.linspace(*plume_input['r_m'], N), np.linspace(*plume_input['alpha_deg'], N)]
+        pt_grids = np.meshgrid(*loc)
+        x_loc = np.vstack([grid.ravel() for grid in pt_grids]).T  # (np.prod(Nx), x_dim)
+        r = x_loc[:, 0]
+        alpha = x_loc[:, 1]
+    else:
+        raise Exception('(r, alpha) locations ill-specified')
+
+    # Append cathode prediction location
+    r = np.append(r, plume_input['r_cathode'])
+    alpha = np.append(alpha, plume_input['alpha_cathode']) * np.pi / 180
 
     # Compute model prediction
     n = theta[4] * P_B + theta[5]
@@ -59,8 +66,10 @@ def current_density_model(plume_input='plume_input.json', thruster_input=None, w
     if np.any(abs(j.imag) > 0):
         logger.warning('Predicted beam current has imaginary component')
 
-    if write_output:
-        output_data = {"j_ion": list(j.real)}
-        data_write(output_data, 'plume_output.json')
+    # Return quantities of interest
+    j_cathode = j[-1]
+    j_ion = j[:-1]
+    r = r[:-1]
+    alpha = alpha[:-1]
 
-    return j.real
+    return r, alpha, j_ion.real, j_cathode.real

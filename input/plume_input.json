@@ -1,0 +1,29 @@
+{
+    "parameters": {
+        "c0": {"nominal": 0.747388, "uncertainty": "uniform_bds", "value": [0, 1]},
+        "c1": {"nominal": 0.348462, "uncertainty": "uniform_bds", "value": [0.1, 0.5]},
+        "c2": {"nominal": -10.6654, "uncertainty": "uniform_bds", "value": [-200, 200]},
+        "c3": {"nominal": 33.3149, "uncertainty": "uniform_bds", "value": [-200, 200]},
+        "c4": {"nominal": 3.55288, "uncertainty": "uniform_bds", "value": [-200, 200]},
+        "c5": {"nominal": 0.142711, "uncertainty": "uniform_bds", "value": [-200, 200]}
+    },
+    "design": {
+        "r_cathode": {"nominal": 0.1, "uncertainty": "uniform_pct", "value": 0.1},
+        "alpha_cathode": {"nominal": 80, "uncertainty": "uniform_pct", "value": 0.1}
+    },
+    "operating": {
+        "background_pressure_Torr": {"nominal": 5e-06, "uncertainty": "uniform_pct", "value": 0.1}
+    },
+    "coupling": {
+        "I_B0": {"nominal": 3.6, "uncertainty": "none"}
+    },
+    "simulation": {
+
+    },
+    "other": {
+        "sigma_cex": {"nominal": 0.192754, "uncertainty": "none"},
+        "p_ref": {"nominal": 1e-05, "uncertainty": "none"},
+        "r_m": {"nominal": [0.1, 1], "uncertainty": "none"},
+        "alpha_deg": {"nominal": [-90, 90], "uncertainty": "none"}
+    }
+}
