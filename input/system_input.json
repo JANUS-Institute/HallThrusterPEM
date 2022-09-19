@@ -6,7 +6,7 @@
 
     },
     "operating": {
-        "background_pressure_Torr": {"nominal": 1e-05, "uncertainty": "uniform_pct", "value": 0.1},
+        "background_pressure_Torr": {"nominal": 5e-6, "uncertainty": "uniform_pct", "value": 0.1},
         "background_temperature_K": {"nominal": 300, "uncertainty": "uniform_bds", "value": [100, 300]}
     },
     "other": {

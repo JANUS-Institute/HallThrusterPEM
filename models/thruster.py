@@ -1,23 +1,26 @@
 # Module for thruster models
+import tempfile
 
 from juliacall import Main as jl
 import logging
 import sys
 from pathlib import Path
 import math
+import json
+import tempfile
+import os
 
 Q_E = 1.602176634e-19   # Fundamental charge (C)
 sys.path.append('..')
 logger = logging.getLogger(__name__)
 jl.seval("using HallThruster")
 
-from utils import data_load, data_write
+from utils import ModelRunException
 
 
 def hall_thruster_jl_model(thruster_input):
-    logger.info('Running thruster model')
+    # logger.info('Running thruster model')
     data_dir = Path('../data')
-    interface_dir = Path('../interface')
 
     # Create json input file for julia model
     json_data = dict()
@@ -57,14 +60,25 @@ def hall_thruster_jl_model(thruster_input):
                                'anom_model': thruster_input['anom_model'],
                                'solve_background_neutrals': thruster_input['solve_background_neutrals']
                                }
-    data_write(json_data, 'hallthruster_jl_in.json')
 
-    # Call Hallthruster.jl simulation
-    sol = jl.HallThruster.run_simulation(str(interface_dir / 'hallthruster_jl_in.json'))
-    jl.HallThruster.write_to_json(str(interface_dir / 'hallthruster_jl_out.json'), jl.HallThruster.time_average(sol))
+    # Run simulation
+    fd = tempfile.NamedTemporaryFile(suffix='.json', encoding='utf-8', mode='w', delete=False)
+    json.dump(json_data, fd, ensure_ascii=False, indent=4)
+    fd.close()
+    sol = jl.HallThruster.run_simulation(fd.name)
+    os.unlink(fd.name)   # delete the tempfile
 
-    # Return quantities of interest
-    thruster_output = data_load('hallthruster_jl_out.json')
+    if str(sol.retcode) != "Success":
+        raise ModelRunException(f"Exception in Hallthruster.jl: Retcode = {sol.retcode}")
+
+    # Load simulation results
+    fd = tempfile.NamedTemporaryFile(suffix='.json', encoding='utf-8', mode='w', delete=False)
+    fd.close()
+    jl.HallThruster.write_to_json(fd.name, jl.HallThruster.time_average(sol))
+    with open(fd.name, 'r') as f:
+        thruster_output = json.load(f)
+    os.unlink(fd.name)  # delete the tempfile
+
     j_exit = 0      # Current density at thruster exit
     ui_exit = 0     # Ion velocity at thruster exit
     n_avg = 0
@@ -80,4 +94,6 @@ def hall_thruster_jl_model(thruster_input):
     ui_avg = ui_exit / n_avg
     I_B0 = j_exit * A           # Total current (A) at thruster exit
 
-    return ui_avg, I_B0
+    thruster_output[0].update({'avg_ion_velocity': ui_avg, 'I_B0': I_B0})
+
+    return thruster_output[0]

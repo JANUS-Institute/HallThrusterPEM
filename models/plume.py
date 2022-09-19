@@ -3,13 +3,17 @@
 import numpy as np
 from scipy.special import erfi
 import logging
+import sys
 
+sys.path.append('..')
 Q_E = 1.602176634e-19   # Fundamental charge (C)
 logger = logging.getLogger(__name__)
 
+from utils import ModelRunException
+
 
 def current_density_model(plume_input, N=50):
-    logger.info('Running plume model')
+    # logger.info('Running plume model')
 
     # Load plume inputs
     theta = [plume_input['c0'], plume_input['c1'], plume_input['c2'], plume_input['c3'], plume_input['c4'],
@@ -46,30 +50,37 @@ def current_density_model(plume_input, N=50):
     alpha = np.append(alpha, plume_input['alpha_cathode']) * np.pi / 180
 
     # Compute model prediction
-    n = theta[4] * P_B + theta[5]
-    alpha1 = theta[1] * (theta[2] * P_B + theta[3])
-    alpha2 = (theta[2] * P_B + theta[3])
+    with np.errstate(invalid='raise', divide='raise'):
+        try:
+            n = theta[4] * P_B + theta[5]
+            alpha1 = theta[1] * (theta[2] * P_B + theta[3])
+            alpha2 = (theta[2] * P_B + theta[3])
 
-    A1 = (1 - theta[0]) / ((np.pi ** (3 / 2)) / 2 * alpha1 * np.exp(-(alpha1 / 2)**2) * (
-                2 * erfi(alpha1 / 2) + erfi((np.pi * 1j - (alpha1 ** 2)) / (2 * alpha1)) - erfi(
-            (np.pi * 1j + (alpha1 ** 2)) / (2 * alpha1))))
-    A2 = theta[0] / ((np.pi ** (3 / 2)) / 2 * alpha2 * np.exp(-(alpha2 / 2)**2) * (
-                2 * erfi(alpha2 / 2) + erfi((np.pi * 1j - (alpha2 ** 2)) / (2 * alpha2)) - erfi(
-            (np.pi * 1j + (alpha2 ** 2)) / (2 * alpha2))))
+            A1 = (1 - theta[0]) / ((np.pi ** (3 / 2)) / 2 * alpha1 * np.exp(-(alpha1 / 2)**2) * (
+                        2 * erfi(alpha1 / 2) + erfi((np.pi * 1j - (alpha1 ** 2)) / (2 * alpha1)) - erfi(
+                    (np.pi * 1j + (alpha1 ** 2)) / (2 * alpha1))))
+            A2 = theta[0] / ((np.pi ** (3 / 2)) / 2 * alpha2 * np.exp(-(alpha2 / 2)**2) * (
+                        2 * erfi(alpha2 / 2) + erfi((np.pi * 1j - (alpha2 ** 2)) / (2 * alpha2)) - erfi(
+                    (np.pi * 1j + (alpha2 ** 2)) / (2 * alpha2))))
 
-    I_B = I_B0 * np.exp(-r*n*sigma_cex)
-    j_beam = (I_B / r ** 2) * A1 * np.exp(-(alpha / alpha1) ** 2)
-    j_scat = (I_B / r ** 2) * A2 * np.exp(-(alpha / alpha2) ** 2)
-    j_cex = I_B0 * (1 - np.exp(-r*n*sigma_cex)) / (2 * np.pi * r ** 2)
-    j = j_beam + j_scat + j_cex
+            I_B = I_B0 * np.exp(-r*n*sigma_cex)
+            j_beam = (I_B / r ** 2) * A1 * np.exp(-(alpha / alpha1) ** 2)
+            j_scat = (I_B / r ** 2) * A2 * np.exp(-(alpha / alpha2) ** 2)
+            j_cex = I_B0 * (1 - np.exp(-r*n*sigma_cex)) / (2 * np.pi * r ** 2)
+            j = j_beam + j_scat + j_cex
 
-    if np.any(abs(j.imag) > 0):
-        logger.warning('Predicted beam current has imaginary component')
+            if np.any(abs(j.imag) > 0):
+                logger.warning('Predicted beam current has imaginary component')
 
-    # Return quantities of interest
-    j_cathode = j[-1]
-    j_ion = j[:-1]
-    r = r[:-1]
-    alpha = alpha[:-1]
+            # Return quantities of interest
+            j_cathode = j[-1]
+            j_ion = j[:-1]
+            r = r[:-1]
+            alpha = alpha[:-1]
 
-    return r, alpha, j_ion.real, j_cathode.real
+        except Exception as e:
+            raise ModelRunException(f"Exception in plume model: {e}")
+
+        else:
+            return {'r': list(r), 'alpha': list(alpha), 'ion_current_density': list(j_ion.real),
+                    'cathode_current_density': float(j_cathode.real)}

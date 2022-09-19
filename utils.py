@@ -6,6 +6,10 @@ INTERFACE_DIR = Path(__file__).parent / 'interface'
 INPUT_DIR = Path(__file__).parent / 'input'
 
 
+class ModelRunException(Exception):
+    pass
+
+
 def data_load(filename):
     """Convenience function to load .json data files"""
     file = INPUT_DIR / filename if 'input' in filename else INTERFACE_DIR / filename
@@ -18,9 +22,9 @@ def data_load(filename):
     return data
 
 
-def data_write(data, filename):
+def data_write(data, filename, dir=INTERFACE_DIR):
     """Convenience function to write .json data files"""
-    with open(INTERFACE_DIR / filename, 'w', encoding='utf-8') as fd:
+    with open(Path(dir) / filename, 'w', encoding='utf-8') as fd:
         json.dump(data, fd, ensure_ascii=False, indent=4)
 
 

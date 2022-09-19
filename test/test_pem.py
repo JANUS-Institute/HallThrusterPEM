@@ -4,6 +4,8 @@ import sys
 import numpy as np
 import logging
 import scipy.optimize
+import copy
+from joblib import Parallel, delayed
 
 sys.path.append('..')
 logging.basicConfig(level=logging.INFO)
@@ -12,7 +14,7 @@ logging.basicConfig(level=logging.INFO)
 from models.cc import cathode_coupling_model as cc_model
 from models.thruster import hall_thruster_jl_model as thruster_model
 from models.plume import current_density_model as plume_model
-from utils import parse_input_file
+from utils import parse_input_file, data_write, ModelRunException
 
 
 def test_cc():
@@ -21,8 +23,8 @@ def test_cc():
 
     def func(pb, cprime, ui, jT):
         cc_nominal['c_prime'] = cprime
-        cc_nominal['ion_velocity'] = ui
-        cc_nominal['ion_current_density'] = jT
+        cc_nominal['avg_ion_velocity'] = ui
+        cc_nominal['cathode_current_density'] = jT
         v_cc = np.zeros(len(pb))
         for i, p in enumerate(pb):
             cc_nominal['background_pressure_Torr'] = p
@@ -50,8 +52,8 @@ def test_cc():
     PB = np.linspace(0, 6, N) * p_ref
     v_cc = np.zeros(N)
     cc_nominal['c_prime'] = popt
-    # cc_nominal['ion_velocity'] = popt[1]
-    # cc_nominal['ion_current_density'] = popt[2]
+    # cc_nominal['avg_ion_velocity'] = popt[1]
+    # cc_nominal['cathode_current_density'] = popt[2]
     for i in range(N):
         cc_nominal['background_pressure_Torr'] = PB[i]
         v_cc[i] = cc_model(cc_nominal)
@@ -65,26 +67,30 @@ def test_cc():
 
 
 def run_nominal():
-    # Run cathode model
+    # Load inputs
     cc_nominal, cc_uncertainty = parse_input_file('cc_input.json')
-    v_cc = cc_model(cc_nominal)
-
-    # Run thruster model
     thruster_nominal, thruster_uncertainty = parse_input_file('thruster_input.json')
-    thruster_nominal['cathode_potential'] = v_cc
-    ui_avg, I_B0 = thruster_model(thruster_nominal)
-
-    # Run plume model
     plume_nominal, plume_uncertainty = parse_input_file('plume_input.json')
-    plume_nominal['I_B0'] = I_B0
-    N = 50
-    r, alpha, j_ion, j_cathode = plume_model(plume_nominal, N=N)
 
-    # Loop back to cc_model (NOT FOR FEEDFORWARD MODEL)
-    # cc_nominal['ion_velocity'] = ui_avg
-    # cc_nominal['ion_current_density'] = j_cathode
+    # Setup models
+    model_inputs = [cc_nominal, thruster_nominal, plume_nominal]
+    models = [cc_model, thruster_model, plume_model]
+
+    # Run models
+    model_out = {}
+    for j, model in enumerate(models):
+        model_out = model(model_inputs[j])
+
+        if j < len(models) - 1:
+            model_inputs[j + 1].update(model_out)
+
+    # Quantities of interest
+    r = np.atleast_1d(model_out['r'])
+    alpha = np.atleast_1d(model_out['alpha'])
+    j_ion = np.atleast_1d(model_out['ion_current_density'])
 
     # Plot results
+    N = 50
     r_grid, alpha_grid = [r.reshape((N, N)), alpha.reshape((N, N))]
     x_grid = r_grid * np.cos(alpha_grid)
     y_grid = r_grid * np.sin(alpha_grid)
@@ -101,12 +107,96 @@ def run_nominal():
     plt.show()
 
 
+def input_sampler(nominal_list, uncertainty_list):
+    # Sample all inputs from uncertainty models (system input at i=-1)
+    model_inputs = []
+    for i in range(len(nominal_list)):
+        nominal_dict = nominal_list[i]
+        uncertainty_dict = uncertainty_list[i]
+        input_dict = copy.deepcopy(nominal_dict)
+
+        for param, uq_dict in uncertainty_dict.items():
+            if uq_dict['uncertainty'] == 'uniform_bds':
+                lb, ub = uq_dict['value']
+                input_dict[param] = np.random.rand() * (ub-lb) + lb
+            elif uq_dict['uncertainty'] == 'uniform_pct':
+                lb = nominal_dict[param] * (1 - uq_dict['value'])
+                ub = nominal_dict[param] * (1 + uq_dict['value'])
+                input_dict[param] = np.random.rand() * (ub-lb) + lb
+            elif uq_dict['uncertainty'] == 'uniform_tol':
+                lb = nominal_dict[param] - uq_dict['value']
+                ub = nominal_dict[param] + uq_dict['value']
+                input_dict[param] = np.random.rand() * (ub-lb) + lb
+            elif uq_dict['uncertainty'] == 'lognormal':
+                scale = 1 / np.log10(np.e)
+                mean = scale * uq_dict['value'][0]
+                var = scale ** 2 * uq_dict['value'][1]
+                input_dict[param] = float(np.random.lognormal(mean=mean, sigma=np.sqrt(var), size=1))
+            else:
+                raise NotImplementedError
+
+        model_inputs.append(input_dict)
+
+    # Update all models with the system input samples
+    sys_input = model_inputs[-1]
+    for i, model_input in enumerate(model_inputs[:-1]):
+        model_input.update(sys_input)
+
+    return model_inputs[:-1]
+
+
+def test_feedforward_mc():
+    # Load global component nominal conditions and uncertainties
+    cc_nominal, cc_uncertainty = parse_input_file('cc_input.json')
+    thruster_nominal, thruster_uncertainty = parse_input_file('thruster_input.json')
+    plume_nominal, plume_uncertainty = parse_input_file('plume_input.json')
+    sys_nominal, sys_uncertainty = parse_input_file('system_input.json')
+
+    # Load models
+    nominal = [cc_nominal, thruster_nominal, plume_nominal, sys_nominal]
+    uncertainty = [cc_uncertainty, thruster_uncertainty, plume_uncertainty, sys_uncertainty]
+    models = [cc_model, thruster_model, plume_model]
+
+    # Run Monte Carlo
+    def parallel_func(idx):
+        # Allocate space for results
+        results = {}
+
+        # Sample inputs
+        model_inputs = input_sampler(nominal, uncertainty)
+        for j, model_input in enumerate(model_inputs):
+            results[f'model{j}'] = {'input': copy.deepcopy(model_input)}
+
+        try:
+            # Run models
+            for j, model in enumerate(models):
+                model_out = model(model_inputs[j])
+                results[f'model{j}']['output'] = copy.deepcopy(model_out)
+
+                if j < len(models)-1:
+                    model_inputs[j+1].update(model_out)
+
+        except ModelRunException as e:
+            results['Exception'] = str(e)
+            data_write(results, f'ff_mc_{idx}_exc.json', dir='../results/feedforward_mc')
+            logging.warning(f'Failed iteration i={idx}: {e}')
+        else:
+            data_write(results, f'ff_mc_{idx}.json', dir='../results/feedforward_mc')
+
+    n_jobs = 1
+    N = 20
+    Parallel(n_jobs=n_jobs, verbose=9)(delayed(parallel_func)(idx) for idx in range(N))
+
+
 def main():
     # Run nominal case
-    run_nominal()
+    # run_nominal()
 
     # Test cathode coupling model
     # test_cc()
+
+    # Run Monte Carlo
+    test_feedforward_mc()
 
 
 if __name__ == '__main__':
