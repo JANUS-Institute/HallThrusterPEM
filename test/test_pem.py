@@ -6,6 +6,10 @@ import logging
 import scipy.optimize
 import copy
 from joblib import Parallel, delayed
+import datetime
+from datetime import timezone
+import os
+from pathlib import Path
 
 sys.path.append('..')
 logging.basicConfig(level=logging.INFO)
@@ -165,6 +169,11 @@ def test_feedforward_mc():
     uncertainty = [cc_uncertainty, thruster_uncertainty, plume_uncertainty, sys_uncertainty]
     models = [cc_model, thruster_model, plume_model]
 
+    # Create output directory
+    dir_name = datetime.datetime.now(tz=timezone.utc).isoformat().replace(':', '.')
+    path = Path('../results') / dir_name
+    os.mkdir(path)
+
     # Run Monte Carlo
     def parallel_func(idx):
         # Allocate space for results
@@ -186,10 +195,10 @@ def test_feedforward_mc():
 
         except ModelRunException as e:
             results['Exception'] = str(e)
-            data_write(results, f'ff_mc_{idx}_exc.json', dir='../results/feedforward_mc2')
+            data_write(results, f'ff_mc_{idx}_exc.json', dir=path)
             logging.warning(f'Failed iteration i={idx}: {e}')
         else:
-            data_write(results, f'ff_mc_{idx}.json', dir='../results/feedforward_mc2')
+            data_write(results, f'ff_mc_{idx}.json', dir=path)
 
     n_jobs = 1
     N = 5
