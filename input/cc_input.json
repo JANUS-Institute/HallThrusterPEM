@@ -13,8 +13,8 @@
         "background_temperature_K": {"nominal": 300, "uncertainty": "uniform_bds", "value": [100, 300]}
     },
     "coupling": {
-        "avg_ion_velocity": {"nominal": 24178, "uncertainty": "none"},
-        "cathode_current_density": {"nominal": 70, "uncertainty": "none"}
+        "avg_ion_velocity": {"nominal": 18000, "uncertainty": "none"},
+        "cathode_current_density": {"nominal": 40, "uncertainty": "none"}
     },
     "simulation": {
 

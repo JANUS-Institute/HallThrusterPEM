@@ -4,6 +4,7 @@ import numpy as np
 from scipy.special import erfi
 import logging
 import sys
+import math
 
 sys.path.append('..')
 Q_E = 1.602176634e-19   # Fundamental charge (C)
@@ -52,9 +53,14 @@ def current_density_model(plume_input, N=50):
     # Compute model prediction
     with np.errstate(invalid='raise', divide='raise'):
         try:
-            n = theta[4] * P_B + theta[5]
+            n = max(0, theta[4] * P_B + theta[5])
             alpha1 = theta[1] * (theta[2] * P_B + theta[3])
             alpha2 = (theta[2] * P_B + theta[3])
+
+            # Threshold values [0, pi/2]
+            tol = 1e-20
+            alpha1 = min(math.pi/2, max(tol, alpha1))
+            alpha2 = min(math.pi/2, max(tol, alpha2))
 
             A1 = (1 - theta[0]) / ((np.pi ** (3 / 2)) / 2 * alpha1 * np.exp(-(alpha1 / 2)**2) * (
                         2 * erfi(alpha1 / 2) + erfi((np.pi * 1j - (alpha1 ** 2)) / (2 * alpha1)) - erfi(

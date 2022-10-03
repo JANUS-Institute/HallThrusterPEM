@@ -132,6 +132,8 @@ def input_sampler(nominal_list, uncertainty_list):
                 mean = scale * uq_dict['value'][0]
                 var = scale ** 2 * uq_dict['value'][1]
                 input_dict[param] = float(np.random.lognormal(mean=mean, sigma=np.sqrt(var), size=1))
+            elif uq_dict['uncertainty'] == 'normal':
+                input_dict[param] = np.random.randn() * np.sqrt(uq_dict['value'][1]) + uq_dict['value'][0]
             else:
                 raise NotImplementedError
 
@@ -141,6 +143,12 @@ def input_sampler(nominal_list, uncertainty_list):
     sys_input = model_inputs[-1]
     for i, model_input in enumerate(model_inputs[:-1]):
         model_input.update(sys_input)
+
+    # Update anomalous transport coefficients in thruster model
+    anom_coeff_1_var = uncertainty_list[1]['anom_coeff_1']['value'][1]
+    mag_offset = model_inputs[1]['anom_coeff_2'] * np.sqrt(anom_coeff_1_var)    # Offset order of magnitude
+    model_inputs[1]['anom_coeff_2'] = model_inputs[1]['anom_coeff_1'] * max(1, 10 ** mag_offset)
+    print(f"Mag: {mag_offset} Anom coeff 1: {model_inputs[1]['anom_coeff_1']}  Anom coeff 2: {model_inputs[1]['anom_coeff_2']}")
 
     return model_inputs[:-1]
 
@@ -178,14 +186,14 @@ def test_feedforward_mc():
 
         except ModelRunException as e:
             results['Exception'] = str(e)
-            data_write(results, f'ff_mc_{idx}_exc.json', dir='../results/feedforward_mc')
+            data_write(results, f'ff_mc_{idx}_exc.json', dir='../results/feedforward_mc2')
             logging.warning(f'Failed iteration i={idx}: {e}')
         else:
-            data_write(results, f'ff_mc_{idx}.json', dir='../results/feedforward_mc')
+            data_write(results, f'ff_mc_{idx}.json', dir='../results/feedforward_mc2')
 
     n_jobs = 1
-    N = 20
-    Parallel(n_jobs=n_jobs, verbose=9)(delayed(parallel_func)(idx) for idx in range(N))
+    N = 5
+    Parallel(n_jobs=n_jobs, verbose=5)(delayed(parallel_func)(idx) for idx in range(N))
 
 
 def main():

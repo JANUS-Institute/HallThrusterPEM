@@ -5,8 +5,8 @@
         "cathode_electron_temp_eV": {"nominal": 3.0, "uncertainty": "uniform_bds", "value": [1, 5]},
         "sheath_loss_coefficient": {"nominal": 0.15, "uncertainty": "uniform_bds", "value": [0.1, 0.3]},
         "inner_outer_transition_length_m": {"nominal": 0.01, "uncertainty": "uniform_bds", "value": [0.001, 0.5]},
-        "anom_coeff_1": {"nominal": 0.00625, "uncertainty": "lognormal", "value": [-2, 1]},
-        "anom_coeff_2": {"nominal": 0.0625, "uncertainty": "lognormal", "value": [-1, 1]}
+        "anom_coeff_1": {"nominal": 0.00625, "uncertainty": "lognormal", "value": [-2, 0.25]},
+        "anom_coeff_2": {"nominal": 0.0625, "uncertainty": "normal", "value": [2, 0.25]}
     },
     "design": {
         "channel_length": {"nominal": 0.025, "uncertainty": "uniform_tol", "value": 0.001},
@@ -37,7 +37,7 @@
     "simulation": {
         "thruster_name": "SPT-100",
         "num_cells": 100,
-        "dt_s": 3e-08,
+        "dt_s": 2.5e-08,
         "duration_s": 0.002,
         "max_charge": 1,
         "num_save": 1000,

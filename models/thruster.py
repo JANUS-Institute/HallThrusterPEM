@@ -1,5 +1,4 @@
 # Module for thruster models
-import tempfile
 
 from juliacall import Main as jl
 import logging
@@ -68,7 +67,7 @@ def hall_thruster_jl_model(thruster_input):
     sol = jl.HallThruster.run_simulation(fd.name)
     os.unlink(fd.name)   # delete the tempfile
 
-    if str(sol.retcode) != "Success":
+    if str(sol.retcode).lower() != "success":
         raise ModelRunException(f"Exception in Hallthruster.jl: Retcode = {sol.retcode}")
 
     # Load simulation results
@@ -81,17 +80,15 @@ def hall_thruster_jl_model(thruster_input):
 
     j_exit = 0      # Current density at thruster exit
     ui_exit = 0     # Ion velocity at thruster exit
-    n_avg = 0
     for param, grid_sol in thruster_output[0].items():
         if 'niui' in param:
             charge_num = int(param.split('_')[1])
             j_exit += Q_E * charge_num * grid_sol[-1]
         if param.split('_')[0] == 'ui':
             ui_exit += grid_sol[-1]
-            n_avg += 1
 
     A = math.pi * (thruster_input['outer_radius'] ** 2 - thruster_input['inner_radius'] ** 2)
-    ui_avg = ui_exit / n_avg
+    ui_avg = ui_exit / thruster_input['max_charge']
     I_B0 = j_exit * A           # Total current (A) at thruster exit
 
     thruster_output[0].update({'avg_ion_velocity': ui_avg, 'I_B0': I_B0})
