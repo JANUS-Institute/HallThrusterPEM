@@ -2,7 +2,6 @@ import json
 from pathlib import Path
 import copy
 
-INTERFACE_DIR = Path(__file__).parent / 'interface'
 INPUT_DIR = Path(__file__).parent / 'input'
 
 
@@ -10,10 +9,9 @@ class ModelRunException(Exception):
     pass
 
 
-def data_load(filename):
+def data_load(filename, dir=INPUT_DIR):
     """Convenience function to load .json data files"""
-    file = INPUT_DIR / filename if 'input' in filename else INTERFACE_DIR / filename
-    with open(file, 'r') as fd:
+    with open(Path(dir) / filename, 'r') as fd:
         data = json.load(fd)
 
     if 'input' in filename and 'system' not in filename:
@@ -22,7 +20,7 @@ def data_load(filename):
     return data
 
 
-def data_write(data, filename, dir=INTERFACE_DIR):
+def data_write(data, filename, dir=INPUT_DIR):
     """Convenience function to write .json data files"""
     with open(Path(dir) / filename, 'w', encoding='utf-8') as fd:
         json.dump(data, fd, ensure_ascii=False, indent=4)

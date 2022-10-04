@@ -3,6 +3,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Custom
+thruster_input.json
+
 # C extensions
 *.so
 

@@ -1,6 +1,4 @@
 # Module for thruster models
-
-from juliacall import Main as jl
 import logging
 import sys
 from pathlib import Path
@@ -8,17 +6,21 @@ import math
 import json
 import tempfile
 import os
+import juliacall
 
 Q_E = 1.602176634e-19   # Fundamental charge (C)
 sys.path.append('..')
 logger = logging.getLogger(__name__)
-jl.seval("using HallThruster")
 
 from utils import ModelRunException
 
 
-def hall_thruster_jl_model(thruster_input):
-    # logger.info('Running thruster model')
+def hall_thruster_jl_model(thruster_input, jl=None):
+    # Import Julia
+    if jl is None:
+        from juliacall import Main as jl
+        jl.seval("using HallThruster")
+
     data_dir = Path('../data')
 
     # Create json input file for julia model
@@ -61,11 +63,14 @@ def hall_thruster_jl_model(thruster_input):
                                }
 
     # Run simulation
-    fd = tempfile.NamedTemporaryFile(suffix='.json', encoding='utf-8', mode='w', delete=False)
-    json.dump(json_data, fd, ensure_ascii=False, indent=4)
-    fd.close()
-    sol = jl.HallThruster.run_simulation(fd.name)
-    os.unlink(fd.name)   # delete the tempfile
+    try:
+        fd = tempfile.NamedTemporaryFile(suffix='.json', encoding='utf-8', mode='w', delete=False)
+        json.dump(json_data, fd, ensure_ascii=False, indent=4)
+        fd.close()
+        sol = jl.HallThruster.run_simulation(fd.name)
+        os.unlink(fd.name)   # delete the tempfile
+    except juliacall.JuliaError as e:
+        raise ModelRunException(f"Julicall error in Hallthruster.jl: {e}")
 
     if str(sol.retcode).lower() != "success":
         raise ModelRunException(f"Exception in Hallthruster.jl: Retcode = {sol.retcode}")
