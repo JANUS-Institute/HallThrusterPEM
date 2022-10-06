@@ -5,6 +5,7 @@ from scipy.special import erfi
 import logging
 import sys
 import math
+import scipy.integrate
 
 sys.path.append('..')
 Q_E = 1.602176634e-19   # Fundamental charge (C)
@@ -84,9 +85,18 @@ def current_density_model(plume_input, N=50):
             r = r[:-1]
             alpha = alpha[:-1]
 
+            # Calculate divergence angle from https://aip.scitation.org/doi/10.1063/5.0066849
+            # Assumes alpha = [-90, 90]
+            start_idx = np.argmin(np.abs(alpha-0))  # Start at channel centerline
+            num_int = j_ion * np.cos(alpha) * np.sin(alpha)
+            den_int = j_ion * np.cos(alpha)
+            cos_div = scipy.integrate.simps(num_int[start_idx:], alpha[start_idx:]) / \
+                      scipy.integrate.simps(den_int[start_idx:], alpha[start_idx:])
+
         except Exception as e:
             raise ModelRunException(f"Exception in plume model: {e}")
 
         else:
             return {'r': list(r), 'alpha': list(alpha), 'ion_current_density': list(j_ion.real),
-                    'cathode_current_density': float(j_cathode.real)}
+                    'cathode_current_density': float(j_cathode.real), 'divergence_angle': np.arccos(cos_div),
+                    'divergence_efficiency': cos_div**2}
