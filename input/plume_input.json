@@ -23,7 +23,7 @@
     "other": {
         "sigma_cex": {"nominal": 0.192754, "uncertainty": "none"},
         "p_ref": {"nominal": 1e-05, "uncertainty": "none"},
-        "r_m": {"nominal": [0.5, 1], "uncertainty": "none"},
+        "r_m": {"nominal": [1], "uncertainty": "none"},
         "alpha_deg": {"nominal": [-90, 90], "uncertainty": "none"}
     }
 }

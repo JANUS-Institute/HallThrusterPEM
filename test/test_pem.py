@@ -152,7 +152,6 @@ def input_sampler(nominal_list, uncertainty_list):
     anom_coeff_1_var = uncertainty_list[1]['anom_coeff_1']['value'][1]
     mag_offset = model_inputs[1]['anom_coeff_2'] * np.sqrt(anom_coeff_1_var)    # Offset order of magnitude
     model_inputs[1]['anom_coeff_2'] = model_inputs[1]['anom_coeff_1'] * max(1, 10 ** mag_offset)
-    print(f"Mag: {mag_offset} Anom coeff 1: {model_inputs[1]['anom_coeff_1']}  Anom coeff 2: {model_inputs[1]['anom_coeff_2']}")
 
     return model_inputs[:-1]
 

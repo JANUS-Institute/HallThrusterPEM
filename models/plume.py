@@ -86,12 +86,22 @@ def current_density_model(plume_input, N=50):
             alpha = alpha[:-1]
 
             # Calculate divergence angle from https://aip.scitation.org/doi/10.1063/5.0066849
-            # Assumes alpha = [-90, 90]
-            start_idx = np.argmin(np.abs(alpha-0))  # Start at channel centerline
-            num_int = j_ion * np.cos(alpha) * np.sin(alpha)
-            den_int = j_ion * np.cos(alpha)
-            cos_div = scipy.integrate.simps(num_int[start_idx:], alpha[start_idx:]) / \
-                      scipy.integrate.simps(den_int[start_idx:], alpha[start_idx:])
+            # Assumes alpha = [-90, 90] and r=[#]
+            if len(r.shape) == 1:
+                start_idx = np.argmin(np.abs(alpha-0))  # Start at channel centerline
+                num_int = j_ion.real * np.cos(alpha) * np.sin(alpha)
+                den_int = j_ion.real * np.cos(alpha)
+
+                try:
+                    cos_div = scipy.integrate.simps(num_int[start_idx:], alpha[start_idx:]) / \
+                              scipy.integrate.simps(den_int[start_idx:], alpha[start_idx:])
+                except:
+                    # Catch any case where the integration = 0 in the denominator
+                    logger.warning('Predicted beam current has 0 integrated ion current, setting div_angle=90 deg')
+                    cos_div = 0
+            else:
+                logger.warning('Invalid input for r=[#], setting div_angle=90 deg')
+                cos_div = 0
 
         except Exception as e:
             raise ModelRunException(f"Exception in plume model: {e}")
