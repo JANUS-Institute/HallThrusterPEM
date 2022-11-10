@@ -12,7 +12,7 @@
     "design": {},
     "operating": {
         "background_pressure_Torr": {
-            "nominal": 5.51e-05,
+            "nominal": 4.06e-06,
             "uncertainty": "uniform_pct",
             "value": 0.1
         },
@@ -23,6 +23,10 @@
                 100,
                 300
             ]
+        },
+        "anode_potential": {
+            "nominal": 300,
+            "uncertainty": "none"
         }
     },
     "other": {

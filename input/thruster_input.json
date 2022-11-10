@@ -4,7 +4,7 @@
         "ion_temp_K": {"nominal": 1000.0, "uncertainty": "uniform_bds", "value": [0, 1000]},
         "cathode_electron_temp_eV": {"nominal": 3.0, "uncertainty": "uniform_bds", "value": [1, 5]},
         "sheath_loss_coefficient": {"nominal": 0.15, "uncertainty": "uniform_bds", "value": [0.1, 0.3]},
-        "inner_outer_transition_length_m": {"nominal": 0.01, "uncertainty": "uniform_bds", "value": [0.001, 0.5]},
+        "inner_outer_transition_length_m": {"nominal": 0.01, "uncertainty": "uniform_bds", "value": [0.001, 0.02]},
         "anom_coeff_1": {"nominal": 0.00625, "uncertainty": "lognormal", "value": [-2, 0.25]},
         "anom_coeff_2": {"nominal": 0.0625, "uncertainty": "normal", "value": [2, 0.25]}
     },

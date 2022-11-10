@@ -20,10 +20,14 @@ def cathode_coupling_model(cc_input):
     TB = cc_input['background_temperature_K']
     ui_avg = cc_input['avg_ion_velocity']           # avg ion exit velocity from thruster
     ji_T = cc_input['cathode_current_density']      # total current density at cathode location
+    Va = cc_input['anode_potential']
 
     # Equation 12 in Jorns and Byrne, Plasma Sources Sci. Technol. 30 (2021) 015012
     n_e = ji_T / (Q_E * ui_avg)
     PT = (n_e*kB*TB) / c_prime
     V_cc = V_vac + Te * math.log(1 + PB / PT) - (Te / (PT + Pstar)) * PB
+
+    # Threshold between 0 and anode voltage
+    V_cc = min(Va, max(0, V_cc))
 
     return {'cathode_potential': V_cc}

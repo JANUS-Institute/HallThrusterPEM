@@ -15,16 +15,10 @@ logger = logging.getLogger(__name__)
 from utils import ModelRunException
 
 
-def hall_thruster_jl_model(thruster_input, jl=None):
-    # Import Julia
-    if jl is None:
-        from juliacall import Main as jl
-        jl.seval("using HallThruster")
-
-    data_dir = Path('../data')
-
-    # Create json input file for julia model
+def hallthruster_jl_input(thruster_input):
+    # Format inputs for Hallthruster.jl
     json_data = dict()
+    data_dir = Path('../data')
     json_data['parameters'] = {'neutral_temp_K': thruster_input['neutral_temp_K'],
                                'neutral_velocity_m_s': thruster_input['neutral_velocity_m_s'],
                                'ion_temp_K': thruster_input['ion_temp_K'],
@@ -61,6 +55,18 @@ def hall_thruster_jl_model(thruster_input, jl=None):
                                'anom_model': thruster_input['anom_model'],
                                'solve_background_neutrals': thruster_input['solve_background_neutrals']
                                }
+
+    return json_data
+
+
+def hall_thruster_jl_model(thruster_input, jl=None):
+    # Import Julia
+    if jl is None:
+        from juliacall import Main as jl
+        jl.seval("using HallThruster")
+
+    # Format inputs for Hallthruster.jl
+    json_data = hallthruster_jl_input(thruster_input)
 
     # Run simulation
     try:

@@ -211,9 +211,10 @@ def test_feedforward_mc():
 
             print(f'Finished sample number: {sample_num}')
 
-    pressures = [0, 1.69e-6, 4.06e-6, 6.99e-6, 1.22e-5, 1.57e-5, 2.56e-5, 3.83e-5, 5.51e-5]
+    # pressures = [0, 1.69e-6, 4.06e-6, 6.99e-6, 1.22e-5, 1.57e-5, 2.56e-5, 3.83e-5, 5.51e-5]
+    pressures = [1.69e-6, 4.06e-6]
     n_jobs = -1
-    N = 20
+    N = 10
 
     for i, pb in enumerate(pressures):
         # Load background pressure into system inputs
