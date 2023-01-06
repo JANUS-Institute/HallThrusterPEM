@@ -18,7 +18,7 @@ from utils import ModelRunException
 def hallthruster_jl_input(thruster_input):
     # Format inputs for Hallthruster.jl
     json_data = dict()
-    data_dir = Path('../data')
+    data_dir = Path('../data/spt100')
     json_data['parameters'] = {'neutral_temp_K': thruster_input['neutral_temp_K'],
                                'neutral_velocity_m_s': thruster_input['neutral_velocity_m_s'],
                                'ion_temp_K': thruster_input['ion_temp_K'],

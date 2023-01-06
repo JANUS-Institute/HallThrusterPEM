@@ -72,4 +72,4 @@ if __name__ == '__main__':
     test_feedforward_error()
 
     # Place whatever result file you want to test in test/ directory
-    rerun_model('ff_mc_15_exc_1.22e-05.json')
+    rerun_model('../results/failures/ff_mc_15_exc_1.22e-05.json')

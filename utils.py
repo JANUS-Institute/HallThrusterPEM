@@ -1,12 +1,61 @@
 import json
 from pathlib import Path
 import copy
+import matplotlib.pyplot as plt
+import matplotlib
+from matplotlib.pyplot import cycler
+from matplotlib.colors import LinearSegmentedColormap, ListedColormap
+import numpy as np
 
 INPUT_DIR = Path(__file__).parent / 'input'
 
 
 class ModelRunException(Exception):
     pass
+
+
+def ax_default(ax, xlabel='', ylabel='', legend=True):
+    """Nice default formatting for plotting"""
+    plt.rcParams["axes.prop_cycle"] = get_cycle("tab10")
+    plt.rc('font', family='serif')
+    plt.rc('xtick', labelsize='small')
+    plt.rc('ytick', labelsize='small')
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.tick_params(axis='x', direction='in')
+    ax.tick_params(axis='y', direction='in')
+    if legend:
+        leg = plt.legend(fancybox=True)
+        frame = leg.get_frame()
+        frame.set_edgecolor('k')
+
+
+def get_cycle(cmap, N=None, use_index="auto"):
+    """Get a color cycler for plotting"""
+    if isinstance(cmap, str):
+        if use_index == "auto":
+            if cmap in ['Pastel1', 'Pastel2', 'Paired', 'Accent',
+                        'Dark2', 'Set1', 'Set2', 'Set3',
+                        'tab10', 'tab20', 'tab20b', 'tab20c']:
+                use_index = True
+            else:
+                use_index = False
+        cmap = matplotlib.cm.get_cmap(cmap)
+    if not N:
+        N = cmap.N
+    if use_index == "auto":
+        if cmap.N > 100:
+            use_index = False
+        elif isinstance(cmap, LinearSegmentedColormap):
+            use_index = False
+        elif isinstance(cmap, ListedColormap):
+            use_index = True
+    if use_index:
+        ind = np.arange(int(N)) % cmap.N
+        return cycler("color", cmap(ind))
+    else:
+        colors = cmap(np.linspace(0, 1, N))
+        return cycler("color", colors)
 
 
 def data_load(filename, dir=INPUT_DIR):
