@@ -2,11 +2,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 from utils import ax_default
 
-data = np.loadtxt('..\data\jion_dataset4.csv', delimiter=',', skiprows=1)
+data = np.loadtxt('..\data\spt100\jion_dataset4.csv', delimiter=',', skiprows=1)
 pressure = data[:, 4]
 angle = data[:, 6]
 jion = data[:, 7]
-Np = 8
+Np = 8  # Number of different background pressures
 
 angle = angle.reshape((Np, -1))
 pressure = pressure.reshape((Np, -1))

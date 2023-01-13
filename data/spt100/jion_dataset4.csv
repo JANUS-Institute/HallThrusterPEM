@@ -1,4 +1,4 @@
-N,Anode voltage (V),Anode flow rate (mg/s),Background temperature (K),Background pressure (torr),Radial position from thruster exit (m),Angular position from thruster centerline (deg),Ion current density (mA/cm^2),Variance (m/s)^2
+N,Anode voltage (V),Anode flow rate (mg/s),Background temperature (K),Background pressure (torr),Radial position from thruster exit (m),Angular position from thruster centerline (deg),Ion current density (mA/cm^2),Variance (mA/cm^2)^2
 1,300,5.627,300,1.69E-06,0.1,-10,0.6081,0.003697856
 2,300,5.627,300,1.69E-06,0.1,-5,0.7646,0.005846132
 3,300,5.627,300,1.69E-06,0.1,0,0.8068,0.006509262
