@@ -1,9 +1,10 @@
 {
     "parameters": {
-        "cathode_electron_temp_eV": {"nominal": 5, "uncertainty": "uniform_bds", "value": [1, 5]},
-        "V_vac": {"nominal": 31.1, "uncertainty": "uniform_bds", "value": [0, 60]},
-        "Pstar": {"nominal": 2.6e-05, "uncertainty": "uniform_bds", "value": [-2e-05, 10e-5]},
-        "c_prime": {"nominal": 0.04, "uncertainty": "uniform_bds", "value": [0, 1]}
+        "cathode_electron_temp_eV": {"nominal": 1.99, "uncertainty": "uniform_bds", "value": [1, 5]},
+        "V_vac": {"nominal": 30.39, "uncertainty": "uniform_bds", "value": [0, 60]},
+        "Pstar": {"nominal": 2.87e-05, "uncertainty": "uniform_bds", "value": [-2e-05, 10e-5]},
+        "c_prime": {"nominal": 0.04, "uncertainty": "uniform_bds", "value": [0, 1]},
+        "P_T": {"nominal": 3.89e-06, "uncertainty": "uniform_bds", "value": [0, 15e-5]}
     },
     "design": {
 

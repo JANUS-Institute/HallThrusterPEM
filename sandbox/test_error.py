@@ -42,9 +42,9 @@ def rerun_model(result_json_filename):
     except ModelRunException as e:
         tb_str = traceback.format_exc()
         results['Exception'] = tb_str
-        data_write(results, f'{basename}_retry_exc.json', dir='.')
+        data_write(results, f'{basename}_retry_exc.json', dir='../test')
     else:
-        data_write(results, f'{basename}_retry.json', dir='.')
+        data_write(results, f'{basename}_retry.json', dir='../test')
 
 
 def test_feedforward_error():

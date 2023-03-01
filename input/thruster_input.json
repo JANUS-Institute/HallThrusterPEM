@@ -1,47 +1,153 @@
 {
     "parameters": {
-        "neutral_velocity_m_s": {"nominal": 300.0, "uncertainty": "uniform_bds", "value": [100, 1000]},
-        "ion_temp_K": {"nominal": 1000.0, "uncertainty": "uniform_bds", "value": [0, 1000]},
-        "cathode_electron_temp_eV": {"nominal": 3.0, "uncertainty": "uniform_bds", "value": [1, 5]},
-        "sheath_loss_coefficient": {"nominal": 0.15, "uncertainty": "uniform_bds", "value": [0.1, 0.3]},
-        "inner_outer_transition_length_m": {"nominal": 0.01, "uncertainty": "uniform_bds", "value": [0.001, 0.02]},
-        "anom_coeff_1": {"nominal": 0.00625, "uncertainty": "lognormal", "value": [-2, 0.25]},
-        "anom_coeff_2": {"nominal": 0.0625, "uncertainty": "normal", "value": [2, 0.25]}
+        "neutral_velocity_m_s": {
+            "nominal": 64.0785,
+            "uncertainty": "uniform_bds",
+            "value": [
+                0,
+                500
+            ]
+        },
+        "ion_temp_K": {
+            "nominal": 1000.0,
+            "uncertainty": "uniform_bds",
+            "value": [
+                0,
+                1000
+            ]
+        },
+        "cathode_electron_temp_eV": {
+            "nominal": 1.99,
+            "uncertainty": "uniform_bds",
+            "value": [
+                1,
+                5
+            ]
+        },
+        "sheath_loss_coefficient": {
+            "nominal": 0.2176,
+            "uncertainty": "uniform_bds",
+            "value": [
+                0.1,
+                0.3
+            ]
+        },
+        "inner_outer_transition_length_m": {
+            "nominal": 0.01093,
+            "uncertainty": "uniform_bds",
+            "value": [
+                0.001,
+                0.02
+            ]
+        },
+        "anom_coeff_1": {
+            "nominal": 0.0077361957,
+            "uncertainty": "lognormal",
+            "value": [
+                -2,
+                0.25
+            ]
+        },
+        "anom_coeff_2_mag_offset": {
+            "nominal": 0.783326,
+            "uncertainty": "normal",
+            "value": [
+                1,
+                0.25
+            ]
+        }
     },
     "design": {
-        "channel_length": {"nominal": 0.025, "uncertainty": "uniform_tol", "value": 0.001},
-        "inner_radius": {"nominal": 0.035, "uncertainty": "uniform_tol", "value": 0.001},
-        "outer_radius": {"nominal": 0.05, "uncertainty": "uniform_tol", "value": 0.001},
-        "wall_material": {"name": "BoronNitride",
-            "a_wall": {"nominal": 0.150, "uncertainty": "none"},
-            "b_wall": {"nominal": 0.549, "uncertainty": "none"},
-            "Gamma_wall": {"nominal": 1.38, "uncertainty": "none"}},
-        "cathode_location_m": {"nominal": 0.08, "uncertainty": "uniform_pct", "value": 0.1}
+        "channel_length": {
+            "nominal": 0.025,
+            "uncertainty": "uniform_tol",
+            "value": 0.001
+        },
+        "inner_radius": {
+            "nominal": 0.035,
+            "uncertainty": "uniform_tol",
+            "value": 0.001
+        },
+        "outer_radius": {
+            "nominal": 0.05,
+            "uncertainty": "uniform_tol",
+            "value": 0.001
+        },
+        "wall_material": {
+            "name": "BoronNitride",
+            "a_wall": {
+                "nominal": 0.15,
+                "uncertainty": "none"
+            },
+            "b_wall": {
+                "nominal": 0.549,
+                "uncertainty": "none"
+            },
+            "Gamma_wall": {
+                "nominal": 1.38,
+                "uncertainty": "none"
+            }
+        },
+        "cathode_location_m": {
+            "nominal": 0.08,
+            "uncertainty": "uniform_pct",
+            "value": 0.1
+        }
     },
     "operating": {
-        "anode_mass_flow_rate": {"nominal": 5e-06, "uncertainty": "uniform_tol", "value": 1e-06},
-        "propellant_material": {"name": "Xenon",
-            "M_prop": {"nominal": 131.293, "uncertainty": "none"},
-            "gamma_prop": {"nominal": 1.667, "uncertainty": "none"}},
-        "anode_potential": {"nominal": 300.0, "uncertainty": "none"},
-        "background_pressure_Torr": {"nominal": 5e-06, "uncertainty": "uniform_pct", "value": 0.1},
-        "background_temperature_K": {"nominal": 300, "uncertainty": "uniform_bds", "value": [100, 300]},
+        "anode_mass_flow_rate": {
+            "nominal": 5e-06,
+            "uncertainty": "uniform_tol",
+            "value": 1e-06
+        },
+        "propellant_material": {
+            "name": "Xenon",
+            "M_prop": {
+                "nominal": 131.293,
+                "uncertainty": "none"
+            },
+            "gamma_prop": {
+                "nominal": 1.667,
+                "uncertainty": "none"
+            }
+        },
+        "anode_potential": {
+            "nominal": 300.0,
+            "uncertainty": "none"
+        },
+        "background_pressure_Torr": {
+            "nominal": 7.02e-05,
+            "uncertainty": "uniform_pct",
+            "value": 0.1
+        },
+        "background_temperature_K": {
+            "nominal": 300.0,
+            "uncertainty": "uniform_bds",
+            "value": [
+                100,
+                300
+            ]
+        },
         "magnetic_field": {
             "magnetic_field_file": "bfield_spt100.csv",
             "uncertainty": "none"
         }
     },
     "coupling": {
-        "cathode_potential": {"nominal": 0.0, "uncertainty": "none"}
+        "cathode_potential": {
+            "nominal": 0.0,
+            "uncertainty": "none"
+        }
     },
     "simulation": {
         "thruster_name": "SPT-100",
-        "num_cells": 100,
-        "dt_s": 2.5e-08,
+        "num_cells": 150,
+        "dt_s": 1.67e-08,
         "duration_s": 0.002,
         "max_charge": 1,
         "num_save": 1000,
-        "flux_function": "global_lax_friedrichs",
+        "time_avg_frame_start": 100,
+        "flux_function": "rusanov",
         "limiter": "van_leer",
         "magnetically_shielded": false,
         "reconstruct": true,
@@ -51,6 +157,13 @@
         "solve_background_neutrals": true
     },
     "other": {
-        "neutral_temp_K": {"nominal": 300.0, "uncertainty": "uniform_bds", "value": [150, 1000]}
+        "neutral_temp_K": {
+            "nominal": 300.0,
+            "uncertainty": "uniform_bds",
+            "value": [
+                150,
+                1000
+            ]
+        }
     }
 }

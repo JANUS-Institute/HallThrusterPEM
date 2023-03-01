@@ -1,7 +1,7 @@
 {
     "parameters": {
         "cathode_electron_temp_eV": {
-            "nominal": 5,
+            "nominal": 1.99,
             "uncertainty": "uniform_bds",
             "value": [
                 1,
@@ -12,12 +12,12 @@
     "design": {},
     "operating": {
         "background_pressure_Torr": {
-            "nominal": 4.06e-06,
+            "nominal": 1e-05,
             "uncertainty": "uniform_pct",
             "value": 0.1
         },
         "background_temperature_K": {
-            "nominal": 300,
+            "nominal": 300.0,
             "uncertainty": "uniform_bds",
             "value": [
                 100,
@@ -25,7 +25,7 @@
             ]
         },
         "anode_potential": {
-            "nominal": 300,
+            "nominal": 300.0,
             "uncertainty": "none"
         }
     },

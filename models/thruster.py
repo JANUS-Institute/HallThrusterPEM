@@ -7,25 +7,28 @@ import json
 import tempfile
 import os
 import juliacall
+import time
 
 Q_E = 1.602176634e-19   # Fundamental charge (C)
 sys.path.append('..')
 logger = logging.getLogger(__name__)
 
-from utils import ModelRunException
+from utils import ModelRunException, data_write
 
 
 def hallthruster_jl_input(thruster_input):
     # Format inputs for Hallthruster.jl
     json_data = dict()
     data_dir = Path('../data/spt100')
+    mag_offset = thruster_input['anom_coeff_2_mag_offset']
+    vAN2 = thruster_input['anom_coeff_1'] * max(1, 10 ** mag_offset)
     json_data['parameters'] = {'neutral_temp_K': thruster_input['neutral_temp_K'],
                                'neutral_velocity_m_s': thruster_input['neutral_velocity_m_s'],
                                'ion_temp_K': thruster_input['ion_temp_K'],
                                'cathode_electron_temp_eV': thruster_input['cathode_electron_temp_eV'],
                                'sheath_loss_coefficient': thruster_input['sheath_loss_coefficient'],
                                'inner_outer_transition_length_m': thruster_input['inner_outer_transition_length_m'],
-                               'anom_model_coeffs': [thruster_input['anom_coeff_1'], thruster_input['anom_coeff_2']],
+                               'anom_model_coeffs': [thruster_input['anom_coeff_1'], vAN2],
                                'background_pressure_Torr': thruster_input['background_pressure_Torr'],
                                'background_temperature_K': thruster_input['background_temperature_K'],
                                }
@@ -56,6 +59,7 @@ def hallthruster_jl_input(thruster_input):
                                'solve_background_neutrals': thruster_input['solve_background_neutrals']
                                }
 
+    data_write(json_data, 'julia_input.json')
     return json_data
 
 
@@ -73,7 +77,15 @@ def hall_thruster_jl_model(thruster_input, jl=None):
         fd = tempfile.NamedTemporaryFile(suffix='.json', encoding='utf-8', mode='w', delete=False)
         json.dump(json_data, fd, ensure_ascii=False, indent=4)
         fd.close()
+
+        # Throw a warning if transition length is too high
+        l_z = json_data['parameters']['inner_outer_transition_length_m']
+        if l_z < 0.001 or l_z > 0.02:
+            logging.warning(f'Transition length l_z = {l_z} m is out of bounds [1mm, 20mm]')
+
+        t1 = time.time()
         sol = jl.HallThruster.run_simulation(fd.name)
+        # logging.info(f'Hallthruster.jl runtime: {time.time() - t1:.2f} s')
         os.unlink(fd.name)   # delete the tempfile
     except juliacall.JuliaError as e:
         raise ModelRunException(f"Julicall error in Hallthruster.jl: {e}")
@@ -84,7 +96,7 @@ def hall_thruster_jl_model(thruster_input, jl=None):
     # Load simulation results
     fd = tempfile.NamedTemporaryFile(suffix='.json', encoding='utf-8', mode='w', delete=False)
     fd.close()
-    jl.HallThruster.write_to_json(fd.name, jl.HallThruster.time_average(sol))
+    jl.HallThruster.write_to_json(fd.name, jl.HallThruster.time_average(sol, thruster_input['time_avg_frame_start']))
     with open(fd.name, 'r') as f:
         thruster_output = json.load(f)
     os.unlink(fd.name)  # delete the tempfile
