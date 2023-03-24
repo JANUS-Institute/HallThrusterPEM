@@ -11,7 +11,6 @@
     },
     "operating": {
         "background_pressure_Torr": {"nominal": 1e-05, "uncertainty": "uniform_pct", "value": 0.1},
-        "background_temperature_K": {"nominal": 300, "uncertainty": "uniform_bds", "value": [100, 300]},
         "anode_potential": {"nominal": 300, "uncertainty": "none"}
     },
     "coupling": {
@@ -22,6 +21,7 @@
 
     },
     "other": {
-        "p_ref": {"nominal": 1e-05, "uncertainty": "none"}
+        "p_ref": {"nominal": 1e-05, "uncertainty": "none"},
+        "background_temperature_K": {"nominal": 300, "uncertainty": "uniform_bds", "value": [280, 320]}
     }
 }

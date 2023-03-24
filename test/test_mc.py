@@ -325,9 +325,8 @@ def test_cc_forward(num_samples, n_jobs=-1):
     for i in range(data.shape[0]):
         x = {'anode_potential': data[i, 1],
              'anode_mass_flow_rate': data[i, 2] * 1e-6,
-             'background_temperature_K': data[i, 3],
-             'background_pressure_Torr': data[i, 4]}
-        y = data[i, 5]
+             'background_pressure_Torr': data[i, 3]}
+        y = data[i, 4]
         var = {'noise_var': 'constant', 'value': (0.3 / 2) ** 2}
         exp_data.append(('cc_voltage', x.copy(), y, var.copy()))
 

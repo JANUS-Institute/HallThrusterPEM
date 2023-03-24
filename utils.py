@@ -302,9 +302,8 @@ def spt100_data(exclude=None):
         for i in range(data.shape[0]):
             x = {'anode_potential': data[i, 1],
                  'anode_mass_flow_rate': data[i, 2]*1e-6,
-                 'background_temperature_K': data[i, 3],
-                 'background_pressure_Torr': data[i, 4]}
-            y = data[i, 5]
+                 'background_pressure_Torr': data[i, 3]}
+            y = data[i, 4]
             var = {'noise_var': 'constant', 'value': (0.3/2)**2}
             exp_data.append(('cc_voltage', x.copy(), y, var.copy()))
 
@@ -312,19 +311,18 @@ def spt100_data(exclude=None):
     if 'thrust' not in exclude:
         # files = [f for f in os.listdir(base_dir) if f.startswith('thrust')]
         files = ['thrust_dataset1.csv', 'thrust_dataset3.csv']
-        data = np.zeros((1, 7))
+        data = np.zeros((1, 6))
         for fname in files:
             thrust_data = np.loadtxt(base_dir / fname, delimiter=',', skiprows=1)
-            thrust_data = np.atleast_2d(thrust_data).reshape((-1, 7))
+            thrust_data = np.atleast_2d(thrust_data).reshape((-1, 6))
             data = np.concatenate((data, thrust_data), axis=0)
         data = data[1:, :]
 
         for i in range(data.shape[0]):
             x = {'anode_potential': data[i, 1],
                  'anode_mass_flow_rate': data[i, 2] * 1e-6,
-                 'background_temperature_K': data[i, 3],
-                 'background_pressure_Torr': data[i, 4]}
-            y = data[i, 5] * 1e-3  # N
+                 'background_pressure_Torr': data[i, 3]}
+            y = data[i, 4] * 1e-3  # N
             var = {'noise_var': 'percent', 'value': 0.9}
             exp_data.append(('thrust', x.copy(), y, var.copy()))
 
@@ -332,24 +330,22 @@ def spt100_data(exclude=None):
     if 'ion_velocity' not in exclude:
         data = np.loadtxt(base_dir / 'ui_dataset5.csv', delimiter=',', skiprows=1)
         Np = 3
-        data = data.reshape((Np, -1, 8))
+        data = data.reshape((Np, -1, 7))
         for i in range(Np):
             x = {'anode_potential': data[i, 0, 1],
                  'anode_mass_flow_rate': data[i, 0, 2] * 1e-6,
-                 'background_temperature_K': data[i, 0, 3],
-                 'background_pressure_Torr': data[i, 0, 4],
-                 'z_m': list(data[i, :, 5])}
-            y = list(data[i, :, 6])
+                 'background_pressure_Torr': data[i, 0, 3],
+                 'z_m': list(data[i, :, 4])}
+            y = list(data[i, :, 5])
             var = {'noise_var': 'constant', 'value': 62500}
             exp_data.append(('axial_ion_velocity', copy.deepcopy(x), y.copy(), var.copy()))
 
         # data = np.loadtxt(base_dir / 'ui_dataset6.csv', delimiter=',', skiprows=1)
         # x = {'anode_potential': data[0, 1],
         #      'anode_mass_flow_rate': data[0, 2] * 1e-6,
-        #      'background_temperature_K': data[0, 3],
-        #      'background_pressure_Torr': data[0, 4],
-        #      'z_m': list(data[:, 5])}
-        # y = list(data[:, 6])
+        #      'background_pressure_Torr': data[0, 3],
+        #      'z_m': list(data[:, 4])}
+        # y = list(data[:, 5])
         # var = {'noise_var': 'constant', 'value': 62500}
         # exp_data.append(('axial_ion_velocity', copy.deepcopy(x), y.copy(), var.copy()))
 
@@ -357,15 +353,14 @@ def spt100_data(exclude=None):
     if 'ion_current_density' not in exclude:
         data = np.loadtxt(base_dir / 'jion_dataset4.csv', delimiter=',', skiprows=1)
         Np = 8
-        data = data.reshape((Np, -1, 9))
+        data = data.reshape((Np, -1, 8))
         for i in range(Np):
             x = {'anode_potential': data[i, 0, 1],
                  'anode_mass_flow_rate': data[i, 0, 2] * 1e-6,
-                 'background_temperature_K': data[i, 0, 3],
-                 'background_pressure_Torr': data[i, 0, 4],
-                 'r_m': list(data[i, :, 5]),
-                 'alpha_deg': list(data[i, :, 6])}
-            y = list(data[i, :, 7] * 10)  # A/m^2
+                 'background_pressure_Torr': data[i, 0, 3],
+                 'r_m': list(data[i, :, 4]),
+                 'alpha_deg': list(data[i, :, 5])}
+            y = list(data[i, :, 6] * 10)  # A/m^2
             var = {'noise_var': 'percent', 'value': 20}
             exp_data.append(('ion_current_density', copy.deepcopy(x), y.copy(), var.copy()))
 

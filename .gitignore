@@ -4,7 +4,7 @@ __pycache__/
 *$py.class
 
 # Custom
-thruster_input.json
+*.pkl
 
 # C extensions
 *.so

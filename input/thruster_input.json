@@ -8,14 +8,6 @@
                 500
             ]
         },
-        "ion_temp_K": {
-            "nominal": 1000.0,
-            "uncertainty": "uniform_bds",
-            "value": [
-                0,
-                1000
-            ]
-        },
         "cathode_electron_temp_eV": {
             "nominal": 1.99,
             "uncertainty": "uniform_bds",
@@ -60,18 +52,15 @@
     "design": {
         "channel_length": {
             "nominal": 0.025,
-            "uncertainty": "uniform_tol",
-            "value": 0.001
+            "uncertainty": "none"
         },
         "inner_radius": {
             "nominal": 0.035,
-            "uncertainty": "uniform_tol",
-            "value": 0.001
+            "uncertainty": "none"
         },
         "outer_radius": {
             "nominal": 0.05,
-            "uncertainty": "uniform_tol",
-            "value": 0.001
+            "uncertainty": "none"
         },
         "wall_material": {
             "name": "BoronNitride",
@@ -120,14 +109,6 @@
             "uncertainty": "uniform_pct",
             "value": 0.1
         },
-        "background_temperature_K": {
-            "nominal": 300.0,
-            "uncertainty": "uniform_bds",
-            "value": [
-                100,
-                300
-            ]
-        },
         "magnetic_field": {
             "magnetic_field_file": "bfield_spt100.csv",
             "uncertainty": "none"
@@ -161,8 +142,24 @@
             "nominal": 300.0,
             "uncertainty": "uniform_bds",
             "value": [
-                150,
-                1000
+                280,
+                320
+            ]
+        },
+        "ion_temp_K": {
+            "nominal": 1000.0,
+            "uncertainty": "uniform_bds",
+            "value": [
+                800,
+                1200
+            ]
+        },
+        "background_temperature_K": {
+            "nominal": 300.0,
+            "uncertainty": "uniform_bds",
+            "value": [
+                280,
+                320
             ]
         }
     }

@@ -16,14 +16,6 @@
             "uncertainty": "uniform_pct",
             "value": 0.1
         },
-        "background_temperature_K": {
-            "nominal": 300.0,
-            "uncertainty": "uniform_bds",
-            "value": [
-                100,
-                300
-            ]
-        },
         "anode_potential": {
             "nominal": 300.0,
             "uncertainty": "none"
@@ -33,6 +25,14 @@
         "p_ref": {
             "nominal": 1e-05,
             "uncertainty": "none"
+        },
+        "background_temperature_K": {
+            "nominal": 300.0,
+            "uncertainty": "uniform_bds",
+            "value": [
+                280,
+                320
+            ]
         }
     }
 }

@@ -66,14 +66,6 @@
             "nominal": 5.51e-05,
             "uncertainty": "uniform_pct",
             "value": 0.1
-        },
-        "background_temperature_K": {
-            "nominal": 300.0,
-            "uncertainty": "uniform_bds",
-            "value": [
-                100,
-                300
-            ]
         }
     },
     "coupling": {
@@ -90,6 +82,14 @@
             "value": [
                 51e-20,
                 58e-20
+            ]
+        },
+        "background_temperature_K": {
+            "nominal": 300.0,
+            "uncertainty": "uniform_bds",
+            "value": [
+                280,
+                320
             ]
         },
         "r_m": {
