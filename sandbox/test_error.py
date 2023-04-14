@@ -73,3 +73,18 @@ if __name__ == '__main__':
 
     # Place whatever result file you want to test in test/ directory
     rerun_model('../results/failures/ff_mc_15_exc_1.22e-05.json')
+
+
+# JUNK local error computation for MF,MD surrogate refinement step (see models.surrogates)
+# theta = 0.5
+# global_idx = node_obj['global_out']
+# fk_j = y_j[:, global_idx]
+# fk_jk = y_jk[:, global_idx]
+# coarse_surr = node_obj['surrogate'].get_sub_surrogate((0,)*len(alpha), (0,)*len(beta))
+# x_coarse = np.concatenate((xtest[:, node_obj['exo_in']], y_jk[:, node_obj['global_in']]), axis=1)
+# fk_coarse = coarse_surr(x_coarse)
+# delta_mu = np.abs(np.nanmean(fk_jk, axis=0, keepdims=True) -
+#                   np.nanmean(fk_j, axis=0, keepdims=True)) / np.abs(fk_coarse)
+# delta_sigma = np.sqrt(np.abs(np.nanvar(fk_jk, axis=0, keepdims=True) -
+#                              np.nanvar(fk_j, axis=0, keepdims=True))) / np.abs(fk_coarse)
+# delta_error = np.nanmax(theta * delta_mu + (1 - theta) * delta_sigma)

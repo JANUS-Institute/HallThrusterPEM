@@ -7,6 +7,7 @@ from matplotlib.pyplot import cycler
 from matplotlib.colors import LinearSegmentedColormap, ListedColormap
 import numpy as np
 from numpy.linalg.linalg import LinAlgError
+from scipy.stats import uniform, norm
 import os
 
 INPUT_DIR = Path(__file__).parent / 'input'
@@ -16,8 +17,63 @@ class ModelRunException(Exception):
     pass
 
 
+class BaseRV:
+    """Small wrapper class for scipy.stats random variables"""
+
+    def __init__(self):
+        """Child classes must define bounds and a scipy.stats distribution"""
+        self.bds = None     # (tuple)
+        self.rv = None      # Frozen distribution from scipy.stats
+
+    def bounds(self):
+        """Return the bounds of the RV"""
+        return self.bds
+
+    def pdf(self, x):
+        """Compute the PDF of the RV at x locations
+        :param x: (...,) np.ndarray of any shape
+        """
+        return self.rv.pdf(x)
+
+    def sample(self, shape):
+        """Draw samples from the RV
+        :param shape: (...,) the shape of the returned samples
+        """
+        return self.rv.rvs(size=shape)
+
+
+class UniformRV(BaseRV):
+
+    def __init__(self, a, b):
+        super().__init__()
+        self.bds = (a, b)
+        self.rv = uniform(loc=a, scale=b-a)
+
+    def update_bounds(self, lb, ub):
+        self.bds = (lb, ub)
+        self.rv = uniform(loc=lb, scale=ub-lb)
+
+
+class NormalRV(BaseRV):
+
+    def __init__(self, mean, std):
+        super().__init__()
+        self.bds = (mean - 4*std, mean + 4*std)
+        self.rv = norm(loc=mean, scale=std)
+
+
+def print_stats(data, logger=None):
+    """Print stats of 1D data"""
+    log_func = print if logger is None else logger.info
+    log_func(f"{'Average': >8} {'Std dev': >8} {'Minimum': >8} {'25 pct': >8} {'50 pct': >8} {'75 pct': >8} "
+             f"{'Maximum': >8}")
+    log_func(f"{np.mean(data): 8.1f} {np.sqrt(np.var(data)): 8.1f} {np.min(data): 8.1f} "
+             f"{np.percentile(data, 25): 8.1f} {np.percentile(data, 50): 8.1f} {np.percentile(data, 75): 8.1f} "
+             f"{np.max(data): 8.1f}")
+
+
 def ax_default(ax, xlabel='', ylabel='', legend=True):
-    """Nice default formatting for plotting"""
+    """Nice default formatting for plotting X-Y data"""
     plt.rcParams["axes.prop_cycle"] = get_cycle("tab10")
     plt.rc('font', family='serif')
     plt.rc('xtick', labelsize='small')

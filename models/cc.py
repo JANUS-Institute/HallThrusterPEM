@@ -1,4 +1,4 @@
-# Module for cathode coupling models
+"""Module for cathode coupling models"""
 
 import math
 import logging

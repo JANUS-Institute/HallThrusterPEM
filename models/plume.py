@@ -1,4 +1,4 @@
-# Module for plume models
+"""Module for plume models"""
 
 import numpy as np
 from scipy.special import erfi

@@ -1,15 +1,12 @@
 import torch
 import torch.nn
-import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
 # import matplotlib; matplotlib.use('TkAgg')
 from matplotlib.animation import FuncAnimation
 import matplotlib.pyplot as plt
 import sys
-import time
-import json
-from scipy.optimize import minimize
+from scipy.optimize import direct
 from scipy.interpolate import BarycentricInterpolator
 import pickle
 
@@ -259,24 +256,37 @@ class Feedforward(torch.nn.Module):
             plt.show()
 
 
-def leja_1d(N, z_pts, z_bds, wt_fcn=None):
+def leja_1d(N, z_bds, z_pts=None, wt_fcn=None):
     """Find the next N points in the leja sequence of z_pts
     :param N: Number of new points to add to the sequence
-    :param z_pts: Current univariate leja sequence (Nz,)
     :param z_bds: Bounds on 1d domain (tuple)
+    :param z_pts: Current univariate leja sequence (Nz,), start at middle of z_bds if None
     :param wt_fcn: Weighting function, uses a constant weight if None, callable as wt_fcn(z)
     """
     if wt_fcn is None:
         wt_fcn = lambda z: 1
+    if z_pts is None:
+        z_pts = (z_bds[1] + z_bds[0]) / 2
+        N = N - 1
     z_pts = np.atleast_1d(z_pts)
 
     for i in range(N):
         obj_fun = lambda z: -wt_fcn(z)*np.prod(np.abs(z-z_pts))
-        z0 = np.random.rand()*(z_bds[1] - z_bds[0]) + z_bds[0]
-        # z0 = (z_bds[0] + z_bds[1]) / 2
-        # z0 = z_bds[0]
-        res = minimize(obj_fun, z0, method='Nelder-Mead', bounds=[z_bds])
+        res = direct(obj_fun, [z_bds])  # Use global DIRECT optimization over 1d domain
         z_star = res.x
+
+        # Plot objective function (for testing)
+        # fig, ax = plt.subplots()
+        # Ng = 100
+        # Nz = z_pts.shape[0]
+        # z_grid = np.linspace(z_bds[0], z_bds[1], Ng)
+        # diff = z_grid.reshape((Ng, 1)) - z_pts.reshape((1, Nz))  # (Ng, Nz)
+        # func = wt_fcn(z_grid) * np.prod(np.abs(diff), axis=1)  # (Ng,)
+        # ax.plot(z_grid, func, '-k', label='Objective')
+        # ax.plot(z_star, -obj_fun(z_star), '*r', markersize=10, label=r'$z^*$')
+        # ax_default(ax, xlabel='z', ylabel='f(z)', legend=True)
+        # plt.show()
+
         z_pts = np.concatenate((z_pts, z_star))
 
     return z_pts
@@ -290,17 +300,6 @@ def chebyshev_1d(N, z_bds):
 # Black-box test function to fit (simple tanh)
 def bb_func(x, A=2, L=1, frac=4):
     return A*np.tanh(2/(L/frac)*(x-L/2)) + A
-
-
-def plot_bb():
-    N = 8
-    h = np.linspace(2, 8, N)
-    x = np.linspace(0, 1, 100)
-    fig, ax = plt.subplots()
-    for i in range(N):
-        ax.plot(x, bb_func(x, frac=h[i]), label=f't={h[i]:.1f}')
-    ax_default(ax, r'$x$', r'$f(x)$', legend=True)
-    plt.show()
 
 
 def test_interp():
@@ -322,7 +321,7 @@ def test_interp():
     # Generate 1d leja/chebyshev sequences
     z0 = np.array([0.2])
     z_bds = (0, 1)
-    N = 20
+    N = 5
     z_leja = leja_1d(N, z0, z_bds)
     y_leja = bb_func(z_leja)
     z_cheb = chebyshev_1d(N, z_bds)

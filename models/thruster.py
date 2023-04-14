@@ -1,4 +1,4 @@
-# Module for thruster models
+"""Module for thruster models"""
 import logging
 import sys
 from pathlib import Path

@@ -1,4 +1,4 @@
-# Combine sub-models
+"""Module for full multidisciplinary Hall thruster PEM"""
 
 import numpy as np
 import sys
