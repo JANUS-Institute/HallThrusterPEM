@@ -12,4 +12,5 @@ dependencies:
       - matplotlib
       - joblib
       - networkx
+      - dill
 prefix: C:\Users\eckel\anaconda3\envs\hall_pem

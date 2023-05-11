@@ -11,7 +11,8 @@ import logging
 sys.path.append('..')
 
 from utils import ax_default, print_stats, UniformRV, NormalRV
-from models.surrogates import SystemSurrogate, ComponentSurrogate, TensorProductInterpolator
+from surrogates.system import SystemSurrogate
+from surrogates.polynomial import LagrangeSurrogate, TensorProductInterpolator
 from models.simple_models import tanh_func, custom_nonlinear, fire_sat_system, fake_pem
 
 FORMATTER = logging.Formatter("%(asctime)s — [%(levelname)s] — %(name)s — %(message)s")
@@ -144,7 +145,7 @@ def test_component():
           ((2,), (1,)), ((2,), (2,))]
     x_vars = [UniformRV(-1, 1)]
     truth_alpha = (15,)
-    comp = ComponentSurrogate(Ik, x_vars, model, truth_alpha)
+    comp = LagrangeSurrogate(Ik, x_vars, model, truth_alpha)
     N = 100
     xg = np.linspace(-1, 1, N).reshape((N, 1))
     yt = model_truth(xg)
@@ -252,11 +253,12 @@ def test_system_surrogate():
     alpha = (15,)
     f1, f2, f3, f = coupled_system(D1, D2, Q1, Q2)
     comp1 = {'name': 'Cathode', 'model': f1, 'truth_alpha': alpha, 'exo_in': list(np.arange(0, D1)),
-             'local_in': {}, 'global_out': list(np.arange(0, Q1))}
+             'local_in': {}, 'global_out': list(np.arange(0, Q1)), 'max_alpha': (5,), 'max_beta': 3}
     comp2 = {'name': 'Thruster', 'model': f2, 'truth_alpha': alpha, 'exo_in': list(np.arange(D1, D1+D2)),
-             'local_in': {'Cathode': list(np.arange(0, Q1))}, 'global_out': list(np.arange(Q1, Q1+Q2))}
-    comp3 = {'name': 'Plume', 'model': f3, 'truth_alpha': alpha, 'exo_in': list(np.arange(0, D1)),
-             'local_in': {'Thruster': list(np.arange(0, Q2))}, 'global_out': [Q1+Q2]}
+             'max_alpha': (5,), 'max_beta': 3, 'local_in': {'Cathode': list(np.arange(0, Q1))},
+             'global_out': list(np.arange(Q1, Q1+Q2))}
+    comp3 = {'name': 'Plume', 'model': f3, 'truth_alpha': alpha, 'exo_in': list(np.arange(0, D1)), 'max_alpha': (5,),
+             'local_in': {'Thruster': list(np.arange(0, Q2))}, 'global_out': [Q1+Q2], 'max_beta': 5}
     components = [comp1, comp2, comp3]
     exo_vars = [UniformRV(0, 1) for i in range(D1+D2)]
     coupling_bds = [(0, 1) for i in range(Q1+Q2+1)]
@@ -281,7 +283,7 @@ def test_system_surrogate():
     ls = ['-r', '--k', ':b']
     pts = np.linspace(0, 1, 100)
     for i in range(3):
-        label_str = f'$\\rho({{y_{{{i+1}}}}})$'
+        label_str = f'$\\rho(y_{{{i+1}}})$'
         kernel = gaussian_kde(y_surr[:, i])
         # ax[i].hist(y_surr[:, i], density=True, bins=20, color='r', edgecolor='black', linewidth=1.2)
         ax.plot(pts, kernel(pts), ls[i], label=label_str)
@@ -303,9 +305,10 @@ def test_feedforward():
         return f1, f2, f
 
     f1, f2, f = coupled_system()
-    comp1 = {'name': 'Model1', 'model': f1, 'truth_alpha': (), 'exo_in': [0], 'local_in': {}, 'global_out': [0]}
-    comp2 = {'name': 'Model2', 'model': f2, 'truth_alpha': (), 'exo_in': [], 'local_in': {'Model1': [0]},
-             'global_out': [1]}
+    comp1 = {'name': 'Model1', 'model': f1, 'truth_alpha': (), 'max_alpha': (), 'max_beta': 3,
+             'exo_in': [0], 'local_in': {}, 'global_out': [0]}
+    comp2 = {'name': 'Model2', 'model': f2, 'truth_alpha': (), 'max_alpha': (), 'max_beta': 3,
+             'exo_in': [], 'local_in': {'Model1': [0]}, 'global_out': [1]}
     exo_vars = [UniformRV(0, 1)]
     coupling_bds = [(0, 1), (0, 1)]
     adj = np.array([[0, 1], [0, 0]], dtype=int)
@@ -370,28 +373,17 @@ def test_lls():
     print(f'Custom time: {t2-t1} s. Scipy time: {t4-t3} s.')
 
 
-def test_fire_sat():
+def test_fire_sat(load=False):
     # Test the fire satellite coupled system from Chaudhuri (2018)
-    f1, f2, f3 = fire_sat_system()
-    orbit = {'name': 'Orbit', 'model': f1, 'truth_alpha': (), 'exo_in': [0, 1], 'local_in': {},
-             'global_out': [0, 1, 2, 3]}
-    power = {'name': 'Power', 'model': f2, 'truth_alpha': (), 'exo_in': [2, 3],
-             'local_in': {'Orbit': [1, 2], 'Attitude': [0]}, 'global_out': [4, 5, 6, 7]}
-    attitude = {'name': 'Attitude', 'model': f3, 'truth_alpha': (), 'exo_in': [0, 3, 4, 5, 6, 7],
-                'local_in': {'Orbit': [0, 3], 'Power': [0, 1]}, 'global_out': [8, 9]}
-    exo_vars = [NormalRV(18e6, 1e6), NormalRV(235e3, 10e3), NormalRV(1000, 50), NormalRV(1400, 20), NormalRV(2, 0.4),
-                NormalRV(0.5, 0.1), NormalRV(2, 0.4), NormalRV(1, 0.2)]
-    coupling_bds = [(2000, 6000), (20000, 60000), (1000, 5000), (0, 4), (0, 12000), (0, 12000), (0, 10000),
-                    (0, 50), (0, 100), (0, 5)]
-    adj = np.zeros((3, 3))
-    adj[0, :] = [0, 1, 1]
-    adj[1, :] = [0, 0, 1]
-    adj[2, :] = [0, 1, 0]
     N = 1000
+    filename = 'fire_sat.pkl'
+    if load:
+        sys = SystemSurrogate.load_from_file(filename)
+    else:
+        sys = fire_sat_system()
+        sys.build_surrogate(max_iter=10, max_tol=1e-3, max_runtime=3600)
+        sys.save_to_file(filename)
 
-    # Build system surrogate and test
-    sys = SystemSurrogate([orbit, power, attitude], adj, exo_vars, coupling_bds, est_bds=500)
-    sys.build_surrogate(max_iter=20, max_tol=1e-3, max_runtime=3600)
     x = sys.sample_exo_inputs((N,))
     logger.info('---Evaluating ground truth system on test set---')
     yt = sys(x, ground_truth=True, verbose=True)
@@ -420,36 +412,38 @@ def test_fire_sat():
     plt.show()
 
     # Now run a 1d sweep over altitude
-    H = np.linspace(17e6, 19e6, 100).reshape((100, 1))
-    phi = np.broadcast_to(235e3, H.shape)
-    Po = np.broadcast_to(1000, H.shape)
-    Fs = np.broadcast_to(1400, H.shape)
-    Lsp = np.broadcast_to(2, H.shape)
-    q = np.broadcast_to(0.5, H.shape)
-    La = np.broadcast_to(2, H.shape)
-    Cd = np.broadcast_to(1, H.shape)
-    x = np.concatenate((H, phi, Po, Fs, Lsp, q, La, Cd), axis=-1)
-    yt = sys(x, ground_truth=True)
-    ysurr = sys(x)
-    fig, ax = plt.subplots(1, 3)
-    ax[0].plot(np.squeeze(H)/1000, yt[:, 0], '-r', label='Truth')
-    ax[0].plot(np.squeeze(H)/1000, ysurr[:, 0], '--k', label='Surrogate')
-    ax_default(ax[0], 'Altitude [km]', 'Satellite velocity [m/s]', legend=True)
-    ax[1].plot(np.squeeze(H) / 1000, yt[:, 6], '-r', label='Truth')
-    ax[1].plot(np.squeeze(H) / 1000, ysurr[:, 6], '--k', label='Surrogate')
-    ax_default(ax[1], 'Altitude [km]', 'Total power output [W]', legend=True)
-    ax[2].plot(np.squeeze(H) / 1000, yt[:, 8], '-r', label='Truth')
-    ax[2].plot(np.squeeze(H) / 1000, ysurr[:, 8], '--k', label='Surrogate')
-    ax_default(ax[2], 'Altitude [km]', 'Attitude control power [W]', legend=True)
-    plt.show()
+    # H = np.linspace(17e6, 19e6, 100).reshape((100, 1))
+    # phi = np.broadcast_to(235e3, H.shape)
+    # Po = np.broadcast_to(1000, H.shape)
+    # Fs = np.broadcast_to(1400, H.shape)
+    # Lsp = np.broadcast_to(2, H.shape)
+    # q = np.broadcast_to(0.5, H.shape)
+    # La = np.broadcast_to(2, H.shape)
+    # Cd = np.broadcast_to(1, H.shape)
+    # x = np.concatenate((H, phi, Po, Fs, Lsp, q, La, Cd), axis=-1)
+    # yt = sys(x, ground_truth=True)
+    # ysurr = sys(x)
+    # fig, ax = plt.subplots(1, 3)
+    # ax[0].plot(np.squeeze(H)/1000, yt[:, 0], '-r', label='Truth')
+    # ax[0].plot(np.squeeze(H)/1000, ysurr[:, 0], '--k', label='Surrogate')
+    # ax_default(ax[0], 'Altitude [km]', 'Satellite velocity [m/s]', legend=True)
+    # ax[1].plot(np.squeeze(H) / 1000, yt[:, 6], '-r', label='Truth')
+    # ax[1].plot(np.squeeze(H) / 1000, ysurr[:, 6], '--k', label='Surrogate')
+    # ax_default(ax[1], 'Altitude [km]', 'Total power output [W]', legend=True)
+    # ax[2].plot(np.squeeze(H) / 1000, yt[:, 8], '-r', label='Truth')
+    # ax[2].plot(np.squeeze(H) / 1000, ysurr[:, 8], '--k', label='Surrogate')
+    # ax_default(ax[2], 'Altitude [km]', 'Attitude control power [W]', legend=True)
+    # plt.show()
 
 
 def test_fpi():
     # Test fixed point iteration implementation against scipy fsolve
     f1 = lambda x, alpha: -x[..., 0:1]**3 + 2 * x[..., 1:2]**2
     f2 = lambda x, alpha: 3*x[..., 0:1]**2 + 4 * x[..., 1:2]**(-2)
-    comp1 = {'name': 'm1', 'model': f1, 'truth_alpha': (), 'exo_in': [0], 'local_in': {'m2': [0]}, 'global_out': [0]}
-    comp2 = {'name': 'm2', 'model': f2, 'truth_alpha': (), 'exo_in': [0], 'local_in': {'m1': [0]}, 'global_out': [1]}
+    comp1 = {'name': 'm1', 'model': f1, 'truth_alpha': (), 'exo_in': [0], 'local_in': {'m2': [0]}, 'global_out': [0],
+             'max_alpha': (), 'max_beta': 5}
+    comp2 = {'name': 'm2', 'model': f2, 'truth_alpha': (), 'exo_in': [0], 'local_in': {'m1': [0]}, 'global_out': [1],
+             'max_alpha': (), 'max_beta': 5}
     exo_vars = [UniformRV(0, 4)]
     coupling_bds = [(1, 10), (1, 10)]
     adj = np.array([[0, 1], [1, 0]], dtype=int)
@@ -550,15 +544,16 @@ def test_system_refine():
         return f1, f2
 
     f1, f2 = coupled_system()
-    comp1 = {'name': 'Model1', 'model': f1, 'truth_alpha': (), 'exo_in': [0], 'local_in': {}, 'global_out': [0]}
+    comp1 = {'name': 'Model1', 'model': f1, 'truth_alpha': (), 'exo_in': [0], 'local_in': {}, 'global_out': [0],
+             'max_beta': 3}
     comp2 = {'name': 'Model2', 'model': f2, 'truth_alpha': (), 'exo_in': [], 'local_in': {'Model1': [0]},
-             'global_out': [1]}
+             'global_out': [1], 'max_beta': 3}
     exo_vars = [UniformRV(0, 1)]
     coupling_bds = [(0, 1), (0, 1)]
     adj = np.array([[0, 1], [0, 0]], dtype=int)
     sys = SystemSurrogate([comp1, comp2], adj, exo_vars, coupling_bds)
 
-    Niter = 5
+    Niter = 7
     x = np.linspace(0, 1, 100).reshape((100, 1))
     y1 = f1(x, ())
     y2 = f2(x, ())
@@ -610,7 +605,7 @@ def test_system_refine():
         ax_default(ax[i, 2], '$z$', '$f_2(f_1(z))$', legend=True)
 
         # Refine the system
-        sys.refine(iter=i+1, qoi_ind=None, N_refine=100)
+        sys.refine(qoi_ind=None, N_refine=100)
 
     fig.set_size_inches(3.5*3, 3.5*Niter)
     fig.tight_layout()
@@ -626,7 +621,7 @@ if __name__ == '__main__':
     # test_lls()
     # test_feedforward()
     # test_system_surrogate()
-    test_fire_sat()
+    test_fire_sat(load=False)
     # test_fpi()
     # test_fake_pem()
     # test_system_refine()

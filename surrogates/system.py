@@ -1,21 +1,23 @@
-"""Module for adaptive multidisciplinary, multi-fidelity surrogate implementation"""
+"""Module for system-level adaptive multidisciplinary, multi-fidelity surrogate implementation"""
 import numpy as np
 import networkx as nx
-from scipy.optimize import direct
 import itertools
-import ast
-import copy
 import sys
+import os
 import time
 import datetime
 import logging
+import dill
+from abc import ABC, abstractmethod
+from datetime import timezone
+from pathlib import Path
 
 sys.path.append('..')
 
 from utils import UniformRV
 
 # Setup logging for the module
-FORMATTER = logging.Formatter("%(asctime)s — [%(levelname)s] — %(name)-36s — %(message)s")
+FORMATTER = logging.Formatter("%(asctime)s \u2014 [%(levelname)s] \u2014 %(name)-36s \u2014 %(message)s")
 handler = logging.StreamHandler(sys.stdout)
 handler.setFormatter(FORMATTER)
 logger = logging.getLogger(__name__)
@@ -25,25 +27,40 @@ logger.addHandler(handler)
 
 class SystemSurrogate:
 
-    def __init__(self, components, adj_matrix, exo_vars, coupling_bds, est_bds=0):
+    def __init__(self, components, adj_matrix, exo_vars, coupling_bds, est_bds=0, log_dir=None):
         """Construct a multidisciplinary system surrogate
-        :param components: list(Nk,) of dicts specifying component name (str), a callable function model(x, alpha),
-                           the highest 'truth' set of model fidelity indices, the global indices of required system
-                           exogenous inputs, a dict specifying the indices of local coupling variable inputs from other
-                           models, and a list() that maps local component outputs to global coupling indices
-                           Ex: [{'name': 'Thruster', 'model': callable(x, alpha), 'truth_alpha': (3,),
-                                         'exo_in': [0, 2, 6...], 'local_in': {'model1': [1,2,3], 'model2': [0]},
-                                         'global_out': [0, 1, 2, 3]},
+        :param components: list(Nk,) of dicts specifying component name (str), a callable function model(x, alpha), a
+                           string specifying surrogate class type, the highest 'truth' set of model fidelity indices,
+                           the maximum level of model fidelity indices, the maximum surrogate refinement level, the
+                           global indices of required system exogenous inputs, a dict specifying the indices of local
+                           coupling variable inputs from other models, and a list() that maps local component outputs
+                           to global coupling indices
+                           Ex: [{'name': 'Thruster', 'model': callable(x, alpha), 'truth_alpha': (3,), 'max_alpha': (3),
+                                         'max_beta': 5, 'exo_in': [0, 2, 6...], 'local_in': {'model1': [1,2,3],
+                                         'model2': [0]}, 'global_out': [0, 1, 2, 3]},
                                 {'name': 'Plume', ...}, ...]
         :param adj_matrix: (Nk, Nk), matrix of 0,1 specifying directed edges from->to for the Nk components
         :param exo_vars: list() of BaseRVs specifying the bounds/distributions for all system-level exogenous inputs
         :param coupling_bds: list() of tuples specifying estimated bounds for all coupling variables
         :param est_bds: (int) number of samples to estimate coupling variable bounds, do nothing if 0
+        :param log_dir: (str) Write log files to this directory if specified
         """
         # Number of components
-        self.logger = logger.getChild(self.__class__.__name__)
+        from surrogates.polynomial import LagrangeSurrogate
         Nk = len(components)
         assert adj_matrix.shape[0] == adj_matrix.shape[1] == Nk
+
+        # Setup logger
+        if log_dir is not None:
+            if not Path(log_dir).is_dir():
+                os.mkdir(Path(log_dir))
+            fname = datetime.datetime.now(tz=timezone.utc).isoformat()
+            fname = fname.split('.')[0].replace(':', '.') + 'UTC_sys.log'
+            f_handler = logging.FileHandler(Path(log_dir) / fname)
+            f_handler.setLevel(logging.DEBUG)
+            f_handler.setFormatter(FORMATTER)
+            logger.addHandler(f_handler)
+        self.logger = logger.getChild(self.__class__.__name__)
 
         # Store system info in a directed graph data structure
         self.graph = nx.DiGraph()
@@ -51,6 +68,7 @@ class SystemSurrogate:
         self.exo_bds = [rv.bounds() for rv in self.exo_vars]
         self.coupling_bds = coupling_bds
         self.adj_matrix = adj_matrix
+        self.refine_level = 0
 
         # Construct graph nodes
         for k in range(Nk):
@@ -64,8 +82,16 @@ class SystemSurrogate:
             global_idx = sorted(global_idx)
 
             # Initialize a component surrogate (assume uniform dist for coupling vars)
+            surr_type = comp_dict.get('type', 'lagrange')
+            surr_class = None
+            match surr_type:
+                case 'lagrange':
+                    surr_class = LagrangeSurrogate
+                case other:
+                    raise NotImplementedError(f"Surrogate type '{surr_type}' is not known at this time")
             x_vars = [self.exo_vars[i] for i in comp_dict['exo_in']] + [UniformRV(*coupling_bds[i]) for i in global_idx]
-            surr = ComponentSurrogate([], x_vars, comp_dict['model'], comp_dict['truth_alpha'])
+            surr = surr_class([], x_vars, comp_dict['model'], comp_dict['truth_alpha'],
+                              max_alpha=comp_dict.get('max_alpha', None), max_beta=comp_dict.get('max_beta', 5))
 
             # Add the component as a str() node, with attributes specifying details of the surrogate
             self.graph.add_node(comp_dict['name'], exo_in=comp_dict['exo_in'], local_in=comp_dict['local_in'],
@@ -101,13 +127,16 @@ class SystemSurrogate:
         :param max_tol: the max allowable value in normalized RMSE to achieve (in units of 'pct of QoI mean')
         :param max_runtime: the maximum wall clock time (s) to run refinement for (will go until all models finish)
         """
-        iter = 1
+        i = 0
         curr_error = np.inf
         t_start = time.time()
         while True:
             # Check all end conditions
-            if iter >= max_iter:
-                self.print_title_str(f'Termination criteria reached: Max iteration {iter}/{max_iter}')
+            if i >= max_iter:
+                self.print_title_str(f'Termination criteria reached: Max iteration {i}/{max_iter}')
+                break
+            if curr_error == -np.inf:
+                self.print_title_str(f'Termination criteria reached: No candidates left to refine')
                 break
             if curr_error < max_tol:
                 self.print_title_str(f'Termination criteria reached: error {curr_error} < tol {max_tol}')
@@ -118,16 +147,16 @@ class SystemSurrogate:
                 self.print_title_str(f'Termination criteria reached: runtime {str(actual)} > {str(target)}')
                 break
 
-            curr_error = self.refine(iter=iter, qoi_ind=qoi_ind, N_refine=N_refine)
-            iter += 1
+            curr_error = self.refine(qoi_ind=qoi_ind, N_refine=N_refine)
+            time.sleep(5)
+            i += 1
 
-    def refine(self, iter=1, qoi_ind=None, N_refine=100):
+    def refine(self, qoi_ind=None, N_refine=100):
         """Find and refine the component surrogate with the largest error on system QoI
-        :param iter: current iteration number to print to console
         :param qoi_ind: list(), Indices of system QoI to focus surrogate refinement on, use all QoI if not specified
         :param N_refine: number of samples of exogenous inputs to compute error indicators on
         """
-        self.print_title_str(f'Refining system surrogate: iteration {iter}')
+        self.print_title_str(f'Refining system surrogate: iteration {self.refine_level}')
         if qoi_ind is None:
             qoi_ind = slice(None)
 
@@ -168,9 +197,11 @@ class SystemSurrogate:
         beta_star = None
         for node, node_obj in self.graph.nodes.items():
             self.logger.info(f"Estimating error for component '{node}'...")
+            no_cand_flag = True
             for alpha, beta in node_obj['surrogate'].iterate_candidates():
                 # Compute errors, ignoring NaN samples that may have resulted from bad FPI
                 delta_error = None
+                no_cand_flag = False
                 if local_estimate:
                     # Use a local estimate of error to avoid initialization issues with system QoI
                     comp_input = np.concatenate((xtest[:, node_obj['exo_in']], x_couple[:, node_obj['global_in']]),
@@ -201,14 +232,21 @@ class SystemSurrogate:
                     alpha_star = alpha
                     beta_star = beta
 
+            if no_cand_flag:
+                self.logger.info(f"Component '{node}' has no available candidates left!")
+
         # Update all coupling variable ranges
         if not local_estimate:
             for i in range(y_curr.shape[-1]):
                 self.update_coupling_bds(i, (y_min[0, i], y_max[0, i]))
 
         # Add the chosen multi-index to the chosen component
-        self.logger.info(f"Candidate multi-index {(alpha_star, beta_star)} chosen for component '{node_star}'")
-        self.graph.nodes[node_star]['surrogate'].move_to_active_set(alpha_star, beta_star)
+        if node_star is not None:
+            self.logger.info(f"Candidate multi-index {(alpha_star, beta_star)} chosen for component '{node_star}'")
+            self.graph.nodes[node_star]['surrogate'].move_to_active_set(alpha_star, beta_star)
+            self.refine_level += 1
+        else:
+            self.logger.info(f"No candidates left for refinement, iteration: {self.refine_level}")
 
         return nrmse_max  # Probably a more intuitive metric for setting tolerances
 
@@ -420,6 +458,17 @@ class SystemSurrogate:
         """Quick wrapper to log an important message"""
         self.logger.info('-' * int(len(title_str)/2) + title_str + '-' * int(len(title_str)/2))
 
+    def save_to_file(self, filename):
+        with open(filename, 'wb') as dill_file:
+            dill.dump(self, dill_file)
+
+    @staticmethod
+    def load_from_file(filename):
+        with open(filename, 'rb') as dill_file:
+            sys = dill.load(dill_file)
+
+        return sys
+
     @staticmethod
     def constrained_lls(A, b, C, d):
         """Minimize ||Ax-b||_2, subject to Cx=d
@@ -444,16 +493,18 @@ class SystemSurrogate:
         return np.linalg.pinv(R) @ (Q1_T @ b - Q2_T @ w)
 
 
-class ComponentSurrogate:
-    """Multi-index stochastic collocation (MISC) surrogate for a component model"""
+class ComponentSurrogate(ABC):
+    """Multi-index stochastic collocation (MISC) surrogate abstract class for a component model"""
 
-    def __init__(self, multi_index, x_vars, model, truth_alpha):
+    def __init__(self, multi_index, x_vars, model, truth_alpha, max_alpha=None, max_beta=5):
         """Construct the MISC surrogate from a multi-index
         :param multi_index: [((alpha1), (beta1)), ... ] List of concatenated multi-indices alpha, beta specifying
                             model and surrogate fidelity
         :param x_vars: [X1, X2, ...] list of BaseRV() objects specifying bounds/pdfs for each input x
         :param model: The function to approximate, callable as y = model(x, alpha)
         :param truth_alpha: tuple() specifying the highest model fidelity indices necessary for a 'truth' comparison
+        :param max_alpha: tuple(), the maximum model refinement indices to allow
+        :param max_beta: (int), the maximum surrogate refinement level in any one input dimension
         """
         self.logger = logger.getChild(self.__class__.__name__)
         assert self.is_downward_closed(multi_index), 'Must be a downward closed set.'
@@ -467,6 +518,8 @@ class ComponentSurrogate:
         self.ydim = None
         self.ij = None
         self.index_mat = None
+        max_alpha = (3,)*len(truth_alpha) if max_alpha is None else max_alpha
+        self.max_refine = list(max_alpha + (max_beta,)*len(self.x_vars))    # Max refinement indices
 
         # Construct vectors of [0,1]^dim(alpha+beta), used for combination coefficients
         Nij = len(truth_alpha) + len(self.x_vars)
@@ -481,8 +534,6 @@ class ComponentSurrogate:
         self.surrogates = dict()        # Maps alphas -> betas -> surrogates
         self.costs = dict()             # Maps alphas -> betas -> wall clock run times
         self.alpha_models = dict()      # Maps alphas -> models
-        self.max_beta = dict()          # Maps alphas -> max beta refinement indices
-        self.x_grids = dict()           # Maps alphas -> list of ndarrays specifying 1d grids corresponding to max_beta
 
         # Initialize any indices that were passed in
         for alpha, beta in multi_index:
@@ -510,6 +561,10 @@ class ComponentSurrogate:
             ind_new = ind.copy()
             ind_new[i] += 1
 
+            # Don't add if we surpass a refinement limit
+            if np.any(np.array(ind_new) > np.array(self.max_refine)):
+                continue
+
             # Add the new index if it maintains downward-closedness
             down_closed = True
             for j in range(len(ind)):
@@ -524,7 +579,7 @@ class ComponentSurrogate:
                 self.add_surrogate(tuple(ind_new[:len(alpha)]), tuple(ind_new[len(alpha):]))
 
     def add_surrogate(self, alpha, beta):
-        """Add a TensorProductInterpolator surrogate to candidate set for a given alpha, beta index
+        """Add a BaseInterpolator to candidate set for a given alpha, beta index
         :param alpha: A multi-index (tuple) specifying model fidelity
         :param beta: A multi-index (tuple) specifying surrogate fidelity
         """
@@ -545,67 +600,11 @@ class ComponentSurrogate:
             self.surrogates[str(alpha)] = dict()
             self.costs[str(alpha)] = dict()
 
-        # Create a new surrogate for the base index (0, 0, ...)
-        if np.sum(beta) == 0:
-            interp = TensorProductInterpolator(list(beta), self.x_vars, model=self.alpha_models[str(alpha)])
-            interp.set_yi()
-            self.surrogates[str(alpha)][str(beta)] = interp
-            self.costs[str(alpha)][str(beta)] = interp.wall_time * interp.xi.shape[0]
-            self.max_beta[str(alpha)] = list(beta)
-            self.x_grids[str(alpha)] = copy.deepcopy(interp.x_grids)
-            self.ydim = interp.yi.shape[-1]
-            return
-        # Otherwise, all other indices are a refinement of previous grids
-
-        # Look for multi-index neighbors that are one level of refinement away
-        neighbors = []
-        for beta_old_str in self.surrogates[str(alpha)]:
-            beta_old = ast.literal_eval(beta_old_str)
-            if self.is_one_level_refinement(beta_old, beta):
-                idx_refine = int(np.nonzero(np.array(beta, dtype=int) - np.array(beta_old, dtype=int))[0])
-                refine_level = beta[idx_refine]
-                if refine_level > self.max_beta[str(alpha)][idx_refine]:
-                    # Generate next refinement grid and save (refine_tup = tuple(x_new_idx, x_new, interp))
-                    refine_tup = self.surrogates[str(alpha)][beta_old_str].refine(list(beta), manual=True)
-                    self.max_beta[str(alpha)][idx_refine] = refine_level
-                    self.x_grids[str(alpha)][idx_refine] = copy.deepcopy(refine_tup[2].x_grids[idx_refine])
-                    neighbors.append(refine_tup)
-                else:
-                    # Access the refinement grid from memory (it is already computed)
-                    num_pts = self.surrogates[str(alpha)][beta_old_str].get_grid_sizes(beta)[idx_refine]
-                    x_refine = self.x_grids[str(alpha)][idx_refine][:num_pts]
-                    refine_tup = self.surrogates[str(alpha)][beta_old_str].refine(list(beta), x_refine=x_refine,
-                                                                                  manual=True)
-                    neighbors.append(refine_tup)
-
-        if len(neighbors) > 1:
-            xi = neighbors[0][2].xi
-            for n in neighbors[1:]:
-                diff = xi - n[2].xi
-                if not np.isclose(np.max(diff), 0):
-                    raise Exception("Buh oh, you just can't figure it out can ya")
-
-        # Refine the neighbor with the fewest new points (and merge pre-computed points from other neighbors)
-        min_idx = np.argmin([len(neighbor[0]) for neighbor in neighbors])
-        x_new_idx, x_new, interp = neighbors.pop(min_idx)
-        del_idx = []
-        for neighbor in neighbors:
-            for i, interp_idx in enumerate(x_new_idx):
-                # If a neighbor's new index list doesn't have an index, then the neighbor has already computed it
-                if interp_idx not in neighbor[0] and i not in del_idx:
-                    # Assume the exact same interpolation indexing for all neighbors (true for tensor product grids)
-                    interp.yi[interp_idx, :] = neighbor[2].yi[interp_idx, :]
-                    del_idx.append(i)
-        x_new_idx = list(np.delete(x_new_idx, del_idx))
-        x_new = np.delete(x_new, del_idx, axis=0)
-
-        # Compute the model outputs at all remaining refinement points
-        y_new = self.alpha_models[str(alpha)](x_new)  # (N_new, ydim)
-        for j in range(y_new.shape[0]):
-            interp.yi[x_new_idx[j], :] = y_new[j, :]
-
+        # Create a new interpolator object for this multi-index (abstract method)
+        interp, cost = self.add_interpolator(alpha, beta)
         self.surrogates[str(alpha)][str(beta)] = interp
-        self.costs[str(alpha)][str(beta)] = interp.wall_time * len(x_new_idx)
+        self.costs[str(alpha)][str(beta)] = cost
+        self.ydim = interp.get_ydim()
 
     def iterate_candidates(self):
         """Iterate candidate indices one by one into the active index set
@@ -721,154 +720,50 @@ class ComponentSurrogate:
                     return False
         return True
 
+    @abstractmethod
+    def add_interpolator(self, alpha, beta):
+        """Return a BaseInterpolator object and the wall time cost for a given alpha, beta index
+        :param alpha: A multi-index (tuple) specifying model fidelity
+        :param beta: A multi-index (tuple) specifying surrogate fidelity
+        :returns interp, cost: the BaseInterpolator object and the wall time (s) required to construct it
+        """
+        pass
 
-class TensorProductInterpolator:
-    """Tensor-product (multivariate) Lagrange barycentric interpolator"""
 
-    def __init__(self, beta, x_vars, yi=None, model=None, init_weights=True):
+class BaseInterpolator(ABC):
+    """Base interpolator abstract class"""
+
+    def __init__(self, beta, x_vars, xi=None, yi=None, model=None):
         """Construct the interpolator
-        :param beta: list(), discretization level in each dimension of xdim
+        :param beta: list(), refinement level in each dimension of xdim
         :param x_vars: list() of BaseRV() objects specifying bounds/pdfs for each input x
-        :param yi: the interpolation qoi values, y = (prod(xdims), ydim)
+        :param xi: (Nx, xdim) interpolation points
+        :param yi: the interpolation qoi values, y = (Nx, ydim)
         :param model: Callable as y = model(x), with x = (..., xdim), y = (..., ydim)
-        :param init_weights: Whether to compute leja sequences and barycentric weights
         """
         self.logger = logger.getChild(self.__class__.__name__)
         self._model = model
-        self.xi = None                                      # Interpolation points
+        self.xi = xi                                        # Interpolation points
         self.yi = yi                                        # Function values at interpolation points
-        self.beta = beta                                    # Grid refinement level indices
+        self.beta = beta                                    # Refinement level indices
         self.x_vars = x_vars                                # BaseRV() objects for each input
         self.x_bds = [rv.bounds() for rv in self.x_vars]    # Bounds on inputs
-        self.weights = []                                   # Barycentric weights for each dimension
-        self.x_grids = []                                   # Univariate leja sequences
-        self.j = None                                       # Cartesian product of all possible refinement indices
         self.wall_time = 1                                  # Wall time to evaluate model (s)
         self.xdim = len(self.x_vars)
         assert len(beta) == self.xdim
-
-        if init_weights:
-            # Construct 1d univariate Leja sequences in each dimension
-            grid_sizes = self.get_grid_sizes(self.beta)
-            self.x_grids = [self.leja_1d(grid_sizes[n], self.x_bds[n], wt_fcn=self.x_vars[n].pdf)
-                            for n in range(self.xdim)]
-
-            # Cartesian product of univariate grids
-            self.xi = np.zeros((np.prod(grid_sizes), self.xdim))
-            for i, ele in enumerate(itertools.product(*self.x_grids)):
-                self.xi[i, :] = ele
-
-            # Compute 1d barycentric weights for each grid
-            for n in range(self.xdim):
-                Nx = grid_sizes[n]
-                bds = self.x_bds[n]
-                grid = self.x_grids[n]
-                C = (bds[1] - bds[0]) / 4.0     # Interval capacity (see Berrut and Trefethen 2004)
-                xj = grid.reshape((Nx, 1))
-                xi = grid.reshape((1, Nx))
-                dist = (xj - xi) / C
-                np.fill_diagonal(dist, 1)       # Ignore product when i==j
-                self.weights.append(1.0 / np.prod(dist, axis=1))  # (Nx,)
-
-            # Construct the multi-indices self.j = [0,...0] --> [Nx, Ny, ...]
-            self.j = np.zeros((np.prod(grid_sizes), self.xdim), dtype=int)
-            indices = [np.arange(grid_sizes[n]) for n in range(self.xdim)]
-            for i, ele in enumerate(itertools.product(*indices)):
-                self.j[i, :] = ele
 
     def update_input_bds(self, idx, bds):
         """Update the input bounds at the given index (assume a uniform RV)"""
         self.x_vars[idx].update_bounds(*bds)
         self.x_bds[idx] = bds
 
-    def refine(self, beta, x_refine=None, manual=False):
-        """Return a new interpolator with one dimension refined by one level, specified by beta
-        :param beta: list(), The new refinement level, should only refine one dimension
-        :param x_refine: (Nx,) use this array as the refined 1d grid if provided, otherwise compute via leja_1d
-        :param manual: whether to manually compute model at refinement points
-        :return interp: a TensorProductInterpolator with a refined grid
-             or x_new_idx, x_new, interp: where x_new are the newly refined interpolation points (N_new, xdim) and
-                                          x_new_idx is the list of indices of these points into interp.xi and interp.yi,
-                                          Would use this if you did not provide a callable model to the Interpolator or
-                                          you want to manually set yi for each new xi outside this function
-        """
-        # Initialize a new interpolant with the new refinement levels
-        interp = TensorProductInterpolator(beta, self.x_vars, model=self._model, init_weights=False)
-
-        # Find the dimension and number of new points to add
-        old_grid_sizes = self.get_grid_sizes(self.beta)
-        new_grid_sizes = interp.get_grid_sizes(beta)
-        dim_refine = 0
-        num_new_pts = 0
-        for idx, grid_size in enumerate(new_grid_sizes):
-            if grid_size != old_grid_sizes[idx]:
-                dim_refine = idx
-                num_new_pts = grid_size - old_grid_sizes[idx]
-                break
-
-        # Add points to leja grid in this dimension
-        interp.x_grids = copy.deepcopy(self.x_grids)
-        interp.weights = copy.deepcopy(self.weights)
-        xi = copy.deepcopy(x_refine) if x_refine is not None else self.leja_1d(num_new_pts, interp.x_bds[dim_refine],
-                                                                               z_pts=interp.x_grids[dim_refine],
-                                                                               wt_fcn=interp.x_vars[dim_refine].pdf)
-        interp.x_grids[dim_refine] = xi
-
-        # Update barycentric weights in this dimension
-        Nx_old = old_grid_sizes[dim_refine]
-        Nx_new = new_grid_sizes[dim_refine]
-        old_wts = copy.deepcopy(self.weights[dim_refine])
-        new_wts = np.zeros(Nx_new)
-        new_wts[:Nx_old] = old_wts
-        bds = interp.x_bds[dim_refine]
-        C = (bds[1] - bds[0]) / 4.0        # Interval capacity
-        for j in range(Nx_old, Nx_new):
-            new_wts[:j] *= (C / (xi[:j] - xi[j]))
-            new_wts[j] = np.prod(C / (xi[j] - xi[:j]))
-        interp.weights[dim_refine] = new_wts
-
-        # Re-construct the multi-indices interp.j = [0,...0] --> [Nx, Ny, ...]
-        interp.j = np.zeros((np.prod(new_grid_sizes), self.xdim), dtype=int)
-        indices = [np.arange(new_grid_sizes[n]) for n in range(self.xdim)]
-        for i, ele in enumerate(itertools.product(*indices)):
-            interp.j[i, :] = ele
-
-        # Copy yi over at existing interpolation points
-        x_new = np.zeros((0, interp.xdim))
-        x_new_idx = []
-        tol = 1e-12     # Tolerance for floating point comparison
-        j = 0           # Use this idx for iterating over existing yi
-        interp.xi = np.zeros((np.prod(new_grid_sizes), interp.xdim))
-        interp.yi = np.zeros((np.prod(new_grid_sizes), self.yi.shape[-1]))
-        for i, ele in enumerate(itertools.product(*interp.x_grids)):
-            interp.xi[i, :] = ele
-            if j < self.xi.shape[0] and np.all(np.abs(self.xi[j, :] - interp.xi[i, :]) < tol):
-                # If we already have this interpolation point
-                interp.yi[i, :] = self.yi[j, :]
-                j += 1
-            else:
-                # Otherwise, save new interpolation point and its index
-                x_new = np.concatenate((x_new, interp.xi[i, :].reshape((1, self.xdim))))
-                x_new_idx.append(i)
-
-        # Evaluate the model at new interpolation points
-        interp.wall_time = self.wall_time
-        if self._model is None:
-            self.logger.warning(f'No model available to evaluate new interpolation points, returning the points '
-                                f'to you instead...')
-            return x_new_idx, x_new, interp
-        elif manual:
-            return x_new_idx, x_new, interp
-        else:
-            y_new = self._model(x_new)  # (N_new, ydim)
-            for j in range(y_new.shape[0]):
-                interp.yi[x_new_idx[j], :] = y_new[j, :]
-
-            return interp
+    def get_ydim(self):
+        """Get the dimension of the outputs"""
+        return self.yi.shape[-1] if self.yi is not None else None
 
     def set_yi(self, yi=None, model=None):
         """Set the interpolation point qois, if yi is none then compute yi=model(self.xi)
-        :param yi: (prod(xdims), ydim) must match dimension of tensor product grid self.xi
+        :param yi: (Nx, ydim) must match dimension of self.xi
         :param model: Callable as y = model(x), with x = (..., xdim), y = (..., ydim)
         """
         if model is not None:
@@ -884,72 +779,23 @@ class TensorProductInterpolator:
         else:
             self.yi = yi
 
+    @abstractmethod
+    def refine(self, beta, manual=False):
+        """Return a new interpolator with one dimension refined by one level, specified by beta
+        :param beta: list(), The new refinement level, should only refine one dimension
+        :param manual: whether to manually compute model at refinement points
+        :return interp: a refined BaseInterpolator object
+             or x_new_idx, x_new, interp: where x_new are the newly refined interpolation points (N_new, xdim) and
+                                          x_new_idx is the list of indices of these points into interp.xi and interp.yi,
+                                          Would use this if you did not provide a callable model to the Interpolator or
+                                          you want to manually set yi for each new xi outside this function
+        """
+        pass
+
+    @abstractmethod
     def __call__(self, x):
         """Evaluate the interpolation at points x
         :param x: (..., xdim) the points to be interpolated, must be within domain of self.xi
         :returns y: (..., ydim) the interpolated value of the qois
         """
-        # Loop over multi-indices and compute tensor-product lagrange polynomials
-        grid_sizes = self.get_grid_sizes(self.beta)
-        ydim = self.yi.shape[-1]
-        y = np.zeros(x.shape[:-1] + (ydim,))    # (..., ydim)
-        for i in range(np.prod(grid_sizes)):
-            L_j = np.zeros(x.shape)             # (..., xdim)
-
-            # Compute univariate Lagrange polynomials in each dimension
-            for n in range(self.xdim):
-                j_n = self.j[i, n]
-                x_n = x[..., n, np.newaxis]     # (..., 1)
-
-                # Expand axes of interpolation points and weights to match x
-                shape = (1,)*len(x_n.shape[:-1]) + (grid_sizes[n],)
-                x_j = self.x_grids[n].reshape(shape)  # (1...,Nx)
-                w_j = self.weights[n].reshape(shape)  # (1...,Nx)
-
-                # Compute the jth Lagrange basis polynomial L_j(x_n) for this x dimension (in barycentric form)
-                c = x_n - x_j
-                div_zero_idx = np.isclose(c, 0)     # Track where x is approx equal to an interpolation point x_j
-                c[div_zero_idx] = 1                 # Temporarily set to 1 to avoid divide by zero error
-                c = w_j / c
-                L_j[..., n] = c[..., j_n] / np.sum(c, axis=-1)  # (...) same size as original x
-                j_mask = np.full(div_zero_idx.shape, False)
-                j_mask[..., j_n] = True
-                L_j[np.any(div_zero_idx & j_mask, axis=-1), n] = 1      # Set L_j(x==x_j)=1 for the current j
-                L_j[np.any(div_zero_idx & ~j_mask, axis=-1), n] = 0     # Set L_j(x==x_j)=0 for x_j = x_i, i != j
-
-            # Add multivariate basis polynomial contribution to interpolation output
-            shape = (1,)*len(x.shape[:-1]) + (ydim,)
-            yi = self.yi[i, :].reshape(shape)                   # (1..., ydim)
-            L_j = np.prod(L_j, axis=-1)[..., np.newaxis]        # (..., 1)
-            y += L_j * yi
-
-        return y
-
-    @staticmethod
-    def get_grid_sizes(beta):
-        """Compute number of grid points in each dimension"""
-        return [2*beta[i] + 1 for i in range(len(beta))]
-
-    @staticmethod
-    def leja_1d(N, z_bds, z_pts=None, wt_fcn=None):
-        """Find the next N points in the Leja sequence of z_pts
-        :param N: Number of new points to add to the sequence
-        :param z_bds: Bounds on 1d domain (tuple)
-        :param z_pts: Current univariate leja sequence (Nz,), start at middle of z_bds if None
-        :param wt_fcn: Weighting function, uses a constant weight if None, callable as wt_fcn(z)
-        """
-        if wt_fcn is None:
-            wt_fcn = lambda z: 1
-        if z_pts is None:
-            z_pts = (z_bds[1] + z_bds[0]) / 2
-            N = N - 1
-        z_pts = np.atleast_1d(z_pts)
-
-        # Construct leja sequence by maximizing the objective sequentially
-        for i in range(N):
-            obj_fun = lambda z: -wt_fcn(z) * np.prod(np.abs(z - z_pts))
-            res = direct(obj_fun, [z_bds])  # Use global DIRECT optimization over 1d domain
-            z_star = res.x
-            z_pts = np.concatenate((z_pts, z_star))
-
-        return z_pts
+        pass

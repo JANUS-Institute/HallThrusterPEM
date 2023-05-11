@@ -1,5 +1,11 @@
 """Module for simple algebraic models for testing purposes"""
 import numpy as np
+import sys
+
+sys.path.append('..')
+
+from utils import NormalRV
+from surrogates.system import SystemSurrogate
 
 
 def custom_nonlinear(x, env_var=0.1**2, wavelength=0.5, wave_amp=0.1, tanh_amp=0.5, L=1, t=0.25):
@@ -127,7 +133,23 @@ def fire_sat_system():
         y = np.concatenate((Pacs, tau_tot), axis=-1)
         return y
 
-    return orbit_fun, power_fun, attitude_fun
+    orbit = {'name': 'Orbit', 'model': orbit_fun, 'truth_alpha': (), 'exo_in': [0, 1], 'local_in': {},
+             'global_out': [0, 1, 2, 3], 'max_alpha': (), 'max_beta': 3, 'type': 'lagrange'}
+    power = {'name': 'Power', 'model': power_fun, 'truth_alpha': (), 'exo_in': [2, 3], 'max_alpha': (), 'max_beta': 3,
+             'local_in': {'Orbit': [1, 2], 'Attitude': [0]}, 'global_out': [4, 5, 6, 7], 'type': 'lagrange'}
+    attitude = {'name': 'Attitude', 'model': attitude_fun, 'truth_alpha': (), 'exo_in': [0, 3, 4, 5, 6, 7],
+                'max_alpha': (), 'local_in': {'Orbit': [0, 3], 'Power': [0, 1]}, 'global_out': [8, 9], 'max_beta': 3,
+                'type': 'lagrange'}
+    exo_vars = [NormalRV(18e6, 1e6), NormalRV(235e3, 10e3), NormalRV(1000, 50), NormalRV(1400, 20), NormalRV(2, 0.4),
+                NormalRV(0.5, 0.1), NormalRV(2, 0.4), NormalRV(1, 0.2)]
+    coupling_bds = [(2000, 6000), (20000, 60000), (1000, 5000), (0, 4), (0, 12000), (0, 12000), (0, 10000),
+                    (0, 50), (0, 100), (0, 5)]
+    adj = np.zeros((3, 3))
+    adj[0, :] = [0, 1, 1]
+    adj[1, :] = [0, 0, 1]
+    adj[2, :] = [0, 1, 0]
+    sys = SystemSurrogate([orbit, power, attitude], adj, exo_vars, coupling_bds, est_bds=500, log_dir='logs')
+    return sys
 
 
 def fake_pem():
