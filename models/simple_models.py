@@ -140,15 +140,17 @@ def fire_sat_system():
     attitude = {'name': 'Attitude', 'model': attitude_fun, 'truth_alpha': (), 'exo_in': [0, 3, 4, 5, 6, 7],
                 'max_alpha': (), 'local_in': {'Orbit': [0, 3], 'Power': [0, 1]}, 'global_out': [8, 9], 'max_beta': 3,
                 'type': 'lagrange'}
-    exo_vars = [NormalRV(18e6, 1e6), NormalRV(235e3, 10e3), NormalRV(1000, 50), NormalRV(1400, 20), NormalRV(2, 0.4),
-                NormalRV(0.5, 0.1), NormalRV(2, 0.4), NormalRV(1, 0.2)]
+    exo_vars = [NormalRV(18e6, 1e6, 'H'), NormalRV(235e3, 10e3, '\u03D5'), NormalRV(1000, 50, 'Po'),
+                NormalRV(1400, 20, 'Fs'), NormalRV(2, 0.4, 'Lsp'), NormalRV(0.5, 0.1, 'q'), NormalRV(2, 0.4, 'La'),
+                NormalRV(1, 0.2, 'Cd')]
     coupling_bds = [(2000, 6000), (20000, 60000), (1000, 5000), (0, 4), (0, 12000), (0, 12000), (0, 10000),
                     (0, 50), (0, 100), (0, 5)]
     adj = np.zeros((3, 3))
     adj[0, :] = [0, 1, 1]
     adj[1, :] = [0, 0, 1]
     adj[2, :] = [0, 1, 0]
-    sys = SystemSurrogate([orbit, power, attitude], adj, exo_vars, coupling_bds, est_bds=500, log_dir='logs')
+    sys = SystemSurrogate([orbit, power, attitude], adj, exo_vars, coupling_bds, est_bds=500, log_dir='logs',
+                          save_dir='save')
     return sys
 
 

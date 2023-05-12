@@ -6,6 +6,7 @@ import sys
 import os
 import time
 import datetime
+import functools
 import logging
 import dill
 from abc import ABC, abstractmethod
@@ -27,7 +28,7 @@ logger.addHandler(handler)
 
 class SystemSurrogate:
 
-    def __init__(self, components, adj_matrix, exo_vars, coupling_bds, est_bds=0, log_dir=None):
+    def __init__(self, components, adj_matrix, exo_vars, coupling_bds, est_bds=0, log_dir=None, save_dir='.'):
         """Construct a multidisciplinary system surrogate
         :param components: list(Nk,) of dicts specifying component name (str), a callable function model(x, alpha), a
                            string specifying surrogate class type, the highest 'truth' set of model fidelity indices,
@@ -43,12 +44,18 @@ class SystemSurrogate:
         :param exo_vars: list() of BaseRVs specifying the bounds/distributions for all system-level exogenous inputs
         :param coupling_bds: list() of tuples specifying estimated bounds for all coupling variables
         :param est_bds: (int) number of samples to estimate coupling variable bounds, do nothing if 0
-        :param log_dir: (str) Write log files to this directory if specified
+        :param log_dir: (str) write log files to this directory if specified
+        :param save_dir: (str) directory to save .pkl files during refinement containing the SystemSurrogate object
         """
         # Number of components
         from surrogates.polynomial import LagrangeSurrogate
         Nk = len(components)
         assert adj_matrix.shape[0] == adj_matrix.shape[1] == Nk
+
+        # Setup save directory
+        self.save_dir = Path(save_dir)
+        if not self.save_dir.is_dir():
+            os.mkdir(self.save_dir)
 
         # Setup logger
         if log_dir is not None:
@@ -56,7 +63,7 @@ class SystemSurrogate:
                 os.mkdir(Path(log_dir))
             fname = datetime.datetime.now(tz=timezone.utc).isoformat()
             fname = fname.split('.')[0].replace(':', '.') + 'UTC_sys.log'
-            f_handler = logging.FileHandler(Path(log_dir) / fname)
+            f_handler = logging.FileHandler(Path(log_dir) / fname, mode='w', encoding='utf-8')
             f_handler.setLevel(logging.DEBUG)
             f_handler.setFormatter(FORMATTER)
             logger.addHandler(f_handler)
@@ -108,24 +115,45 @@ class SystemSurrogate:
         if est_bds > 0:
             self.estimate_coupling_bds(est_bds)
 
-        # Add coarsest multi-index to each component surrogate
+        self.init_surrogate()
+        self.save_to_file('sys_init.pkl')
+
+    def save_on_error(func):
+        """Gracefully exit and save SystemSurrogate object on any errors"""
+        @functools.wraps(func)
+        def wrap(self, *args, **kwargs):
+            try:
+                return func(self, *args, **kwargs)
+            except:
+                self.save_to_file('sys_error.pkl')
+                self.logger.critical(f'An error occurred during execution of {func.__name__}. Saving '
+                                     f'SystemSurrogate object to sys_error.pkl', exc_info=True)
+                self.logger.info(f'Final system surrogate on exit:\n {self}')
+                raise
+        return wrap
+    save_on_error = staticmethod(save_on_error)
+
+    @save_on_error
+    def init_surrogate(self):
+        """Add the coarsest multi-index to each component surrogate"""
         self.print_title_str('Initializing all component surrogates')
         for node, node_obj in self.graph.nodes.items():
             surr = node_obj['surrogate']
             alpha = (0,) * len(surr.truth_alpha)
             beta = (0,) * (len(node_obj['exo_in']) + len(node_obj['global_in']))
-            surr.add_surrogate(alpha, beta)
-            surr.move_to_active_set(alpha, beta)
+            surr.activate_index(alpha, beta)
             self.logger.info(f"Initialized component '{node}' with the multi-index {(alpha, beta)}. "
                              f"Runtime: {surr.get_cost(alpha, beta)} s")
 
-    def build_surrogate(self, qoi_ind=None, N_refine=100, max_iter=20, max_tol=0.001, max_runtime=60):
+    @save_on_error
+    def build_surrogate(self, qoi_ind=None, N_refine=100, max_iter=20, max_tol=0.001, max_runtime=60, save_interval=0):
         """Build the system surrogate by iterative refinement until an end condition is met
         :param qoi_ind: list(), Indices of system QoI to focus refinement on, use all QoI if not specified
         :param N_refine: number of samples of exogenous inputs to compute error indicators on
         :param max_iter: the maximum number of refinement steps to take
         :param max_tol: the max allowable value in normalized RMSE to achieve (in units of 'pct of QoI mean')
         :param max_runtime: the maximum wall clock time (s) to run refinement for (will go until all models finish)
+        :param save_interval (int) number of refinement steps between each progress save, none if 0
         """
         i = 0
         curr_error = np.inf
@@ -148,15 +176,19 @@ class SystemSurrogate:
                 break
 
             curr_error = self.refine(qoi_ind=qoi_ind, N_refine=N_refine)
-            time.sleep(5)
+            if save_interval > 0 and self.refine_level % save_interval == 0:
+                self.save_to_file(f'sys_iter_{self.refine_level}.pkl')
             i += 1
+
+        self.save_to_file(f'sys_final.pkl')
+        self.logger.info(f'Final system surrogate:\n {self}')
 
     def refine(self, qoi_ind=None, N_refine=100):
         """Find and refine the component surrogate with the largest error on system QoI
         :param qoi_ind: list(), Indices of system QoI to focus surrogate refinement on, use all QoI if not specified
         :param N_refine: number of samples of exogenous inputs to compute error indicators on
         """
-        self.print_title_str(f'Refining system surrogate: iteration {self.refine_level}')
+        self.print_title_str(f'Refining system surrogate: iteration {self.refine_level+1}')
         if qoi_ind is None:
             qoi_ind = slice(None)
 
@@ -243,7 +275,7 @@ class SystemSurrogate:
         # Add the chosen multi-index to the chosen component
         if node_star is not None:
             self.logger.info(f"Candidate multi-index {(alpha_star, beta_star)} chosen for component '{node_star}'")
-            self.graph.nodes[node_star]['surrogate'].move_to_active_set(alpha_star, beta_star)
+            self.graph.nodes[node_star]['surrogate'].activate_index(alpha_star, beta_star)
             self.refine_level += 1
         else:
             self.logger.info(f"No candidates left for refinement, iteration: {self.refine_level}")
@@ -459,8 +491,23 @@ class SystemSurrogate:
         self.logger.info('-' * int(len(title_str)/2) + title_str + '-' * int(len(title_str)/2))
 
     def save_to_file(self, filename):
-        with open(filename, 'wb') as dill_file:
+        with open(self.save_dir / filename, 'wb') as dill_file:
             dill.dump(self, dill_file)
+
+    def __getitem__(self, component):
+        """Convenience method to get the ComponentSurrogate object from the system
+        :param component: (str) name of the component to get
+        """
+        return self.graph.nodes[component]['surrogate']
+
+    def __repr__(self):
+        s = f'----SystemSurrogate----\nAdjacency: \n{self.adj_matrix}\nExogenous inputs: {self.exo_vars}\n'
+        for node, node_obj in self.graph.nodes.items():
+            s += f'Component: {node}\n{node_obj["surrogate"]}'
+        return s
+
+    def __str__(self):
+        return self.__repr__()
 
     @staticmethod
     def load_from_file(filename):
@@ -537,26 +584,20 @@ class ComponentSurrogate(ABC):
 
         # Initialize any indices that were passed in
         for alpha, beta in multi_index:
-            self.add_surrogate(alpha, beta)         # Add each index to the candidate set
-            self.move_to_active_set(alpha, beta)    # Initialize active set
+            self.activate_index(alpha, beta)
 
-    def move_to_active_set(self, alpha, beta):
-        """Move an index out of the candidate set into the active index set
+    def activate_index(self, alpha, beta):
+        """Add a multi-index to the active set and all neighbors to the candidate set
         :param alpha: A multi-index (tuple) specifying model fidelity
         :param beta: A multi-index (tuple) specifying surrogate fidelity
         """
+        # User is responsible for making sure index set is downward-closed
+        self.add_surrogate(alpha, beta)
         ele = (alpha, beta)
-        if ele not in self.candidate_set:
-            self.logger.warning(f'Multi-index {ele} is not in the candidate set, '
-                                f'so we cant move it to the active set. Ignoring...')
-            return
-
-        self.candidate_set.remove(ele)
-        self.index_set.append(ele)
-        self.index_mat = np.concatenate((self.index_mat, np.array(alpha+beta)[np.newaxis, :]), axis=0)
 
         # Add all possible new candidates (distance of one unit vector away)
         ind = list(alpha + beta)
+        new_candidates = []
         for i in range(len(ind)):
             ind_new = ind.copy()
             ind_new[i] += 1
@@ -572,25 +613,27 @@ class ComponentSurrogate(ABC):
                 ind_check[j] -= 1
                 if ind_check[j] >= 0:
                     tup_check = (tuple(ind_check[:len(alpha)]), tuple(ind_check[len(alpha):]))
-                    if tup_check not in self.index_set:
+                    if tup_check not in self.index_set and tup_check != ele:
                         down_closed = False
                         break
             if down_closed:
-                self.add_surrogate(tuple(ind_new[:len(alpha)]), tuple(ind_new[len(alpha):]))
+                new_cand = (tuple(ind_new[:len(alpha)]), tuple(ind_new[len(alpha):]))
+                self.add_surrogate(*new_cand)
+                new_candidates.append(new_cand)
+
+        # Move to the active index set
+        if ele in self.candidate_set:
+            self.candidate_set.remove(ele)
+        self.index_set.append(ele)
+        self.index_mat = np.concatenate((self.index_mat, np.array(alpha + beta)[np.newaxis, :]), axis=0)
+        new_candidates = [cand for cand in new_candidates if cand not in self.candidate_set]
+        self.candidate_set.extend(new_candidates)
 
     def add_surrogate(self, alpha, beta):
-        """Add a BaseInterpolator to candidate set for a given alpha, beta index
+        """Build a BaseInterpolator object for a given alpha, beta index
         :param alpha: A multi-index (tuple) specifying model fidelity
         :param beta: A multi-index (tuple) specifying surrogate fidelity
         """
-        # Add to candidate set if new (caller is responsible for making sure it maintains downward-closedness)
-        ele = (alpha, beta)
-        self.logger.info(f'Adding candidate index {ele} ...')
-        if ele in self.candidate_set:
-            self.logger.warning(f'Multi-index {ele} is already in the candidate set. Ignoring...')
-            return
-        self.candidate_set.append(ele)
-
         # Store a new function for each unique fidelity (alpha) of the main forward model
         if str(alpha) not in self.alpha_models:
             self.alpha_models[str(alpha)] = lambda x: self._model(x, alpha)
@@ -601,10 +644,12 @@ class ComponentSurrogate(ABC):
             self.costs[str(alpha)] = dict()
 
         # Create a new interpolator object for this multi-index (abstract method)
-        interp, cost = self.add_interpolator(alpha, beta)
-        self.surrogates[str(alpha)][str(beta)] = interp
-        self.costs[str(alpha)][str(beta)] = cost
-        self.ydim = interp.get_ydim()
+        if self.surrogates[str(alpha)].get(str(beta), None) is None:
+            self.logger.info(f'Building interpolant for index {(alpha, beta)} ...')
+            interp, cost = self.add_interpolator(alpha, beta)
+            self.surrogates[str(alpha)][str(beta)] = interp
+            self.costs[str(alpha)][str(beta)] = cost
+            self.ydim = interp.get_ydim()
 
     def iterate_candidates(self):
         """Iterate candidate indices one by one into the active index set
@@ -697,6 +742,17 @@ class ComponentSurrogate(ABC):
         for alpha in self.surrogates:
             for beta in self.surrogates[alpha]:
                 self.surrogates[alpha][beta].update_input_bds(idx, bds)
+
+    def __repr__(self):
+        s = f'Inputs \u2014 {self.x_vars}\n'
+        for alpha, beta in self.index_set:
+            s += f"[{int(self.compute_misc_coefficient(alpha, beta))}] \u2014 {alpha}, {beta}\n"
+        for alpha, beta in self.candidate_set:
+            s += f"[-] \u2014 {alpha}, {beta}\n"
+        return s
+
+    def __str__(self):
+        return self.__repr__()
 
     @staticmethod
     def is_one_level_refinement(beta_old, beta_new):

@@ -24,6 +24,13 @@ class BaseRV:
         """Child classes must define bounds and a scipy.stats distribution"""
         self.bds = None     # (tuple)
         self.rv = None      # Frozen distribution from scipy.stats
+        self.disp = ''      # Display name for printing
+
+    def __repr__(self):
+        return self.disp
+
+    def __str__(self):
+        return self.__repr__()
 
     def bounds(self):
         """Return the bounds of the RV"""
@@ -44,8 +51,9 @@ class BaseRV:
 
 class UniformRV(BaseRV):
 
-    def __init__(self, a, b):
+    def __init__(self, a, b, name=''):
         super().__init__()
+        self.disp = f'U({a}, {b})' if name == '' else name
         self.bds = (a, b)
         self.rv = uniform(loc=a, scale=b-a)
 
@@ -56,8 +64,9 @@ class UniformRV(BaseRV):
 
 class NormalRV(BaseRV):
 
-    def __init__(self, mean, std):
+    def __init__(self, mean, std, name=''):
         super().__init__()
+        self.disp = f'N({mean}, {std})' if name == '' else name
         self.bds = (mean - 4*std, mean + 4*std)
         self.rv = norm(loc=mean, scale=std)
 

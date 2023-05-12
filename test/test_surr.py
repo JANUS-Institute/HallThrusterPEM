@@ -7,6 +7,7 @@ import time
 import warnings
 import sys
 import logging
+from pathlib import Path
 
 sys.path.append('..')
 
@@ -373,16 +374,14 @@ def test_lls():
     print(f'Custom time: {t2-t1} s. Scipy time: {t4-t3} s.')
 
 
-def test_fire_sat(load=False):
+def test_fire_sat(filename=None):
     # Test the fire satellite coupled system from Chaudhuri (2018)
     N = 1000
-    filename = 'fire_sat.pkl'
-    if load:
+    if filename is not None:
         sys = SystemSurrogate.load_from_file(filename)
     else:
         sys = fire_sat_system()
-        sys.build_surrogate(max_iter=10, max_tol=1e-3, max_runtime=3600)
-        sys.save_to_file(filename)
+        sys.build_surrogate(max_iter=16, max_tol=1e-3, max_runtime=3600, save_interval=4)
 
     x = sys.sample_exo_inputs((N,))
     logger.info('---Evaluating ground truth system on test set---')
@@ -410,30 +409,6 @@ def test_fire_sat(load=False):
     fig.set_size_inches(9, 3)
     fig.tight_layout()
     plt.show()
-
-    # Now run a 1d sweep over altitude
-    # H = np.linspace(17e6, 19e6, 100).reshape((100, 1))
-    # phi = np.broadcast_to(235e3, H.shape)
-    # Po = np.broadcast_to(1000, H.shape)
-    # Fs = np.broadcast_to(1400, H.shape)
-    # Lsp = np.broadcast_to(2, H.shape)
-    # q = np.broadcast_to(0.5, H.shape)
-    # La = np.broadcast_to(2, H.shape)
-    # Cd = np.broadcast_to(1, H.shape)
-    # x = np.concatenate((H, phi, Po, Fs, Lsp, q, La, Cd), axis=-1)
-    # yt = sys(x, ground_truth=True)
-    # ysurr = sys(x)
-    # fig, ax = plt.subplots(1, 3)
-    # ax[0].plot(np.squeeze(H)/1000, yt[:, 0], '-r', label='Truth')
-    # ax[0].plot(np.squeeze(H)/1000, ysurr[:, 0], '--k', label='Surrogate')
-    # ax_default(ax[0], 'Altitude [km]', 'Satellite velocity [m/s]', legend=True)
-    # ax[1].plot(np.squeeze(H) / 1000, yt[:, 6], '-r', label='Truth')
-    # ax[1].plot(np.squeeze(H) / 1000, ysurr[:, 6], '--k', label='Surrogate')
-    # ax_default(ax[1], 'Altitude [km]', 'Total power output [W]', legend=True)
-    # ax[2].plot(np.squeeze(H) / 1000, yt[:, 8], '-r', label='Truth')
-    # ax[2].plot(np.squeeze(H) / 1000, ysurr[:, 8], '--k', label='Surrogate')
-    # ax_default(ax[2], 'Altitude [km]', 'Attitude control power [W]', legend=True)
-    # plt.show()
 
 
 def test_fpi():
@@ -621,7 +596,8 @@ if __name__ == '__main__':
     # test_lls()
     # test_feedforward()
     # test_system_surrogate()
-    test_fire_sat(load=False)
+    test_fire_sat(filename=None)
+    # test_fire_sat(filename=Path('save')/'sys_error.pkl')
     # test_fpi()
     # test_fake_pem()
     # test_system_refine()
