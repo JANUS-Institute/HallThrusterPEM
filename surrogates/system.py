@@ -9,6 +9,7 @@ import datetime
 import functools
 import logging
 import dill
+import copy
 from abc import ABC, abstractmethod
 from datetime import timezone
 from pathlib import Path
@@ -48,22 +49,23 @@ class SystemSurrogate:
         :param save_dir: (str) directory to save .pkl files during refinement containing the SystemSurrogate object
         """
         # Number of components
-        from surrogates.polynomial import LagrangeSurrogate
         Nk = len(components)
         assert adj_matrix.shape[0] == adj_matrix.shape[1] == Nk
 
         # Setup save directory
-        self.save_dir = Path(save_dir)
-        if not self.save_dir.is_dir():
+        self.save_dir = str(Path(save_dir).resolve())
+        if not Path(self.save_dir).is_dir():
             os.mkdir(self.save_dir)
 
         # Setup logger
+        self.log_file = None
         if log_dir is not None:
             if not Path(log_dir).is_dir():
                 os.mkdir(Path(log_dir))
             fname = datetime.datetime.now(tz=timezone.utc).isoformat()
             fname = fname.split('.')[0].replace(':', '.') + 'UTC_sys.log'
-            f_handler = logging.FileHandler(Path(log_dir) / fname, mode='w', encoding='utf-8')
+            self.log_file = str((Path(log_dir) / fname).resolve())
+            f_handler = logging.FileHandler(self.log_file, mode='w', encoding='utf-8')
             f_handler.setLevel(logging.DEBUG)
             f_handler.setFormatter(FORMATTER)
             logger.addHandler(f_handler)
@@ -71,36 +73,18 @@ class SystemSurrogate:
 
         # Store system info in a directed graph data structure
         self.graph = nx.DiGraph()
-        self.exo_vars = exo_vars
+        self.exo_vars = copy.deepcopy(exo_vars)
         self.exo_bds = [rv.bounds() for rv in self.exo_vars]
-        self.coupling_bds = coupling_bds
+        self.coupling_bds = copy.deepcopy(coupling_bds)
         self.adj_matrix = adj_matrix
         self.refine_level = 0
 
         # Construct graph nodes
+        nodes = {comp['name']: comp for comp in components}  # work-around since self.graph.nodes is not built yet
         for k in range(Nk):
-            # Count total number of inputs and get global indices of coupling inputs
-            comp_dict = components[k]
-            global_idx = []
-            for comp_name, local_idx in comp_dict['local_in'].items():
-                for k2 in range(Nk):
-                    if components[k2]['name'] == comp_name:
-                        global_idx.extend([components[k2]['global_out'][i] for i in local_idx])
-            global_idx = sorted(global_idx)
-
-            # Initialize a component surrogate (assume uniform dist for coupling vars)
-            surr_type = comp_dict.get('type', 'lagrange')
-            surr_class = None
-            match surr_type:
-                case 'lagrange':
-                    surr_class = LagrangeSurrogate
-                case other:
-                    raise NotImplementedError(f"Surrogate type '{surr_type}' is not known at this time")
-            x_vars = [self.exo_vars[i] for i in comp_dict['exo_in']] + [UniformRV(*coupling_bds[i]) for i in global_idx]
-            surr = surr_class([], x_vars, comp_dict['model'], comp_dict['truth_alpha'],
-                              max_alpha=comp_dict.get('max_alpha', None), max_beta=comp_dict.get('max_beta', 5))
-
             # Add the component as a str() node, with attributes specifying details of the surrogate
+            comp_dict = components[k]
+            global_idx, surr = self.build_component(comp_dict, nodes=nodes)
             self.graph.add_node(comp_dict['name'], exo_in=comp_dict['exo_in'], local_in=comp_dict['local_in'],
                                 global_in=global_idx, global_out=comp_dict['global_out'], surrogate=surr,
                                 is_computed=False)
@@ -115,8 +99,147 @@ class SystemSurrogate:
         if est_bds > 0:
             self.estimate_coupling_bds(est_bds)
 
-        self.init_surrogate()
+        # Init system with most coarse fidelity indices in each component
+        self.init_system()
         self.save_to_file('sys_init.pkl')
+
+    def build_component(self, component, nodes=None):
+        """Build and return a ComponentSurrogate object from a dict that describes the component model/connections
+        :param component: dict() specifying details of a component (see docs of __init__)
+        :param nodes: dict() of {node: node_attributes}, defaults to self.graph.nodes
+        :returns global_idx, surr: the global coupling input indices and the ComponentSurrogate object
+        """
+        nodes = self.graph.nodes if nodes is None else nodes
+
+        # Get global indices of coupling inputs
+        global_idx = []
+        for comp_name, local_idx in component['local_in'].items():
+            for node, node_obj in nodes.items():
+                if node == comp_name:
+                    global_idx.extend([node_obj['global_out'][i] for i in local_idx])
+        global_idx = sorted(global_idx)
+
+        # Initialize a new component surrogate
+        surr_type = component.get('type', 'lagrange')
+        surr_class = None
+        match surr_type:
+            case 'lagrange':
+                from surrogates.polynomial import LagrangeSurrogate
+                surr_class = LagrangeSurrogate
+            case other:
+                raise NotImplementedError(f"Surrogate type '{surr_type}' is not known at this time")
+        x_vars = [self.exo_vars[i] for i in component['exo_in']] + \
+                 [UniformRV(*self.coupling_bds[i]) for i in global_idx]
+        surr = surr_class([], x_vars, component['model'], component['truth_alpha'],
+                          max_alpha=component.get('max_alpha', None), max_beta=component.get('max_beta', 5))
+        return global_idx, surr
+
+    def swap_component(self, component, exo_add=None, exo_remove=None, qoi_add=None, qoi_remove=None):
+        """Swap a new component into the system, updating all connections/inputs
+        :param component: dict() specifying component model and connections (see docs of __init__ for details)
+        :param exo_add: list() of BaseRVs to add to system exogenous inputs (will be appended to end)
+        :param exo_remove: list() of indices of system exogenous inputs to delete (can't be shared by other components)
+        :param qoi_add: list() of tuples specifying bounds of system output QoIs to add
+        :param qoi_remove: list() of indices of system qois to delete (can't be shared by other components)
+        """
+        # Delete system exogenous inputs
+        exo_remove = [] if exo_remove is not None else sorted(exo_remove)
+        for j, exo_var_idx in enumerate(exo_remove):
+            # Adjust exogenous indices for all components to account for deleted system inputs
+            for node, node_obj in self.graph.nodes.items():
+                if node != component['name']:
+                    for i, idx in enumerate(node_obj['exo_in']):
+                        if idx == exo_var_idx:
+                            error_msg = f"Can't delete system exogenous input at idx {exo_var_idx}, since it is " \
+                                        f"shared by component '{node}'."
+                            self.logger.error(error_msg)
+                            raise Exception(error_msg)
+                        if idx > exo_var_idx:
+                            node_obj['exo_in'][i] -= 1
+
+            # Need to update the remaining delete indices by -1 to account for each sequential deletion
+            del self.exo_vars[exo_var_idx]
+            del self.exo_bds[exo_var_idx]
+            for i in range(j+1, len(exo_remove)):
+                exo_remove[i] -= 1
+
+        # Append any new exogenous inputs to the end
+        if exo_add is not None:
+            self.exo_vars.extend(exo_add)
+            self.exo_bds.extend([rv.bounds() for rv in exo_add])
+
+        # Delete system qoi outputs (if not shared by other components)
+        qoi_remove = [] if qoi_remove is not None else sorted(qoi_remove)
+        for j, qoi_idx in enumerate(qoi_remove):
+            # Adjust coupling indices for all components to account for deleted system outputs
+            for node, node_obj in self.graph.nodes.items():
+                if node != component['name']:
+                    for i, idx in enumerate(node_obj['global_in']):
+                        if idx == qoi_idx:
+                            error_msg = f"Can't delete system QoI at idx {qoi_idx}, since it is an input to " \
+                                        f"component '{node}'."
+                            self.logger.error(error_msg)
+                            raise Exception(error_msg)
+                        if idx > qoi_idx:
+                            node_obj['global_in'][i] -= 1
+
+                    for i, idx in enumerate(node_obj['global_out']):
+                        if idx > qoi_idx:
+                            node_obj['global_out'][i] -= 1
+
+            # Need to update the remaining delete indices by -1 to account for each sequential deletion
+            del self.coupling_bds[qoi_idx]
+            for i in range(j+1, len(qoi_remove)):
+                qoi_remove[i] -= 1
+
+        # Append any new system QoI outputs to the end
+        if qoi_add is not None:
+            self.coupling_bds.extend(exo_add)
+
+        # Make changes to adj matrix if coupling inputs changed
+        prev_neighbors = list(self.graph.nodes[component['name']]['local_in'].keys())
+        new_neighbors = list(component['local_in'].keys())
+        for neighbor in new_neighbors:
+            if neighbor not in prev_neighbors:
+                self.graph.add_edge(neighbor, component['name'])
+            else:
+                prev_neighbors.remove(neighbor)
+        for neighbor in prev_neighbors:
+            self.graph.remove_edge(neighbor, component['name'])
+        self.adj_matrix = nx.to_numpy_array(self.graph, dtype=int)
+
+        # Build and initialize the new component surrogate
+        global_idx, surr = self.build_component(component)
+        surr.init_coarse()
+        self.logger.info(f"Swapped component '{component['name']}'.")
+        nx.set_node_attributes(self.graph, {component['name']: {'exo_in': component['exo_in'], 'local_in':
+                                                                component['local_in'], 'global_in': global_idx,
+                                                                'global_out': component['global_out'],
+                                                                'surrogate': surr, 'is_computed': False}})
+
+    def insert_component(self, component, exo_add=None, qoi_add=None):
+        """Insert a new component into the system
+        :param component: dict() specifying component model and connections (see docs of __init__ for details)
+        :param exo_add: list() of BaseRVs to add to system exogenous inputs (will be appended to end)
+        :param qoi_add: list() of tuples specifying bounds of system output QoIs to add
+        """
+        if exo_add is not None:
+            self.exo_vars.extend(exo_add)
+            self.exo_bds.extend([rv.bounds() for rv in exo_add])
+        if qoi_add is not None:
+            self.coupling_bds.extend(qoi_add)
+
+        global_idx, surr = self.build_component(component)
+        surr.init_coarse()
+        self.graph.add_node(component['name'], exo_in=component['exo_in'], local_in=component['local_in'],
+                            global_in=global_idx, global_out=component['global_out'], surrogate=surr,
+                            is_computed=False)
+        # Add graph edges
+        neighbors = list(component['local_in'].keys())
+        for neighbor in neighbors:
+            self.graph.add_edge(neighbor, component['name'])
+        self.adj_matrix = nx.to_numpy_array(self.graph, dtype=int)
+        self.logger.info(f"Inserted component '{component['name']}'.")
 
     def save_on_error(func):
         """Gracefully exit and save SystemSurrogate object on any errors"""
@@ -134,19 +257,15 @@ class SystemSurrogate:
     save_on_error = staticmethod(save_on_error)
 
     @save_on_error
-    def init_surrogate(self):
+    def init_system(self):
         """Add the coarsest multi-index to each component surrogate"""
         self.print_title_str('Initializing all component surrogates')
         for node, node_obj in self.graph.nodes.items():
-            surr = node_obj['surrogate']
-            alpha = (0,) * len(surr.truth_alpha)
-            beta = (0,) * (len(node_obj['exo_in']) + len(node_obj['global_in']))
-            surr.activate_index(alpha, beta)
-            self.logger.info(f"Initialized component '{node}' with the multi-index {(alpha, beta)}. "
-                             f"Runtime: {surr.get_cost(alpha, beta)} s")
+            node_obj['surrogate'].init_coarse()
+            self.logger.info(f"Initialized component '{node}'.")
 
     @save_on_error
-    def build_surrogate(self, qoi_ind=None, N_refine=100, max_iter=20, max_tol=0.001, max_runtime=60, save_interval=0):
+    def build_system(self, qoi_ind=None, N_refine=100, max_iter=20, max_tol=0.001, max_runtime=60, save_interval=0):
         """Build the system surrogate by iterative refinement until an end condition is met
         :param qoi_ind: list(), Indices of system QoI to focus refinement on, use all QoI if not specified
         :param N_refine: number of samples of exogenous inputs to compute error indicators on
@@ -155,13 +274,13 @@ class SystemSurrogate:
         :param max_runtime: the maximum wall clock time (s) to run refinement for (will go until all models finish)
         :param save_interval (int) number of refinement steps between each progress save, none if 0
         """
-        i = 0
+        max_iter = self.refine_level + max_iter
         curr_error = np.inf
         t_start = time.time()
         while True:
             # Check all end conditions
-            if i >= max_iter:
-                self.print_title_str(f'Termination criteria reached: Max iteration {i}/{max_iter}')
+            if self.refine_level >= max_iter:
+                self.print_title_str(f'Termination criteria reached: Max iteration {self.refine_level}/{max_iter}')
                 break
             if curr_error == -np.inf:
                 self.print_title_str(f'Termination criteria reached: No candidates left to refine')
@@ -178,7 +297,6 @@ class SystemSurrogate:
             curr_error = self.refine(qoi_ind=qoi_ind, N_refine=N_refine)
             if save_interval > 0 and self.refine_level % save_interval == 0:
                 self.save_to_file(f'sys_iter_{self.refine_level}.pkl')
-            i += 1
 
         self.save_to_file(f'sys_final.pkl')
         self.logger.info(f'Final system surrogate:\n {self}')
@@ -490,9 +608,18 @@ class SystemSurrogate:
         """Quick wrapper to log an important message"""
         self.logger.info('-' * int(len(title_str)/2) + title_str + '-' * int(len(title_str)/2))
 
-    def save_to_file(self, filename):
-        with open(self.save_dir / filename, 'wb') as dill_file:
+    def save_to_file(self, filename, save_dir=None):
+        """Save the SystemSurrogate object to a .pkl file
+        :param filename: filename of the .pkl file to save to
+        :param save_dir: (str) Overrides existing save directory if provided
+        """
+        save_dir = save_dir if save_dir is not None else self.save_dir
+        if not Path(save_dir).is_dir():
+            save_dir = '.'
+        self.save_dir = str(Path(save_dir).resolve())
+        with open(Path(self.save_dir) / filename, 'wb') as dill_file:
             dill.dump(self, dill_file)
+        self.logger.info(f'SystemSurrogate saved to {(Path(self.save_dir) / filename).resolve()}')
 
     def __getitem__(self, component):
         """Convenience method to get the ComponentSurrogate object from the system
@@ -510,9 +637,29 @@ class SystemSurrogate:
         return self.__repr__()
 
     @staticmethod
-    def load_from_file(filename):
+    def load_from_file(filename, log_file=None):
+        """Load a SystemSurrogate object from file
+        :param filename: .pkl file to load
+        :param log_file: (str) Overrides existing log_file location (if available) or creates a new log file (abs path)
+        """
         with open(filename, 'rb') as dill_file:
             sys = dill.load(dill_file)
+            log_file = log_file if log_file is not None else sys.log_file
+
+            # Remove all previous file handlers (to avoid duplication)
+            del_handlers = [h for h in logger.handlers if isinstance(h, logging.FileHandler)]
+            for h in del_handlers:
+                logger.removeHandler(h)
+
+            if log_file is not None and Path(log_file).is_file():
+                f_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
+                f_handler.setLevel(logging.DEBUG)
+                f_handler.setFormatter(FORMATTER)
+                logger.addHandler(f_handler)
+
+            sys.logger = logger.getChild(SystemSurrogate.__name__)
+            sys.log_file = str(Path(log_file).resolve())
+            sys.logger.info(f'SystemSurrogate loaded from {Path(filename).resolve()}')
 
         return sys
 
@@ -560,7 +707,7 @@ class ComponentSurrogate(ABC):
         self._model = model
         self.truth_alpha = truth_alpha
         self._truth_model = lambda x: self._model(x, self.truth_alpha)
-        self.x_vars = x_vars
+        self.x_vars = copy.deepcopy(x_vars)
         self.x_bds = [rv.bounds() for rv in self.x_vars]
         self.ydim = None
         self.ij = None
@@ -594,6 +741,9 @@ class ComponentSurrogate(ABC):
         # User is responsible for making sure index set is downward-closed
         self.add_surrogate(alpha, beta)
         ele = (alpha, beta)
+        if ele in self.index_set:
+            self.logger.warning(f'Multi-index {ele} is already in the active index set. Ignoring...')
+            return
 
         # Add all possible new candidates (distance of one unit vector away)
         ind = list(alpha + beta)
@@ -650,6 +800,12 @@ class ComponentSurrogate(ABC):
             self.surrogates[str(alpha)][str(beta)] = interp
             self.costs[str(alpha)][str(beta)] = cost
             self.ydim = interp.get_ydim()
+
+    def init_coarse(self):
+        """Initialize the coarsest interpolation and add to active index set"""
+        alpha = (0,) * len(self.truth_alpha)
+        beta = (0,) * len(self.x_vars)
+        self.activate_index(alpha, beta)
 
     def iterate_candidates(self):
         """Iterate candidate indices one by one into the active index set

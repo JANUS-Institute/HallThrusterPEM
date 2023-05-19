@@ -376,14 +376,13 @@ def test_lls():
 
 def test_fire_sat(filename=None):
     # Test the fire satellite coupled system from Chaudhuri (2018)
-    N = 1000
     if filename is not None:
         sys = SystemSurrogate.load_from_file(filename)
     else:
         sys = fire_sat_system()
-        sys.build_surrogate(max_iter=16, max_tol=1e-3, max_runtime=3600, save_interval=4)
+        sys.build_system(max_iter=10, max_tol=1e-3, max_runtime=3600)
 
-    x = sys.sample_exo_inputs((N,))
+    x = sys.sample_exo_inputs((1000,))
     logger.info('---Evaluating ground truth system on test set---')
     yt = sys(x, ground_truth=True, verbose=True)
     logger.info('---Evaluating system surrogate on test set---')

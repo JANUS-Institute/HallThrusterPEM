@@ -60,6 +60,7 @@ class UniformRV(BaseRV):
     def update_bounds(self, lb, ub):
         self.bds = (lb, ub)
         self.rv = uniform(loc=lb, scale=ub-lb)
+        self.disp = f'U({lb}, {ub})'
 
 
 class NormalRV(BaseRV):
