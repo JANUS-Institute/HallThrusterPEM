@@ -134,12 +134,13 @@ def fire_sat_system():
         return y
 
     orbit = {'name': 'Orbit', 'model': orbit_fun, 'truth_alpha': (), 'exo_in': [0, 1], 'local_in': {},
-             'global_out': [0, 1, 2, 3], 'max_alpha': (), 'max_beta': 3, 'type': 'lagrange'}
-    power = {'name': 'Power', 'model': power_fun, 'truth_alpha': (), 'exo_in': [2, 3], 'max_alpha': (), 'max_beta': 3,
-             'local_in': {'Orbit': [1, 2], 'Attitude': [0]}, 'global_out': [4, 5, 6, 7], 'type': 'lagrange'}
+             'global_out': [0, 1, 2, 3], 'max_alpha': (), 'max_beta': (3, 3), 'type': 'lagrange'}
+    power = {'name': 'Power', 'model': power_fun, 'truth_alpha': (), 'exo_in': [2, 3], 'max_alpha': (),
+             'local_in': {'Orbit': [1, 2], 'Attitude': [0]}, 'global_out': [4, 5, 6, 7], 'type': 'lagrange',
+             'max_beta': (3,)*5}
     attitude = {'name': 'Attitude', 'model': attitude_fun, 'truth_alpha': (), 'exo_in': [0, 3, 4, 5, 6, 7],
-                'max_alpha': (), 'local_in': {'Orbit': [0, 3], 'Power': [0, 1]}, 'global_out': [8, 9], 'max_beta': 3,
-                'type': 'lagrange'}
+                'max_alpha': (), 'local_in': {'Orbit': [0, 3], 'Power': [0, 1]}, 'global_out': [8, 9],
+                'type': 'lagrange', 'max_beta': (3,)*10}
     exo_vars = [NormalRV(18e6, 1e6, 'H'), NormalRV(235e3, 10e3, '\u03D5'), NormalRV(1000, 50, 'Po'),
                 NormalRV(1400, 20, 'Fs'), NormalRV(2, 0.4, 'Lsp'), NormalRV(0.5, 0.1, 'q'), NormalRV(2, 0.4, 'La'),
                 NormalRV(1, 0.2, 'Cd')]

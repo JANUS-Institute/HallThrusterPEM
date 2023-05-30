@@ -11,9 +11,9 @@ from pathlib import Path
 
 sys.path.append('..')
 
-from utils import ax_default, print_stats, UniformRV, NormalRV
+from utils import ax_default, print_stats, UniformRV
 from surrogates.system import SystemSurrogate
-from surrogates.polynomial import LagrangeSurrogate, TensorProductInterpolator
+from surrogates.sparse_grids import SparseGridSurrogate, LagrangeInterpolator
 from models.simple_models import tanh_func, custom_nonlinear, fire_sat_system, fake_pem
 
 FORMATTER = logging.Formatter("%(asctime)s — [%(levelname)s] — %(name)s — %(message)s")
@@ -29,7 +29,7 @@ def test_tensor_product_1d():
     x_var = [UniformRV(0, 1)]
     x_grid = np.linspace(0, 1, 100).reshape((100, 1))
     y_grid = tanh_func(x_grid)
-    interp = TensorProductInterpolator(beta, x_var, model=tanh_func)
+    interp = LagrangeInterpolator(beta, x_var, model=tanh_func)
     interp.set_yi()
     y_interp = interp(x_grid)
 
@@ -81,7 +81,7 @@ def test_tensor_product_2d():
     z = bb_2d_func(x)
 
     # Set up interpolant
-    interp = TensorProductInterpolator(beta, x_vars, model=bb_2d_func)
+    interp = LagrangeInterpolator(beta, x_vars, model=bb_2d_func)
     interp.set_yi()
     z_interp = interp(x)
     error = np.abs(z_interp - z)
@@ -146,11 +146,12 @@ def test_component():
           ((2,), (1,)), ((2,), (2,))]
     x_vars = [UniformRV(-1, 1)]
     truth_alpha = (15,)
-    comp = LagrangeSurrogate(Ik, x_vars, model, truth_alpha)
+    comp = SparseGridSurrogate(Ik, x_vars, model, truth_alpha)
     N = 100
     xg = np.linspace(-1, 1, N).reshape((N, 1))
     yt = model_truth(xg)
     y_surr = comp(xg)
+    print(comp)
 
     # Plot results for each fidelity of the MISC surrogate
     fig, axs = plt.subplots(3, 3, sharey='row', sharex='col')
@@ -192,7 +193,7 @@ def test_high_dimension():
     dim = 8
     x_bds = [(-5, 10) for i in range(dim)]
     beta = [2]*dim
-    interp = TensorProductInterpolator(beta, x_bds, model=rosenbrock)
+    interp = LagrangeInterpolator(beta, x_bds, model=rosenbrock)
     interp.set_yi()
 
     # Test and compute error
@@ -254,12 +255,12 @@ def test_system_surrogate():
     alpha = (15,)
     f1, f2, f3, f = coupled_system(D1, D2, Q1, Q2)
     comp1 = {'name': 'Cathode', 'model': f1, 'truth_alpha': alpha, 'exo_in': list(np.arange(0, D1)),
-             'local_in': {}, 'global_out': list(np.arange(0, Q1)), 'max_alpha': (5,), 'max_beta': 3}
+             'local_in': {}, 'global_out': list(np.arange(0, Q1)), 'max_alpha': (5,), 'max_beta': (3,)*D1}
     comp2 = {'name': 'Thruster', 'model': f2, 'truth_alpha': alpha, 'exo_in': list(np.arange(D1, D1+D2)),
-             'max_alpha': (5,), 'max_beta': 3, 'local_in': {'Cathode': list(np.arange(0, Q1))},
+             'max_alpha': (5,), 'max_beta': (3,)*(D2+Q1), 'local_in': {'Cathode': list(np.arange(0, Q1))},
              'global_out': list(np.arange(Q1, Q1+Q2))}
     comp3 = {'name': 'Plume', 'model': f3, 'truth_alpha': alpha, 'exo_in': list(np.arange(0, D1)), 'max_alpha': (5,),
-             'local_in': {'Thruster': list(np.arange(0, Q2))}, 'global_out': [Q1+Q2], 'max_beta': 5}
+             'local_in': {'Thruster': list(np.arange(0, Q2))}, 'global_out': [Q1+Q2], 'max_beta': (3,)*(D1+Q2)}
     components = [comp1, comp2, comp3]
     exo_vars = [UniformRV(0, 1) for i in range(D1+D2)]
     coupling_bds = [(0, 1) for i in range(Q1+Q2+1)]
@@ -306,10 +307,10 @@ def test_feedforward():
         return f1, f2, f
 
     f1, f2, f = coupled_system()
-    comp1 = {'name': 'Model1', 'model': f1, 'truth_alpha': (), 'max_alpha': (), 'max_beta': 3,
-             'exo_in': [0], 'local_in': {}, 'global_out': [0]}
-    comp2 = {'name': 'Model2', 'model': f2, 'truth_alpha': (), 'max_alpha': (), 'max_beta': 3,
-             'exo_in': [], 'local_in': {'Model1': [0]}, 'global_out': [1]}
+    comp1 = {'name': 'Model1', 'model': f1, 'truth_alpha': (), 'max_alpha': (), 'max_beta': (3,),
+             'exo_in': [0], 'local_in': {}, 'global_out': [0], 'type': 'lagrange'}
+    comp2 = {'name': 'Model2', 'model': f2, 'truth_alpha': (), 'max_alpha': (), 'max_beta': (3,),
+             'exo_in': [], 'local_in': {'Model1': [0]}, 'global_out': [1], 'type': 'lagrange'}
     exo_vars = [UniformRV(0, 1)]
     coupling_bds = [(0, 1), (0, 1)]
     adj = np.array([[0, 1], [0, 0]], dtype=int)
@@ -519,15 +520,15 @@ def test_system_refine():
 
     f1, f2 = coupled_system()
     comp1 = {'name': 'Model1', 'model': f1, 'truth_alpha': (), 'exo_in': [0], 'local_in': {}, 'global_out': [0],
-             'max_beta': 3}
+             'max_beta': (3,)}
     comp2 = {'name': 'Model2', 'model': f2, 'truth_alpha': (), 'exo_in': [], 'local_in': {'Model1': [0]},
-             'global_out': [1], 'max_beta': 3}
+             'global_out': [1], 'max_beta': (3,)}
     exo_vars = [UniformRV(0, 1)]
     coupling_bds = [(0, 1), (0, 1)]
     adj = np.array([[0, 1], [0, 0]], dtype=int)
     sys = SystemSurrogate([comp1, comp2], adj, exo_vars, coupling_bds)
 
-    Niter = 7
+    Niter = 3
     x = np.linspace(0, 1, 100).reshape((100, 1))
     y1 = f1(x, ())
     y2 = f2(x, ())
@@ -535,9 +536,9 @@ def test_system_refine():
     fig, ax = plt.subplots(Niter, 3, sharex='col', sharey='row')
     for i in range(Niter):
         # Plot actual function values
-        ax[i, 0].plot(x, y1, '-r', label='$f_1(z)$')
-        ax[i, 1].plot(x, y2, '-r', label='$f_2(z)$')
-        ax[i, 2].plot(x, y3, '-r', label='$f(z)$')
+        ax[i, 0].plot(x, y1, '-r', label='$f_1(x)$')
+        ax[i, 1].plot(x, y2, '-r', label='$f_2(y)$')
+        ax[i, 2].plot(x, y3, '-r', label='$f(x)$')
 
         # Plot first component surrogates
         comp = sys.get_component('Model1')
@@ -574,9 +575,9 @@ def test_system_refine():
         ax[i, 2].plot(x, ysurr[:, 1:2], '--k', label='$f_J$')
         ax[i, 2].plot(x, yJ1[:, 1:2], ':b', label='$f_{J_1}$')
         ax[i, 2].plot(x, yJ2[:, 1:2], '-.g', label='$f_{J_2}$')
-        ax_default(ax[i, 0], '$z$', '$f_1(z)$', legend=True)
-        ax_default(ax[i, 1], '$z$', '$f_2(z)$', legend=True)
-        ax_default(ax[i, 2], '$z$', '$f_2(f_1(z))$', legend=True)
+        ax_default(ax[i, 0], '$x$', '$f_1(x)$', legend=True)
+        ax_default(ax[i, 1], '$y$', '$f_2(y)$', legend=True)
+        ax_default(ax[i, 2], '$x$', '$f_2(f_1(x))$', legend=True)
 
         # Refine the system
         sys.refine(qoi_ind=None, N_refine=100)

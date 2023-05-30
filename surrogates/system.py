@@ -29,7 +29,7 @@ logger.addHandler(handler)
 
 class SystemSurrogate:
 
-    def __init__(self, components, adj_matrix, exo_vars, coupling_bds, est_bds=0, log_dir=None, save_dir='.'):
+    def __init__(self, components, adj_matrix, exo_vars, coupling_bds, est_bds=0, log_dir=None, save_dir=None):
         """Construct a multidisciplinary system surrogate
         :param components: list(Nk,) of dicts specifying component name (str), a callable function model(x, alpha), a
                            string specifying surrogate class type, the highest 'truth' set of model fidelity indices,
@@ -38,8 +38,8 @@ class SystemSurrogate:
                            coupling variable inputs from other models, and a list() that maps local component outputs
                            to global coupling indices
                            Ex: [{'name': 'Thruster', 'model': callable(x, alpha), 'truth_alpha': (3,), 'max_alpha': (3),
-                                         'max_beta': 5, 'exo_in': [0, 2, 6...], 'local_in': {'model1': [1,2,3],
-                                         'model2': [0]}, 'global_out': [0, 1, 2, 3]},
+                                         'max_beta': (5,), 'exo_in': [0, 2, 6...], 'local_in': {'model1': [1,2,3],
+                                         'model2': [0]}, 'global_out': [0, 1, 2, 3], 'type': 'lagrange'},
                                 {'name': 'Plume', ...}, ...]
         :param adj_matrix: (Nk, Nk), matrix of 0,1 specifying directed edges from->to for the Nk components
         :param exo_vars: list() of BaseRVs specifying the bounds/distributions for all system-level exogenous inputs
@@ -53,9 +53,12 @@ class SystemSurrogate:
         assert adj_matrix.shape[0] == adj_matrix.shape[1] == Nk
 
         # Setup save directory
-        self.save_dir = str(Path(save_dir).resolve())
-        if not Path(self.save_dir).is_dir():
-            os.mkdir(self.save_dir)
+        if save_dir is not None:
+            self.save_dir = str(Path(save_dir).resolve())
+            if not Path(self.save_dir).is_dir():
+                os.mkdir(self.save_dir)
+        else:
+            self.save_dir = None
 
         # Setup logger
         self.log_file = None
@@ -124,14 +127,14 @@ class SystemSurrogate:
         surr_class = None
         match surr_type:
             case 'lagrange':
-                from surrogates.polynomial import LagrangeSurrogate
-                surr_class = LagrangeSurrogate
+                from surrogates.sparse_grids import SparseGridSurrogate
+                surr_class = SparseGridSurrogate
             case other:
-                raise NotImplementedError(f"Surrogate type '{surr_type}' is not known at this time")
+                raise NotImplementedError(f"Surrogate type '{surr_type}' is not known at this time.")
         x_vars = [self.exo_vars[i] for i in component['exo_in']] + \
                  [UniformRV(*self.coupling_bds[i]) for i in global_idx]
-        surr = surr_class([], x_vars, component['model'], component['truth_alpha'],
-                          max_alpha=component.get('max_alpha', None), max_beta=component.get('max_beta', 5))
+        surr = surr_class([], x_vars, component['model'], component['truth_alpha'], interp=surr_type,
+                          max_alpha=component.get('max_alpha', None), max_beta=component.get('max_beta', None))
         return global_idx, surr
 
     def swap_component(self, component, exo_add=None, exo_remove=None, qoi_add=None, qoi_remove=None):
@@ -614,12 +617,13 @@ class SystemSurrogate:
         :param save_dir: (str) Overrides existing save directory if provided
         """
         save_dir = save_dir if save_dir is not None else self.save_dir
-        if not Path(save_dir).is_dir():
-            save_dir = '.'
-        self.save_dir = str(Path(save_dir).resolve())
-        with open(Path(self.save_dir) / filename, 'wb') as dill_file:
-            dill.dump(self, dill_file)
-        self.logger.info(f'SystemSurrogate saved to {(Path(self.save_dir) / filename).resolve()}')
+        if save_dir is not None:
+            if not Path(save_dir).is_dir():
+                save_dir = '.'
+            self.save_dir = str(Path(save_dir).resolve())
+            with open(Path(self.save_dir) / filename, 'wb') as dill_file:
+                dill.dump(self, dill_file)
+            self.logger.info(f'SystemSurrogate saved to {(Path(self.save_dir) / filename).resolve()}')
 
     def __getitem__(self, component):
         """Convenience method to get the ComponentSurrogate object from the system
@@ -656,9 +660,9 @@ class SystemSurrogate:
                 f_handler.setLevel(logging.DEBUG)
                 f_handler.setFormatter(FORMATTER)
                 logger.addHandler(f_handler)
+                sys.log_file = str(Path(log_file).resolve())
 
             sys.logger = logger.getChild(SystemSurrogate.__name__)
-            sys.log_file = str(Path(log_file).resolve())
             sys.logger.info(f'SystemSurrogate loaded from {Path(filename).resolve()}')
 
         return sys
@@ -690,15 +694,16 @@ class SystemSurrogate:
 class ComponentSurrogate(ABC):
     """Multi-index stochastic collocation (MISC) surrogate abstract class for a component model"""
 
-    def __init__(self, multi_index, x_vars, model, truth_alpha, max_alpha=None, max_beta=5):
+    def __init__(self, multi_index, x_vars, model, truth_alpha, interp='lagrange', max_alpha=None, max_beta=None):
         """Construct the MISC surrogate from a multi-index
         :param multi_index: [((alpha1), (beta1)), ... ] List of concatenated multi-indices alpha, beta specifying
                             model and surrogate fidelity
         :param x_vars: [X1, X2, ...] list of BaseRV() objects specifying bounds/pdfs for each input x
         :param model: The function to approximate, callable as y = model(x, alpha)
         :param truth_alpha: tuple() specifying the highest model fidelity indices necessary for a 'truth' comparison
-        :param max_alpha: tuple(), the maximum model refinement indices to allow
-        :param max_beta: (int), the maximum surrogate refinement level in any one input dimension
+        :param interp: (str) the interpolation method to use, defaults to barycentric Lagrange interpolation
+        :param max_alpha: tuple(), the maximum model refinement indices to allow, defaults to (3,...)
+        :param max_beta: tuple(), the maximum surrogate refinement level indices, defaults to (5,...) of len xdim
         """
         self.logger = logger.getChild(self.__class__.__name__)
         assert self.is_downward_closed(multi_index), 'Must be a downward closed set.'
@@ -713,10 +718,11 @@ class ComponentSurrogate(ABC):
         self.ij = None
         self.index_mat = None
         max_alpha = (3,)*len(truth_alpha) if max_alpha is None else max_alpha
-        self.max_refine = list(max_alpha + (max_beta,)*len(self.x_vars))    # Max refinement indices
+        max_beta = (5,)*len(self.x_vars) if max_beta is None else max_beta
+        self.max_refine = list(max_alpha + max_beta)    # Max refinement indices
 
         # Construct vectors of [0,1]^dim(alpha+beta), used for combination coefficients
-        Nij = len(truth_alpha) + len(self.x_vars)
+        Nij = len(self.max_refine)
         self.ij = np.zeros((2 ** Nij, Nij), dtype=int)
         for i, ele in enumerate(itertools.product([0, 1], repeat=Nij)):
             self.ij[i, :] = ele
@@ -799,12 +805,12 @@ class ComponentSurrogate(ABC):
             interp, cost = self.add_interpolator(alpha, beta)
             self.surrogates[str(alpha)][str(beta)] = interp
             self.costs[str(alpha)][str(beta)] = cost
-            self.ydim = interp.get_ydim()
+            self.ydim = interp.ydim()
 
     def init_coarse(self):
         """Initialize the coarsest interpolation and add to active index set"""
         alpha = (0,) * len(self.truth_alpha)
-        beta = (0,) * len(self.x_vars)
+        beta = (0,) * len(self.max_refine[len(self.truth_alpha):])
         self.activate_index(alpha, beta)
 
     def iterate_candidates(self):
@@ -947,7 +953,7 @@ class BaseInterpolator(ABC):
 
     def __init__(self, beta, x_vars, xi=None, yi=None, model=None):
         """Construct the interpolator
-        :param beta: list(), refinement level in each dimension of xdim
+        :param beta: list(), refinement level indices for surrogate
         :param x_vars: list() of BaseRV() objects specifying bounds/pdfs for each input x
         :param xi: (Nx, xdim) interpolation points
         :param yi: the interpolation qoi values, y = (Nx, ydim)
@@ -961,15 +967,17 @@ class BaseInterpolator(ABC):
         self.x_vars = x_vars                                # BaseRV() objects for each input
         self.x_bds = [rv.bounds() for rv in self.x_vars]    # Bounds on inputs
         self.wall_time = 1                                  # Wall time to evaluate model (s)
-        self.xdim = len(self.x_vars)
-        assert len(beta) == self.xdim
 
     def update_input_bds(self, idx, bds):
         """Update the input bounds at the given index (assume a uniform RV)"""
         self.x_vars[idx].update_bounds(*bds)
         self.x_bds[idx] = bds
 
-    def get_ydim(self):
+    def xdim(self):
+        """Get the dimension of the inputs"""
+        return len(self.x_vars)
+
+    def ydim(self):
         """Get the dimension of the outputs"""
         return self.yi.shape[-1] if self.yi is not None else None
 
