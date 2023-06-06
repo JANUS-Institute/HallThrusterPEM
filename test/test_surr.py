@@ -263,11 +263,8 @@ def test_system_surrogate():
              'local_in': {'Thruster': list(np.arange(0, Q2))}, 'global_out': [Q1+Q2], 'max_beta': (3,)*(D1+Q2)}
     components = [comp1, comp2, comp3]
     exo_vars = [UniformRV(0, 1) for i in range(D1+D2)]
-    coupling_bds = [(0, 1) for i in range(Q1+Q2+1)]
-    adj = np.zeros((3, 3), dtype=int)
-    adj[0, :] = [0, 1, 0]
-    adj[1, :] = [0, 0, 1]
-    sys = SystemSurrogate(components, adj, exo_vars, coupling_bds)
+    coupling_bds = [UniformRV(0, 1) for i in range(Q1+Q2+1)]
+    sys = SystemSurrogate(components, exo_vars, coupling_bds)
 
     # Test example
     N = 5000
@@ -312,9 +309,8 @@ def test_feedforward():
     comp2 = {'name': 'Model2', 'model': f2, 'truth_alpha': (), 'max_alpha': (), 'max_beta': (3,),
              'exo_in': [], 'local_in': {'Model1': [0]}, 'global_out': [1], 'type': 'lagrange'}
     exo_vars = [UniformRV(0, 1)]
-    coupling_bds = [(0, 1), (0, 1)]
-    adj = np.array([[0, 1], [0, 0]], dtype=int)
-    sys = SystemSurrogate([comp1, comp2], adj, exo_vars, coupling_bds)
+    coupling_bds = [UniformRV(0, 1), UniformRV(0, 1)]
+    sys = SystemSurrogate([comp1, comp2], exo_vars, coupling_bds)
 
     x = np.linspace(0, 1, 100).reshape((100, 1))
     y1 = f1(x, ())
@@ -420,9 +416,8 @@ def test_fpi():
     comp2 = {'name': 'm2', 'model': f2, 'truth_alpha': (), 'exo_in': [0], 'local_in': {'m1': [0]}, 'global_out': [1],
              'max_alpha': (), 'max_beta': 5}
     exo_vars = [UniformRV(0, 4)]
-    coupling_bds = [(1, 10), (1, 10)]
-    adj = np.array([[0, 1], [1, 0]], dtype=int)
-    sys = SystemSurrogate([comp1, comp2], adj, exo_vars, coupling_bds)
+    coupling_bds = [UniformRV(1, 10), UniformRV(1, 10)]
+    sys = SystemSurrogate([comp1, comp2], exo_vars, coupling_bds)
 
     # Test on random x against scipy.fsolve
     N = 100
@@ -476,18 +471,12 @@ def test_fake_pem():
     spacecraft = {'name': 'Spacecraft', 'model': models[5], 'truth_alpha': (), 'exo_in': [],
                   'local_in': {'Thruster': [1], 'Chamber': [0]}, 'global_out': [7, 8]}
     components = [cathode, thruster, plume, dump, chamber, spacecraft]
-    adj = np.zeros((6, 6), dtype=int)
-    adj[0, :] = [0, 1, 0, 0, 0, 0]
-    adj[1, :] = [0, 0, 1, 0, 0, 1]
-    adj[2, :] = [0, 1, 0, 1, 1, 0]
-    adj[3, :] = [0, 1, 0, 0, 0, 0]
-    adj[4, :] = [0, 0, 0, 0, 0, 1]
-    adj[5, :] = [0, 0, 0, 0, 1, 0]
     exo_vars = [UniformRV(1e-4, 1e-2), UniformRV(200, 400), UniformRV(0, 100), UniformRV(0, 1)]  # (Pa, V, V, -)
     coupling_bds = [(0, 60), (0, 10), (0.05, 0.15), (1, 10), (1, 20), (1, 10), (-1000, 5000), (0, 100), (15, 20)]
+    coupling_vars = [UniformRV(a, b) for a, b in coupling_bds]
     # coupling_bds = [(0, 60), (0, 10), (0.05, 0.15), (1e17, 1e19), (15e3, 20e3), (1e21, 1e23), (0, 60), (0, 100),
     #                 (10, 20)]  # [V, A, N, m^-3, m/s, 1/m^2-s, V, ohms, years]
-    sys = SystemSurrogate(components, adj, exo_vars, coupling_bds)
+    sys = SystemSurrogate(components, exo_vars, coupling_vars)
 
     N = 1000
     sys.estimate_coupling_bds(N, max_fpi_iter=100, anderson_mem=10)
@@ -524,9 +513,8 @@ def test_system_refine():
     comp2 = {'name': 'Model2', 'model': f2, 'truth_alpha': (), 'exo_in': [], 'local_in': {'Model1': [0]},
              'global_out': [1], 'max_beta': (3,)}
     exo_vars = [UniformRV(0, 1)]
-    coupling_bds = [(0, 1), (0, 1)]
-    adj = np.array([[0, 1], [0, 0]], dtype=int)
-    sys = SystemSurrogate([comp1, comp2], adj, exo_vars, coupling_bds)
+    coupling_bds = [UniformRV(0, 1), UniformRV(0, 1)]
+    sys = SystemSurrogate([comp1, comp2], exo_vars, coupling_bds)
 
     Niter = 3
     x = np.linspace(0, 1, 100).reshape((100, 1))
@@ -596,8 +584,8 @@ if __name__ == '__main__':
     # test_lls()
     # test_feedforward()
     # test_system_surrogate()
+    # test_system_refine()
     test_fire_sat(filename=None)
     # test_fire_sat(filename=Path('save')/'sys_error.pkl')
     # test_fpi()
     # test_fake_pem()
-    # test_system_refine()

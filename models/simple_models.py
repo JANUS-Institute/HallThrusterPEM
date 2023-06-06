@@ -1,10 +1,13 @@
 """Module for simple algebraic models for testing purposes"""
 import numpy as np
 import sys
+import uuid
+from pathlib import Path
+import pickle
 
 sys.path.append('..')
 
-from utils import NormalRV
+from utils import NormalRV, UniformRV
 from surrogates.system import SystemSurrogate
 
 
@@ -82,7 +85,7 @@ def fire_sat_system():
         y = np.concatenate((vel, dt_orbit, dt_eclipse, theta_slew), axis=-1)
         return y
 
-    def power_fun(x, alpha):
+    def power_fun(x, alpha, output_dir=None):
         Po = x[..., 0:1]            # Other power sources (W)
         Fs = x[..., 1:2]            # Solar flux (W/m^2)
         dt_orbit = x[..., 2:3]      # Orbit period (s)
@@ -109,9 +112,20 @@ def fire_sat_system():
         Imin = np.min(Itot, axis=-1, keepdims=True)
         Imax = np.max(Itot, axis=-1, keepdims=True)
         y = np.concatenate((Imin, Imax, Ptot, Asa), axis=-1)
-        return y
 
-    def attitude_fun(x, alpha):
+        if output_dir is not None:
+            files = []
+            id = str(uuid.uuid4())
+            for index in np.ndindex(*x.shape[:-1]):
+                fname = f'{id}_{index}.pkl'
+                with open(Path(output_dir) / fname, 'wb') as fd:
+                    pickle.dump({'y': y[index + (slice(None),)]}, fd)
+                files.append(fname)
+            return y, files
+        else:
+            return y
+
+    def attitude_fun(x, alpha, output_dir=None):
         H = x[..., 0:1]             # Altitude (m)
         Fs = x[..., 1:2]            # Solar flux
         Lsp = x[..., 2:3]           # Moment arm for solar radiation pressure
@@ -131,27 +145,34 @@ def fire_sat_system():
         tau_tot = np.max(np.concatenate((tau_slew, tau_dist), axis=-1), axis=-1, keepdims=True)
         Pacs = tau_tot*(omega*(2*np.pi/60)) + nrw*Phold
         y = np.concatenate((Pacs, tau_tot), axis=-1)
-        return y
+
+        if output_dir is not None:
+            files = []
+            id = str(uuid.uuid4())
+            for index in np.ndindex(*x.shape[:-1]):
+                fname = f'{id}_{index}.pkl'
+                with open(Path(output_dir) / fname, 'wb') as fd:
+                    pickle.dump({'y': y[index + (slice(None),)]}, fd)
+                files.append(fname)
+            return y, files
+        else:
+            return y
 
     orbit = {'name': 'Orbit', 'model': orbit_fun, 'truth_alpha': (), 'exo_in': [0, 1], 'local_in': {},
              'global_out': [0, 1, 2, 3], 'max_alpha': (), 'max_beta': (3, 3), 'type': 'lagrange'}
     power = {'name': 'Power', 'model': power_fun, 'truth_alpha': (), 'exo_in': [2, 3], 'max_alpha': (),
              'local_in': {'Orbit': [1, 2], 'Attitude': [0]}, 'global_out': [4, 5, 6, 7], 'type': 'lagrange',
-             'max_beta': (3,)*5}
+             'max_beta': (3,)*5, 'save_output': True}
     attitude = {'name': 'Attitude', 'model': attitude_fun, 'truth_alpha': (), 'exo_in': [0, 3, 4, 5, 6, 7],
                 'max_alpha': (), 'local_in': {'Orbit': [0, 3], 'Power': [0, 1]}, 'global_out': [8, 9],
-                'type': 'lagrange', 'max_beta': (3,)*10}
+                'type': 'lagrange', 'max_beta': (3,)*10, 'save_output': True}
     exo_vars = [NormalRV(18e6, 1e6, 'H'), NormalRV(235e3, 10e3, '\u03D5'), NormalRV(1000, 50, 'Po'),
                 NormalRV(1400, 20, 'Fs'), NormalRV(2, 0.4, 'Lsp'), NormalRV(0.5, 0.1, 'q'), NormalRV(2, 0.4, 'La'),
                 NormalRV(1, 0.2, 'Cd')]
-    coupling_bds = [(2000, 6000), (20000, 60000), (1000, 5000), (0, 4), (0, 12000), (0, 12000), (0, 10000),
-                    (0, 50), (0, 100), (0, 5)]
-    adj = np.zeros((3, 3))
-    adj[0, :] = [0, 1, 1]
-    adj[1, :] = [0, 0, 1]
-    adj[2, :] = [0, 1, 0]
-    sys = SystemSurrogate([orbit, power, attitude], adj, exo_vars, coupling_bds, est_bds=500, log_dir='logs',
-                          save_dir='save')
+    coupling_vars = [UniformRV(2000, 6000), UniformRV(20000, 60000), UniformRV(1000, 5000), UniformRV(0, 4),
+                     UniformRV(0, 12000), UniformRV(0, 12000), UniformRV(0, 10000), UniformRV(0, 50),
+                     UniformRV(0, 100), UniformRV(0, 5)]
+    sys = SystemSurrogate([orbit, power, attitude], exo_vars, coupling_vars, est_bds=500, root_dir='build')
     return sys
 
 

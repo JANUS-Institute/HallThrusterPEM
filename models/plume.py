@@ -5,7 +5,10 @@ from scipy.special import erfi
 import logging
 import sys
 import math
-import scipy.integrate
+from scipy.integrate import simps
+from scipy.interpolate import interp1d
+import pickle
+from pathlib import Path
 
 sys.path.append('..')
 Q_E = 1.602176634e-19   # Fundamental charge (C)
@@ -76,8 +79,8 @@ def current_density_model(plume_input, compute_div=False):
                 den_int = j_ion.real * np.cos(alpha)
 
                 try:
-                    cos_div = scipy.integrate.simps(num_int[start_idx:], alpha[start_idx:]) / \
-                              scipy.integrate.simps(den_int[start_idx:], alpha[start_idx:])
+                    cos_div = simps(num_int[start_idx:], alpha[start_idx:]) / \
+                              simps(den_int[start_idx:], alpha[start_idx:])
                 except:
                     # Catch any case where the integration = 0 in the denominator
                     logger.warning('Predicted beam current has 0 integrated ion current, setting div_angle=90 deg')
@@ -160,8 +163,8 @@ def jion_modified(plume_input, compute_div=False):
                 den_int = j_ion.real * np.cos(alpha)
 
                 try:
-                    cos_div = scipy.integrate.simps(num_int[start_idx:], alpha[start_idx:]) / \
-                              scipy.integrate.simps(den_int[start_idx:], alpha[start_idx:])
+                    cos_div = simps(num_int[start_idx:], alpha[start_idx:]) / \
+                              simps(den_int[start_idx:], alpha[start_idx:])
                 except:
                     # Catch any case where the integration = 0 in the denominator
                     logger.warning('Predicted beam current has 0 integrated ion current, setting div_angle=90 deg')
@@ -180,54 +183,110 @@ def jion_modified(plume_input, compute_div=False):
             return ret
 
 
-if __name__ == '__main__':
-    inputs = {
-        "c0": 0.747388,
-        "c1": 0.348462,
-        "c2": -20.66,
-        "c3": 0.5917,
-        "r_cathode": 0.10158337353817158,
-        "alpha_cathode": 73.2190961990383,
-        "background_pressure_Torr": 1.57e-05,
-        "I_B0": 3.6,
-        "sigma_cex": 55e-20,
-        "r_m": [1]*31,
-        "alpha_deg":
-            [
-                -10.0,
-                -5.0,
-                0.0,
-                5.0,
-                10.0,
-                15.0,
-                20.0,
-                25.0,
-                30.0,
-                35.0,
-                40.0,
-                45.0,
-                50.0,
-                55.0,
-                60.0,
-                65.0,
-                70.0,
-                75.0,
-                80.0,
-                85.0,
-                90.0,
-                95.0,
-                100.0,
-                105.0,
-                110.0,
-                115.0,
-                120.0,
-                125.0,
-                130.0,
-                135.0,
-                140.0
-            ],
-        "background_temperature_K": 300
-    }
+def plume_pem(x, alpha=(), compress=True):
+    """Compute the ion current density plume model in PEM format
+    :param x: (..., xdim) Plume inputs
+    :param alpha: Model fidelity indices (none for plume model, since it is analytical)
+    :param compress: Whether to return the dimension-reduced jion profile
+    :returns y: (..., ydim) Plume outputs
+    """
+    # Load plume inputs
+    P_B = x[..., 0, np.newaxis] * TORR_2_PA
+    c0 = x[..., 1, np.newaxis]
+    c1 = x[..., 2, np.newaxis]
+    c2 = x[..., 3, np.newaxis]
+    c3 = x[..., 4, np.newaxis]
+    c4 = x[..., 5, np.newaxis]
+    c5 = x[..., 6, np.newaxis]
+    sigma_cex = x[..., 7, np.newaxis]   # m^2
+    r_m = x[..., 8, np.newaxis]         # m
+    I_B0 = x[..., 9, np.newaxis]        # A
 
-    res = jion_modified(inputs)
-    print('done')
+    # Load svd params for dimension reduction
+    if compress:
+        with open(Path(__file__).parent / 'plume_svd.pkl', 'rb') as fd:
+            svd_data = pickle.load(fd)
+            vtr = svd_data['vtr']       # (r x M)
+            r, M = vtr.shape
+            ydim = r+2
+    else:
+        ydim = 102
+        M = 100
+
+    # Compute model prediction
+    alpha_rad = np.reshape(np.linspace(0, np.pi/2, M), (1,)*len(x.shape[:-1]) + (M,))
+    y = np.zeros(x.shape[:-1] + (ydim,))
+    try:
+        # Neutral density
+        n = c4 * P_B + c5  # m^-3
+
+        # Divergence angles
+        alpha1 = c2 * P_B + c3  # Main beam divergence (rad)
+        alpha2 = alpha1 / c1    # Scattered beam divergence (rad)
+
+        with np.errstate(invalid='ignore'):
+            A1 = (1 - c0) / ((np.pi ** (3 / 2)) / 2 * alpha1 * np.exp(-(alpha1 / 2)**2) *
+                             (2 * erfi(alpha1 / 2) + erfi((np.pi * 1j - (alpha1 ** 2)) / (2 * alpha1)) -
+                              erfi((np.pi * 1j + (alpha1 ** 2)) / (2 * alpha1))))
+            A2 = c0 / ((np.pi ** (3 / 2)) / 2 * alpha2 * np.exp(-(alpha2 / 2)**2) *
+                       (2 * erfi(alpha2 / 2) + erfi((np.pi * 1j - (alpha2 ** 2)) / (2 * alpha2)) -
+                        erfi((np.pi * 1j + (alpha2 ** 2)) / (2 * alpha2))))
+
+        I_B = I_B0 * np.exp(-r_m*n*sigma_cex)
+        j_beam = (I_B / r_m ** 2) * A1 * np.exp(-(alpha_rad / alpha1) ** 2)
+        j_scat = (I_B / r_m ** 2) * A2 * np.exp(-(alpha_rad / alpha2) ** 2)
+        j_cex = I_B0 * (1 - np.exp(-r_m*n*sigma_cex)) / (2 * np.pi * r_m ** 2)
+        j = j_beam + j_scat + j_cex
+
+        # Check for case where divergence is less than 0 and return nan
+        neg_idx = np.where(alpha1[..., 0] <= 0)
+        j[neg_idx, :] = np.nan
+
+        if np.any(abs(j.imag) > 0):
+            logger.warning('Predicted beam current has imaginary component')
+
+        # Calculate divergence angle from https://aip.scitation.org/doi/10.1063/5.0066849
+        # Requires alpha = [0, ..., 90]
+        num_int = j.real * np.cos(alpha_rad) * np.sin(alpha_rad)
+        den_int = j.real * np.cos(alpha_rad)
+
+        with np.errstate(divide='ignore'):
+            cos_div = simps(num_int, alpha_rad, axis=-1) / simps(den_int, alpha_rad, axis=-1)
+            cos_div[cos_div == np.inf] = np.nan
+
+        y[..., 0] = cos_div**2          # Divergence efficiency
+        y[..., 1] = np.arccos(cos_div)  # Divergence angle (rad)
+
+        # Ion current density (A/m^2), in compressed dimension (r) or default dimension (M)
+        y[..., 2:] = np.squeeze(vtr @ np.log10(j[..., np.newaxis].real), axis=-1) if compress else j.real
+        return y
+
+    except Exception as e:
+        raise ModelRunException(f"Exception in plume model: {e}")
+
+
+def jion_reconstruct(xr, alpha=None):
+    """Reconstruct an ion current density profile, interpolate to alpha if provided
+    :param xr: (... r) The reduced dimension output of plume_pem (just the ion current density)
+    :param alpha: (Nx,) The alpha grid points to interpolate to (in radians, between -pi/2 and pi/2)
+    :returns alpha, jion_interp: (..., Nx or M) The reconstructed (and potentially interpolated) jion profile(s),
+                    corresponds to alpha=(0, 90) deg with M=100 points by default
+    """
+    with open(Path(__file__).parent / 'plume_svd.pkl', 'rb') as fd:
+        svd_data = pickle.load(fd)
+        vtr = svd_data['vtr']       # (r x M)
+        r, M = vtr.shape
+    alpha_g = np.linspace(0, np.pi/2, M)
+    jion_g = 10 ** np.squeeze(vtr.T @ xr[..., np.newaxis], axis=-1)  # (..., M)
+
+    # Do interpolation
+    if alpha is not None:
+        # Extend to range (-90, 90) deg
+        alpha_g2 = np.concatenate((-np.flip(alpha_g)[:-1], alpha_g))                     # (2M-1,)
+        jion_g2 = np.concatenate((np.flip(jion_g, axis=-1)[..., :-1], jion_g), axis=-1)  # (..., 2M-1)
+
+        f = interp1d(alpha_g2, jion_g2, axis=-1)
+        jion_interp = f(alpha)  # (..., Nx)
+        return alpha, jion_interp
+    else:
+        return alpha_g, jion_g

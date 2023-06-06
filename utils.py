@@ -7,7 +7,7 @@ from matplotlib.pyplot import cycler
 from matplotlib.colors import LinearSegmentedColormap, ListedColormap
 import numpy as np
 from numpy.linalg.linalg import LinAlgError
-from scipy.stats import uniform, norm
+from scipy.stats import uniform, norm, loguniform
 import os
 
 INPUT_DIR = Path(__file__).parent / 'input'
@@ -61,6 +61,47 @@ class UniformRV(BaseRV):
         self.bds = (lb, ub)
         self.rv = uniform(loc=lb, scale=ub-lb)
         self.disp = f'U({lb}, {ub})'
+
+
+class LogUniformRV(BaseRV):
+    """Base 10 loguniform"""
+
+    def __init__(self, log10_a, log10_b, name=''):
+        super().__init__()
+        self.bds = (10**log10_a, 10**log10_b)
+        self.disp = f'LU({log10_a}, {log10_b})' if name == '' else name
+        self.rv = loguniform(10**log10_a, 10**log10_b)
+
+
+class LogNormalRV(BaseRV):
+    """Base 10 lognormal"""
+
+    class lognormal:
+        """Kinda hated scipy.stats.lognorm, so this is a workaround"""
+
+        def __init__(self, mu, std):
+            self.mu = mu        # Mean of underlying distribution
+            self.std = std      # Standard deviation of underlying distribution
+
+        def pdf(self, x):
+            """Compute lognormal (base 10) pdf
+            :param x: (...,) np.ndarray of any shape
+            """
+            return (np.log10(np.e) / (x * self.std * np.sqrt(2*np.pi))) * \
+                np.exp(-0.5*((np.log10(x) - self.mu)/self.std) ** 2)
+
+        def rvs(self, size=(1,)):
+            """Sample from the lognormal base 10 distribution"""
+            scale = np.log10(np.e)
+            return np.random.lognormal(mean=(1/scale) * self.mu, sigma=(1/scale) * self.std, size=size)
+            # return 10 ** (np.random.randn(*size)*self.std + self.mu)  # Alternatively
+
+    def __init__(self, mu, std, name=''):
+        """Init with the mean and standard deviation of the underlying distribution, i.e. log10(x) ~ N(mu, std)"""
+        super().__init__()
+        self.bds = (10**(mu - 4*std), 10**(mu + 4*std))
+        self.disp = f'LN_10({mu}, {std})' if name == '' else name
+        self.rv = self.lognormal(mu, std)
 
 
 class NormalRV(BaseRV):

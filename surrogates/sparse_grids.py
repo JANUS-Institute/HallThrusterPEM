@@ -38,7 +38,8 @@ class SparseGridSurrogate(ComponentSurrogate):
         """Abstract method implementation for constructing tensor-product grid interpolants"""
         # Create a new tensor-product grid interpolator for the base index (0, 0, ...)
         if np.sum(beta) == 0:
-            interp = self.interp_class(list(beta), self.x_vars, model=self.alpha_models[str(alpha)])
+            interp = self.interp_class(list(beta), self.x_vars, model=self.alpha_models[str(alpha)],
+                                       output_dir=self.output_dir)
             interp.set_yi()
             cost = interp.wall_time * interp.xi.shape[0]
             self.curr_max_beta[str(alpha)] = list(beta)
@@ -84,14 +85,14 @@ class SparseGridSurrogate(ComponentSurrogate):
                 if interp_idx not in neighbor[0] and i not in del_idx:
                     # Assume the exact same interpolation indexing for all neighbors (true for tensor-product grids)
                     interp.yi[interp_idx, :] = neighbor[2].yi[interp_idx, :]
+                    if self.output_dir is not None:
+                        interp.output_files[interp_idx] = neighbor[2].output_files[interp_idx]
                     del_idx.append(i)
         x_new_idx = list(np.delete(x_new_idx, del_idx))
         x_new = np.delete(x_new, del_idx, axis=0)
 
         # Compute the model outputs at all remaining refinement points
-        y_new = self.alpha_models[str(alpha)](x_new)  # (N_new, ydim)
-        for j in range(y_new.shape[0]):
-            interp.yi[x_new_idx[j], :] = y_new[j, :]
+        interp.set_yi(x_new=(x_new_idx, x_new))
 
         cost = interp.wall_time * len(x_new_idx)
         return interp, cost
@@ -100,16 +101,14 @@ class SparseGridSurrogate(ComponentSurrogate):
 class TensorProductInterpolator(BaseInterpolator):
     """Abstract tensor-product (multivariate) interpolator"""
 
-    def __init__(self, beta, x_vars, yi=None, model=None, init_grids=True):
+    def __init__(self, beta, x_vars, init_grids=True, **kwargs):
         """Initialize a tensor-product grid interpolator
         :param beta: list(), refinement level in each dimension of xdim
         :param x_vars: list() of BaseRV() objects specifying bounds/pdfs for each input x
-        :param yi: the interpolation qoi values, y = (prod(xdims), ydim)
-        :param model: Callable as y = model(x), with x = (..., xdim), y = (..., ydim)
         :param init_grids: Whether to compute 1d leja sequences on init
         """
         self.x_grids = []   # Univariate leja sequences in each dimension
-        super().__init__(beta, x_vars, yi=yi, model=model)
+        super().__init__(beta, x_vars, **kwargs)
 
         if init_grids:
             # Construct 1d univariate Leja sequences in each dimension
@@ -161,11 +160,16 @@ class TensorProductInterpolator(BaseInterpolator):
         j = 0           # Use this idx for iterating over existing yi
         interp.xi = np.zeros((np.prod(new_grid_sizes), self.xdim()))
         interp.yi = np.zeros((np.prod(new_grid_sizes), self.ydim()))
+        if self.output_dir is not None:
+            interp.output_files = [None] * interp.xi.shape[0]
+
         for i, ele in enumerate(itertools.product(*interp.x_grids)):
             interp.xi[i, :] = ele
             if j < self.xi.shape[0] and np.all(np.abs(self.xi[j, :] - interp.xi[i, :]) < tol):
                 # If we already have this interpolation point
                 interp.yi[i, :] = self.yi[j, :]
+                if self.output_dir is not None:
+                    interp.output_files[i] = self.output_files[j]
                 j += 1
             else:
                 # Otherwise, save new interpolation point and its index
@@ -181,10 +185,7 @@ class TensorProductInterpolator(BaseInterpolator):
         elif manual:
             return x_new_idx, x_new, interp
         else:
-            y_new = self._model(x_new)  # (N_new, ydim)
-            for j in range(y_new.shape[0]):
-                interp.yi[x_new_idx[j], :] = y_new[j, :]
-
+            interp.set_yi(x_new=(x_new_idx, x_new))
             return interp
 
     @abstractmethod
@@ -235,17 +236,15 @@ class TensorProductInterpolator(BaseInterpolator):
 class LagrangeInterpolator(TensorProductInterpolator):
     """Lagrange barycentric interpolator on tensor-product grid"""
 
-    def __init__(self, beta, x_vars, yi=None, model=None, init_grids=True):
+    def __init__(self, beta, x_vars, init_grids=True, **kwargs):
         """Construct the interpolator
         :param beta: list(), discretization level in each dimension of xdim
         :param x_vars: list() of BaseRV() objects specifying bounds/pdfs for each input x
-        :param yi: the interpolation qoi values, y = (prod(xdims), ydim)
-        :param model: Callable as y = model(x), with x = (..., xdim), y = (..., ydim)
         :param init_grids: Whether to compute leja sequences and barycentric weights on init
         """
         self.weights = []   # Barycentric weights for each dimension
         self.j = None       # Cartesian product of all possible refinement indices
-        super().__init__(beta, x_vars, yi=yi, model=model, init_grids=init_grids)
+        super().__init__(beta, x_vars, init_grids=init_grids, **kwargs)
 
         if init_grids:
             # Compute 1d barycentric weights for each grid
@@ -269,7 +268,7 @@ class LagrangeInterpolator(TensorProductInterpolator):
 
     def new_interpolator(self, beta):
         """Abstract implementation, admittedly a little messy way to instantiate new interpolator for super()"""
-        return LagrangeInterpolator(beta, self.x_vars, model=self._model, init_grids=False)
+        return LagrangeInterpolator(beta, self.x_vars, model=self._model, init_grids=False, output_dir=self.output_dir)
 
     def refine(self, beta, manual=False, x_refine=None):
         """Adds required functionality of refining barycentric weights on tensor-product grid

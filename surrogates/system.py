@@ -13,6 +13,7 @@ import copy
 from abc import ABC, abstractmethod
 from datetime import timezone
 from pathlib import Path
+import shutil
 
 sys.path.append('..')
 
@@ -29,60 +30,65 @@ logger.addHandler(handler)
 
 class SystemSurrogate:
 
-    def __init__(self, components, adj_matrix, exo_vars, coupling_bds, est_bds=0, log_dir=None, save_dir=None):
+    def __init__(self, components, exo_vars, coupling_vars, est_bds=0, root_dir=None):
         """Construct a multidisciplinary system surrogate
         :param components: list(Nk,) of dicts specifying component name (str), a callable function model(x, alpha), a
                            string specifying surrogate class type, the highest 'truth' set of model fidelity indices,
                            the maximum level of model fidelity indices, the maximum surrogate refinement level, the
                            global indices of required system exogenous inputs, a dict specifying the indices of local
-                           coupling variable inputs from other models, and a list() that maps local component outputs
-                           to global coupling indices
+                           coupling variable inputs from other models, a list() that maps local component outputs
+                           to global coupling indices, and whether to save all model outputs to file
                            Ex: [{'name': 'Thruster', 'model': callable(x, alpha), 'truth_alpha': (3,), 'max_alpha': (3),
                                          'max_beta': (5,), 'exo_in': [0, 2, 6...], 'local_in': {'model1': [1,2,3],
-                                         'model2': [0]}, 'global_out': [0, 1, 2, 3], 'type': 'lagrange'},
+                                         'model2': [0]}, 'global_out': [0, 1, 2, 3], 'type': 'lagrange',
+                                         'save_output': True},
                                 {'name': 'Plume', ...}, ...]
-        :param adj_matrix: (Nk, Nk), matrix of 0,1 specifying directed edges from->to for the Nk components
         :param exo_vars: list() of BaseRVs specifying the bounds/distributions for all system-level exogenous inputs
-        :param coupling_bds: list() of tuples specifying estimated bounds for all coupling variables
+        :param coupling_vars: list() of UniformRVs specifying estimated bounds for all coupling variables
         :param est_bds: (int) number of samples to estimate coupling variable bounds, do nothing if 0
-        :param log_dir: (str) write log files to this directory if specified
-        :param save_dir: (str) directory to save .pkl files during refinement containing the SystemSurrogate object
+        :param root_dir: (str) Root directory for all build products (.logs, .pkl, .json, etc.)
         """
-        # Number of components
-        Nk = len(components)
-        assert adj_matrix.shape[0] == adj_matrix.shape[1] == Nk
-
-        # Setup save directory
-        if save_dir is not None:
-            self.save_dir = str(Path(save_dir).resolve())
-            if not Path(self.save_dir).is_dir():
-                os.mkdir(self.save_dir)
+        # Setup root directory
+        if root_dir is None:
+            timestamp = datetime.datetime.now(tz=timezone.utc).isoformat().split('.')[0].replace(':', '.')
+            self.root_dir = 'build_' + timestamp
+            os.mkdir(self.root_dir)
+            self.root_dir = str(Path(self.root_dir).resolve())
         else:
-            self.save_dir = None
+            self.root_dir = str(Path(root_dir).resolve())
+            if len(os.listdir(self.root_dir)) > 0:
+                user_input = input(f'The contents of directory "{self.root_dir}" will be cleaned. Continue? (Y/n): ')
+                if user_input.lower().startswith('y') or user_input == '' or user_input == '\n':
+                    for root, dirs, files in os.walk(self.root_dir):
+                        for f in files:
+                            os.unlink(os.path.join(self.root_dir, f))
+                        for d in dirs:
+                            shutil.rmtree(os.path.join(self.root_dir, d))
+                else:
+                    error_msg = f'Please specify a different root directory to use then...'
+                    logger.error(error_msg)
+                    raise Exception(error_msg)
 
-        # Setup logger
-        self.log_file = None
-        if log_dir is not None:
-            if not Path(log_dir).is_dir():
-                os.mkdir(Path(log_dir))
-            fname = datetime.datetime.now(tz=timezone.utc).isoformat()
-            fname = fname.split('.')[0].replace(':', '.') + 'UTC_sys.log'
-            self.log_file = str((Path(log_dir) / fname).resolve())
-            f_handler = logging.FileHandler(self.log_file, mode='w', encoding='utf-8')
-            f_handler.setLevel(logging.DEBUG)
-            f_handler.setFormatter(FORMATTER)
-            logger.addHandler(f_handler)
+        os.mkdir(Path(self.root_dir) / 'sys')
+        os.mkdir(Path(self.root_dir) / 'components')
+        fname = datetime.datetime.now(tz=timezone.utc).isoformat().split('.')[0].replace(':', '.') + 'UTC_sys.log'
+        self.log_file = str((Path(self.root_dir) / fname).resolve())
+        f_handler = logging.FileHandler(self.log_file, mode='w', encoding='utf-8')
+        f_handler.setLevel(logging.DEBUG)
+        f_handler.setFormatter(FORMATTER)
+        logger.addHandler(f_handler)
         self.logger = logger.getChild(self.__class__.__name__)
 
         # Store system info in a directed graph data structure
         self.graph = nx.DiGraph()
         self.exo_vars = copy.deepcopy(exo_vars)
         self.exo_bds = [rv.bounds() for rv in self.exo_vars]
-        self.coupling_bds = copy.deepcopy(coupling_bds)
-        self.adj_matrix = adj_matrix
+        self.coupling_vars = copy.deepcopy(coupling_vars)
+        self.coupling_bds = [rv.bounds() for rv in self.coupling_vars]
         self.refine_level = 0
 
         # Construct graph nodes
+        Nk = len(components)
         nodes = {comp['name']: comp for comp in components}  # work-around since self.graph.nodes is not built yet
         for k in range(Nk):
             # Add the component as a str() node, with attributes specifying details of the surrogate
@@ -92,11 +98,10 @@ class SystemSurrogate:
                                 global_in=global_idx, global_out=comp_dict['global_out'], surrogate=surr,
                                 is_computed=False)
 
-        # Add directed edges according to the adjacency matrix
-        for i in range(Nk):
-            for j in range(Nk):
-                if self.adj_matrix[i, j]:
-                    self.graph.add_edge(components[i]['name'], components[j]['name'])
+        # Connect all neighbor nodes
+        for node, node_obj in self.graph.nodes.items():
+            for neighbor in node_obj['local_in']:
+                self.graph.add_edge(neighbor, node)
 
         # Estimate coupling variable bounds
         if est_bds > 0:
@@ -122,6 +127,13 @@ class SystemSurrogate:
                     global_idx.extend([node_obj['global_out'][i] for i in local_idx])
         global_idx = sorted(global_idx)
 
+        # Set up a component output save directory
+        output_dir = None
+        if component.get('save_output', False):
+            output_dir = str((Path(self.root_dir) / 'components' / component['name']).resolve())
+            if not Path(output_dir).is_dir():
+                os.mkdir(output_dir)
+
         # Initialize a new component surrogate
         surr_type = component.get('type', 'lagrange')
         surr_class = None
@@ -131,10 +143,10 @@ class SystemSurrogate:
                 surr_class = SparseGridSurrogate
             case other:
                 raise NotImplementedError(f"Surrogate type '{surr_type}' is not known at this time.")
-        x_vars = [self.exo_vars[i] for i in component['exo_in']] + \
-                 [UniformRV(*self.coupling_bds[i]) for i in global_idx]
+        x_vars = [self.exo_vars[i] for i in component['exo_in']] + [self.coupling_vars[i] for i in global_idx]
         surr = surr_class([], x_vars, component['model'], component['truth_alpha'], interp=surr_type,
-                          max_alpha=component.get('max_alpha', None), max_beta=component.get('max_beta', None))
+                          max_alpha=component.get('max_alpha', None), max_beta=component.get('max_beta', None),
+                          output_dir=output_dir)
         return global_idx, surr
 
     def swap_component(self, component, exo_add=None, exo_remove=None, qoi_add=None, qoi_remove=None):
@@ -142,7 +154,7 @@ class SystemSurrogate:
         :param component: dict() specifying component model and connections (see docs of __init__ for details)
         :param exo_add: list() of BaseRVs to add to system exogenous inputs (will be appended to end)
         :param exo_remove: list() of indices of system exogenous inputs to delete (can't be shared by other components)
-        :param qoi_add: list() of tuples specifying bounds of system output QoIs to add
+        :param qoi_add: list() of UniformRVs specifying bounds of system output QoIs to add
         :param qoi_remove: list() of indices of system qois to delete (can't be shared by other components)
         """
         # Delete system exogenous inputs
@@ -191,13 +203,15 @@ class SystemSurrogate:
                             node_obj['global_out'][i] -= 1
 
             # Need to update the remaining delete indices by -1 to account for each sequential deletion
+            del self.coupling_vars[qoi_idx]
             del self.coupling_bds[qoi_idx]
             for i in range(j+1, len(qoi_remove)):
                 qoi_remove[i] -= 1
 
         # Append any new system QoI outputs to the end
         if qoi_add is not None:
-            self.coupling_bds.extend(exo_add)
+            self.coupling_vars.extend(qoi_add)
+            self.coupling_bds.extend([rv.bounds() for rv in qoi_add])
 
         # Make changes to adj matrix if coupling inputs changed
         prev_neighbors = list(self.graph.nodes[component['name']]['local_in'].keys())
@@ -209,7 +223,6 @@ class SystemSurrogate:
                 prev_neighbors.remove(neighbor)
         for neighbor in prev_neighbors:
             self.graph.remove_edge(neighbor, component['name'])
-        self.adj_matrix = nx.to_numpy_array(self.graph, dtype=int)
 
         # Build and initialize the new component surrogate
         global_idx, surr = self.build_component(component)
@@ -224,13 +237,14 @@ class SystemSurrogate:
         """Insert a new component into the system
         :param component: dict() specifying component model and connections (see docs of __init__ for details)
         :param exo_add: list() of BaseRVs to add to system exogenous inputs (will be appended to end)
-        :param qoi_add: list() of tuples specifying bounds of system output QoIs to add
+        :param qoi_add: list() of UniformRVs specifying bounds of system output QoIs to add
         """
         if exo_add is not None:
             self.exo_vars.extend(exo_add)
             self.exo_bds.extend([rv.bounds() for rv in exo_add])
         if qoi_add is not None:
-            self.coupling_bds.extend(qoi_add)
+            self.coupling_vars.extend(qoi_add)
+            self.coupling_bds.extend([rv.bounds() for rv in qoi_add])
 
         global_idx, surr = self.build_component(component)
         surr.init_coarse()
@@ -241,7 +255,6 @@ class SystemSurrogate:
         neighbors = list(component['local_in'].keys())
         for neighbor in neighbors:
             self.graph.add_edge(neighbor, component['name'])
-        self.adj_matrix = nx.to_numpy_array(self.graph, dtype=int)
         self.logger.info(f"Inserted component '{component['name']}'.")
 
     def save_on_error(func):
@@ -322,11 +335,11 @@ class SystemSurrogate:
         y_min = None
         y_max = None
         y_curr_local = dict()
-        x_couple = np.zeros((N_refine, len(self.coupling_bds)))
+        x_couple = np.zeros((N_refine, len(self.coupling_vars)))
 
         # Sample coupling vars (uniform) and evaluate each component surrogate individually for local error estimation
-        for i, bds in enumerate(self.coupling_bds):
-            x_couple[:, i] = np.random.rand(N_refine) * (bds[1] - bds[0]) + bds[0]
+        for i, bds in enumerate(self.coupling_vars):
+            x_couple[:, i] = self.coupling_vars[i].sample((N_refine,))
         for node, node_obj in self.graph.nodes.items():
             comp_input = np.concatenate((xtest[:, node_obj['exo_in']], x_couple[:, node_obj['global_in']]), axis=1)
             y_curr_local[node] = node_obj['surrogate'](comp_input, training=True)
@@ -417,7 +430,7 @@ class SystemSurrogate:
         """
         # Allocate space for all system outputs (just save all coupling vars)
         xdim = x.shape[-1]
-        ydim = len(self.coupling_bds)
+        ydim = len(self.coupling_vars)
         y = np.zeros(x.shape[:-1] + (ydim,))
         valid_idx = ~np.isnan(x[..., 0])  # Keep track of valid samples (set to False if FPI fails)
         t1 = 0
@@ -580,6 +593,7 @@ class SystemSurrogate:
         offset_bds = (bds[0] - offset, bds[1] + offset)
         new_bds = offset_bds if init else (min(self.coupling_bds[global_idx][0], offset_bds[0]),
                                            max(self.coupling_bds[global_idx][1], offset_bds[1]))
+        self.coupling_vars[global_idx].update_bounds(*new_bds)
         self.coupling_bds[global_idx] = new_bds
 
         # Iterate over all components and update internal coupling variable bounds
@@ -616,14 +630,50 @@ class SystemSurrogate:
         :param filename: filename of the .pkl file to save to
         :param save_dir: (str) Overrides existing save directory if provided
         """
-        save_dir = save_dir if save_dir is not None else self.save_dir
+        save_dir = save_dir if save_dir is not None else str(Path(self.root_dir) / 'sys')
         if save_dir is not None:
             if not Path(save_dir).is_dir():
                 save_dir = '.'
-            self.save_dir = str(Path(save_dir).resolve())
-            with open(Path(self.save_dir) / filename, 'wb') as dill_file:
+            with open(Path(save_dir) / filename, 'wb') as dill_file:
                 dill.dump(self, dill_file)
-            self.logger.info(f'SystemSurrogate saved to {(Path(self.save_dir) / filename).resolve()}')
+            self.logger.info(f'SystemSurrogate saved to {(Path(save_dir) / filename).resolve()}')
+
+    def set_root_directory(self, dir):
+        """Set the root to a new directory, for example if you move to a new system
+        :param dir: str() or Path specifying new root directory
+        """
+        self.root_dir = str(Path(dir).resolve())
+        log_file = None
+        if not (Path(self.root_dir) / 'sys').is_dir():
+            os.mkdir(Path(self.root_dir) / 'sys')
+        if not (Path(self.root_dir) / 'components').is_dir():
+            os.mkdir(Path(self.root_dir) / 'components')
+        for f in os.listdir(self.root_dir):
+            if f.endswith('.log'):
+                log_file = str((Path(self.root_dir) / f).resolve())
+                break
+        if log_file is None:
+            fname = datetime.datetime.now(tz=timezone.utc).isoformat().split('.')[0].replace(':', '.') + 'UTC_sys.log'
+            log_file = str((Path(self.root_dir) / fname).resolve())
+
+        # Remove all previous file handlers (to avoid duplication)
+        self.log_file = log_file
+        del_handlers = [h for h in logger.handlers if isinstance(h, logging.FileHandler)]
+        for h in del_handlers:
+            logger.removeHandler(h)
+        f_handler = logging.FileHandler(self.log_file, mode='a', encoding='utf-8')
+        f_handler.setLevel(logging.DEBUG)
+        f_handler.setFormatter(FORMATTER)
+        logger.addHandler(f_handler)
+        self.logger = logger.getChild(SystemSurrogate.__name__)
+
+        # Update model output directories
+        for node, node_obj in self.graph.nodes.items():
+            if node_obj['surr'].output_dir is not None:
+                output_dir = str((Path(self.root_dir) / 'components' / node).resolve())
+                if not Path(output_dir).is_dir():
+                    os.mkdir(output_dir)
+                node_obj['surr'].set_output_dir(output_dir)
 
     def __getitem__(self, component):
         """Convenience method to get the ComponentSurrogate object from the system
@@ -632,7 +682,8 @@ class SystemSurrogate:
         return self.graph.nodes[component]['surrogate']
 
     def __repr__(self):
-        s = f'----SystemSurrogate----\nAdjacency: \n{self.adj_matrix}\nExogenous inputs: {self.exo_vars}\n'
+        s = f'----SystemSurrogate----\nAdjacency: \n{nx.to_numpy_array(self.graph, dtype=int)}\n' \
+            f'Exogenous inputs: {self.exo_vars}\n'
         for node, node_obj in self.graph.nodes.items():
             s += f'Component: {node}\n{node_obj["surrogate"]}'
         return s
@@ -694,16 +745,18 @@ class SystemSurrogate:
 class ComponentSurrogate(ABC):
     """Multi-index stochastic collocation (MISC) surrogate abstract class for a component model"""
 
-    def __init__(self, multi_index, x_vars, model, truth_alpha, interp='lagrange', max_alpha=None, max_beta=None):
+    def __init__(self, multi_index, x_vars, model, truth_alpha, interp='lagrange', max_alpha=None, max_beta=None,
+                 output_dir=None):
         """Construct the MISC surrogate from a multi-index
         :param multi_index: [((alpha1), (beta1)), ... ] List of concatenated multi-indices alpha, beta specifying
                             model and surrogate fidelity
         :param x_vars: [X1, X2, ...] list of BaseRV() objects specifying bounds/pdfs for each input x
-        :param model: The function to approximate, callable as y = model(x, alpha)
+        :param model: The function to approximate, callable as y = model(x, alpha, **kwargs)
         :param truth_alpha: tuple() specifying the highest model fidelity indices necessary for a 'truth' comparison
         :param interp: (str) the interpolation method to use, defaults to barycentric Lagrange interpolation
         :param max_alpha: tuple(), the maximum model refinement indices to allow, defaults to (3,...)
         :param max_beta: tuple(), the maximum surrogate refinement level indices, defaults to (5,...) of len xdim
+        :param output_dir: str() or Path-like specifying where to save model output files, don't save if None
         """
         self.logger = logger.getChild(self.__class__.__name__)
         assert self.is_downward_closed(multi_index), 'Must be a downward closed set.'
@@ -711,15 +764,16 @@ class ComponentSurrogate(ABC):
         self.candidate_set = []     # Candidate indices for refinement
         self._model = model
         self.truth_alpha = truth_alpha
-        self._truth_model = lambda x: self._model(x, self.truth_alpha)
+        self._truth_model = lambda x, **kwargs: self._model(x, self.truth_alpha, **kwargs)
         self.x_vars = copy.deepcopy(x_vars)
         self.x_bds = [rv.bounds() for rv in self.x_vars]
         self.ydim = None
         self.ij = None
         self.index_mat = None
         max_alpha = (3,)*len(truth_alpha) if max_alpha is None else max_alpha
-        max_beta = (5,)*len(self.x_vars) if max_beta is None else max_beta
+        max_beta = (3,)*len(self.x_vars) if max_beta is None else max_beta
         self.max_refine = list(max_alpha + max_beta)    # Max refinement indices
+        self.output_dir = output_dir
 
         # Construct vectors of [0,1]^dim(alpha+beta), used for combination coefficients
         Nij = len(self.max_refine)
@@ -792,7 +846,7 @@ class ComponentSurrogate(ABC):
         """
         # Store a new function for each unique fidelity (alpha) of the main forward model
         if str(alpha) not in self.alpha_models:
-            self.alpha_models[str(alpha)] = lambda x: self._model(x, alpha)
+            self.alpha_models[str(alpha)] = lambda x, **kwargs: self._model(x, alpha, **kwargs)
 
         # Create a dictionary for each alpha model to store multiple surrogate fidelities (beta)
         if str(alpha) not in self.surrogates:
@@ -905,6 +959,15 @@ class ComponentSurrogate(ABC):
             for beta in self.surrogates[alpha]:
                 self.surrogates[alpha][beta].update_input_bds(idx, bds)
 
+    def set_output_dir(self, dir):
+        """Update the component model output directory
+        :param dir: str() or Path specifying new directory for model output files
+        """
+        self.output_dir = str(Path(dir).resolve())
+        for alpha in self.surrogates:
+            for beta in self.surrogates[alpha]:
+                self.surrogates[alpha][beta].output_dir = self.output_dir
+
     def __repr__(self):
         s = f'Inputs \u2014 {self.x_vars}\n'
         for alpha, beta in self.index_set:
@@ -951,16 +1014,19 @@ class ComponentSurrogate(ABC):
 class BaseInterpolator(ABC):
     """Base interpolator abstract class"""
 
-    def __init__(self, beta, x_vars, xi=None, yi=None, model=None):
+    def __init__(self, beta, x_vars, xi=None, yi=None, model=None, output_dir=None):
         """Construct the interpolator
         :param beta: list(), refinement level indices for surrogate
         :param x_vars: list() of BaseRV() objects specifying bounds/pdfs for each input x
         :param xi: (Nx, xdim) interpolation points
         :param yi: the interpolation qoi values, y = (Nx, ydim)
         :param model: Callable as y = model(x), with x = (..., xdim), y = (..., ydim)
+        :param output_dir: str() or Path to save model outputs, if provided
         """
         self.logger = logger.getChild(self.__class__.__name__)
         self._model = model
+        self.output_dir = output_dir
+        self.output_files = []                              # Save output files with same indexing as xi, yi
         self.xi = xi                                        # Interpolation points
         self.yi = yi                                        # Function values at interpolation points
         self.beta = beta                                    # Refinement level indices
@@ -981,20 +1047,44 @@ class BaseInterpolator(ABC):
         """Get the dimension of the outputs"""
         return self.yi.shape[-1] if self.yi is not None else None
 
-    def set_yi(self, yi=None, model=None):
+    def set_yi(self, yi=None, model=None, x_new=()):
         """Set the interpolation point qois, if yi is none then compute yi=model(self.xi)
         :param yi: (Nx, ydim) must match dimension of self.xi
-        :param model: Callable as y = model(x), with x = (..., xdim), y = (..., ydim)
+        :param model: Callable as y, files = model(x), with x = (..., xdim), y = (..., ydim), files = list(.jsons),
+                      model will only return y if output_dir is not passed as a kwarg
+        :param x_new: tuple() specifying (x_new_idx, new_x), where new_x is an (N_new, xdim) array of new interpolation
+                      points to include and x_new_idx is a list() specifying the indices of these points into self.xi,
+                      overrides anything passed in for yi, and assumes a model is already specified
         """
         if model is not None:
             self._model = model
+
+        # Overrides anything passed in for yi (you would only be using this if yi was set previously)
+        if x_new:
+            new_idx = x_new[0]
+            new_x = x_new[1]
+            if self.output_dir is not None:
+                y_new, files_new = self._model(new_x, output_dir=self.output_dir)
+                for j in range(y_new.shape[0]):
+                    self.yi[new_idx[j], :] = y_new[j, :]
+                    self.output_files[new_idx[j]] = files_new[j]
+            else:
+                y_new = self._model(new_x)  # (N_new, ydim)
+                for j in range(y_new.shape[0]):
+                    self.yi[new_idx[j], :] = y_new[j, :]
+            return
+
+        # Set the interpolation qois yi for every interpolation point xi
         if yi is None:
             if self._model is None:
                 error_msg = 'Model not specified for computing QoIs at interpolation grid points.'
                 self.logger.error(error_msg)
                 raise Exception(error_msg)
             t1 = time.time()
-            self.yi = self._model(self.xi)
+            if self.output_dir is not None:
+                self.yi, self.output_files = self._model(self.xi, output_dir=self.output_dir)
+            else:
+                self.yi = self._model(self.xi)
             self.wall_time = (time.time() - t1) / self.xi.shape[0]
         else:
             self.yi = yi
@@ -1008,7 +1098,8 @@ class BaseInterpolator(ABC):
              or x_new_idx, x_new, interp: where x_new are the newly refined interpolation points (N_new, xdim) and
                                           x_new_idx is the list of indices of these points into interp.xi and interp.yi,
                                           Would use this if you did not provide a callable model to the Interpolator or
-                                          you want to manually set yi for each new xi outside this function
+                                          you want to manually set yi for each new xi outside this function or if you
+                                          want to call set_yi() later with the new xi
         """
         pass
 

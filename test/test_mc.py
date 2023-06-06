@@ -13,6 +13,7 @@ import time
 import traceback
 import json
 import matplotlib.pyplot as plt
+import pickle
 
 sys.path.append('..')
 logging.basicConfig(level=logging.INFO)
@@ -20,7 +21,10 @@ logging.basicConfig(level=logging.INFO)
 # Custom imports
 from models.pem import feedforward_pem
 from models.cc import cathode_coupling_model_feedforward as cc_model
+from models.plume import plume_pem, jion_reconstruct
+from models.thruster import thruster_pem
 from utils import parse_input_file, data_write, ModelRunException, data_load, ax_default, spt100_data
+from utils import batch_normal_sample, is_positive_definite, nearest_positive_definite
 
 
 def plot_qoi(ax, x, qoi, xlabel, ylabel, logx=False, legend=False, linestyle='-ko'):
@@ -297,6 +301,9 @@ def input_sampler(nominal_list, uncertainty_list):
                 input_dict[param] = float(np.random.lognormal(mean=mean, sigma=np.sqrt(var), size=1))
             elif uq_dict['uncertainty'] == 'normal':
                 input_dict[param] = np.random.randn() * np.sqrt(uq_dict['value'][1]) + uq_dict['value'][0]
+            elif uq_dict['uncertainty'] == 'loguniform_bds':
+                lb, ub = uq_dict['value']
+                input_dict[param] = 10 ** (np.random.rand() * (ub-lb) + lb)
             else:
                 raise NotImplementedError
 
@@ -304,6 +311,45 @@ def input_sampler(nominal_list, uncertainty_list):
             sample_tracker[param] = input_dict.get(param)
 
         model_inputs.append(input_dict)
+
+    return model_inputs
+
+
+def laplace_sampler(nominal_list):
+    # Load Laplace results
+    base_path = Path('../results/laplace/laplace-2023-03-08T18.30.42.595069+00.00')
+    with open(base_path / 'laplace-result.pkl', 'rb') as fd:
+        data = pickle.load(fd)
+    map = data['mle']
+    cov = data['hess_inv']
+
+    if not is_positive_definite(cov):
+        cov = nearest_positive_definite(cov)  # zeroes out negative eigenvalues basically
+
+    # Sample model parameters from Laplace approximation
+    model_inputs = copy.deepcopy(nominal_list)
+    samples = batch_normal_sample(map, cov)  # (1, dim)
+    params = np.squeeze(samples, axis=0)  # (dim,)
+    Te_c = params[0]    # Electron temperature at cathode (eV)
+    V_vac = params[1]   # Vacuum coupling voltage at cathode (V)
+    Pstar = params[2]   # Cathode coupling model parameter (torr)
+    P_T = params[3]     # Cathode coupling model parameter (torr)
+    u_n = params[4]     # Neutral velocity (m/s)
+    c_w = params[5]     # Wall sheath loss coefficient
+    c_AN1 = params[6]   # Anomalous transport coefficient
+    c_AN2 = params[7]   # Anomalous transport coefficient (offset magnitude from cAN1)
+    l_z = params[8]     # Inner-outer transition length (m)
+    c0 = params[9]      # Plume model fit parameters
+    c1 = params[10]
+    c2 = params[11]
+    c3 = params[12]
+    c4 = params[13]
+    c5 = params[14]
+    set_inputs(model_inputs[0], {'cathode_electron_temp_eV': Te_c, 'V_vac': V_vac, 'Pstar': Pstar, 'P_T': P_T})
+    set_inputs(model_inputs[1], {'cathode_electron_temp_eV': Te_c, 'neutral_velocity_m_s': u_n,
+                                 'sheath_loss_coefficient': c_w, 'anom_coeff_1': c_AN1,
+                                 'anom_coeff_2_mag_offset': c_AN2, 'inner_outer_transition_length_m': l_z})
+    set_inputs(model_inputs[2], {'c0': c0, 'c1': c1, 'c2': c2, 'c3': c3, 'c4': c4, 'c5': c5})
 
     return model_inputs
 
@@ -335,6 +381,16 @@ def test_cc_forward(num_samples, n_jobs=-1):
     fname = 'temp.dat'
     vcc_pred = np.memmap(fname, dtype='float64', shape=(Nd, num_samples), mode='w+')
 
+    # Load Laplace results
+    base_path = Path('../results/laplace/laplace-2023-03-08T18.30.42.595069+00.00')
+    with open(base_path / 'laplace-result.pkl', 'rb') as fd:
+        laplace_data = pickle.load(fd)
+    map = laplace_data['mle']
+    cov = laplace_data['hess_inv']
+
+    if not is_positive_definite(cov):
+        cov = nearest_positive_definite(cov)  # zeroes out negative eigenvalues basically
+
     # Batch function to run in parallel
     def run_batch(data_idx, sample_idx, vcc):
         # Set operating conditions
@@ -344,7 +400,18 @@ def test_cc_forward(num_samples, n_jobs=-1):
         nominal_list = [cc_input]
 
         # Sample inputs and run model
-        model_inputs = input_sampler(nominal_list, uncertainty_list)
+        # model_inputs = input_sampler(nominal_list, uncertainty_list)
+
+        # Sample model parameters from Laplace approximation
+        model_inputs = copy.deepcopy(nominal_list)
+        samples = batch_normal_sample(map, cov)  # (1, dim)
+        params = np.squeeze(samples, axis=0)  # (dim,)
+        Te_c = params[0]  # Electron temperature at cathode (eV)
+        V_vac = params[1]  # Vacuum coupling voltage at cathode (V)
+        Pstar = params[2]  # Cathode coupling model parameter (torr)
+        P_T = params[3]  # Cathode coupling model parameter (torr)
+        set_inputs(model_inputs[0], {'cathode_electron_temp_eV': Te_c, 'V_vac': V_vac, 'Pstar': Pstar, 'P_T': P_T})
+
         pem_output = cc_model(model_inputs[0])
         vcc[data_idx, sample_idx] = pem_output['cathode_potential']
 
@@ -360,7 +427,7 @@ def test_cc_forward(num_samples, n_jobs=-1):
     yerr = 0.3
     ax.errorbar(data[idx, 4], data[idx, 5], yerr=yerr, fmt='or', capsize=3, markerfacecolor='none',
                 label='Experimental', markersize=5)
-    plot_qoi(ax, data[idx, 4], vcc_pred[idx, :], 'Pressure [torr]', 'Cathode coupling voltage [V]', legend=True)
+    plot_qoi(ax, data[idx, 4], vcc_pred[idx, :], 'Background pressure [torr]', 'Cathode coupling voltage [V]', legend=True)
     ax.set_ylim([30, 34])
     fig.tight_layout()
     plt.show()
@@ -373,9 +440,10 @@ def test_cc_forward(num_samples, n_jobs=-1):
 def test_feedforward_mc(num_samples, n_jobs=-1):
     """Test full feedforward PEM with forward propagation of uncertainty"""
     # Load global component nominal conditions and uncertainties (exclude model parameter uncertainty)
-    cc_nominal, cc_uncertainty = parse_input_file('cc_input.json', exclude=['parameters'])
-    thruster_nominal, thruster_uncertainty = parse_input_file('thruster_input.json', exclude=['parameters'])
-    plume_nominal, plume_uncertainty = parse_input_file('plume_input.json', exclude=['parameters'])
+    exclude = ['parameters', 'operating', 'design', 'other']
+    cc_nominal, cc_uncertainty = parse_input_file('cc_input.json', exclude=exclude)
+    thruster_nominal, thruster_uncertainty = parse_input_file('thruster_input.json', exclude=exclude)
+    plume_nominal, plume_uncertainty = parse_input_file('plume_input.json', exclude=exclude)
     uncertainty_list = [cc_uncertainty, thruster_uncertainty, plume_uncertainty]
 
     # Create output directories
@@ -412,7 +480,8 @@ def test_feedforward_mc(num_samples, n_jobs=-1):
             sample_num = start_idx + idx
 
             # Sample inputs
-            model_inputs = input_sampler(nominal_list, uncertainty_list)
+            # model_inputs = input_sampler(nominal_list, uncertainty_list)
+            model_inputs = laplace_sampler(nominal_list)
             pem_output = {}
 
             # Run models
@@ -481,18 +550,223 @@ def test_feedforward_mc(num_samples, n_jobs=-1):
             print(f'Finished Monte Carlo for ion current density; PB={pb} Torr')
 
 
+def test_plume_svd():
+    """Test dimension reduction for plume ion current density"""
+    def sampler(N):
+        # Sample over entire input space
+        c0 = np.random.rand(N, 1)
+        c1 = np.random.rand(N, 1)*(0.9-0.1) + 0.1
+        c2 = np.random.rand(N, 1)*(100 + 100) - 100
+        c3 = np.random.rand(N, 1)*(1.570796) + 0
+        c4 = 10 ** (np.random.rand(N, 1)*(22-18) + 18)
+        c5 = 10 ** (np.random.rand(N, 1)*(18-14) + 14)
+        PB = 10 ** (np.random.rand(N, 1)*(-3 + 8) - 8)
+        IB0 = np.random.rand(N, 1)*(50) + 0
+        sigma_cex = np.random.rand(N, 1)*(58e-20 - 51e-20) + 51e-20
+        r = np.random.rand(N, 1)*(1.5 - 0.5) + 0.5
+        x = np.concatenate((PB, c0, c1, c2, c3, c4, c5, sigma_cex, r, IB0), axis=-1)
+        return x
+
+    def save_svd():
+        """Save svd results for a test set of N=1000"""
+        x = sampler(6000)
+        y = plume_pem(x, compress=False)
+        idx = ~np.isnan(y[:, 0]) & (np.nanmax(y, axis=-1) <= 1000)
+        div_eff = y[idx, 0]
+        div_angle = y[idx, 1] * (180 / np.pi)
+        jion = y[idx, 2:]
+        print(f'Number of good samples: {jion.shape[0]}')
+
+        # Data matrix and SVD dimension reduction
+        r_pct = 0.99
+        N = 1000
+        M = jion.shape[1]
+        A = np.log10(jion[:N, :])
+        u, s, vt = np.linalg.svd(A)  # (NxN), (NxM), (MxM)
+        frac = np.cumsum(s / np.sum(s))
+        idx = int(np.where(frac >= r_pct)[0][0])
+        r = idx + 1  # Number of singular values to take
+        print(f'r={r} with singular values {s[:r]} and cumsum {frac[:r]}')
+        vtr = vt[:r, :]  # (r x M)
+        save_dict = {'A': A, 'r_pct': r_pct, 'r': r, 'vtr': vtr}
+        with open(Path('../models') / 'plume_svd.pkl', 'wb') as fd:
+            pickle.dump(save_dict, fd)
+
+        # Plot results for sanity check
+        fig, ax = plt.subplots()
+        ax.plot(s, '.k')
+        ax.set_yscale('log')
+        ax_default(ax, 'Index', 'Singular value', legend=False)
+        plt.show()
+
+        fig, ax = plt.subplots(1, 2)
+        ax[0].hist(div_eff, color='r', edgecolor='black', linewidth=1.2, density=True)
+        ax[1].hist(div_angle, color='r', edgecolor='black', linewidth=1.2, density=True)
+        ax_default(ax[0], 'Divergence efficiency', '', legend=False)
+        ax_default(ax[1], 'Divergence angle', '', legend=False)
+        fig.set_size_inches(7, 3)
+        fig.tight_layout()
+        plt.show()
+        fig, ax = plt.subplots()
+        alpha = np.linspace(0, 90, 100)
+        lb = np.percentile(jion, 5, axis=0)
+        mid = np.percentile(jion, 50, axis=0)
+        ub = np.percentile(jion, 95, axis=0)
+        ax.plot(alpha, mid, '-k')
+        for i in range(4):
+            ax.plot(alpha, jion[i, :], linestyle='--')
+        ax.fill_between(alpha, lb, ub, alpha=0.3, edgecolor=(0.5, 0.5, 0.5), facecolor='gray')
+        ax.set_yscale('log')
+        ax_default(ax, 'Angle from thruster centerline (deg)', 'Ion current density ($A/m^2$)', legend=False)
+        plt.show()
+
+    # Test reconstruction against experimental data
+    def reconstruct():
+        jion_data = np.loadtxt(Path('../data/spt100/jion_dataset4.csv'), delimiter=',', skiprows=1)
+        Np = 8
+        pb = jion_data[:, 3].reshape((Np, -1))
+        r_m = jion_data[:, 4].reshape((Np, -1))
+        alpha_deg = jion_data[:, 5].reshape((Np, -1))
+        jion_exp = jion_data[:, 6].reshape((Np, -1))  # mA/cm^2
+        jion_var = jion_data[:, 7].reshape((Np, -1))
+        cutoff = np.where(alpha_deg[0, :] == 90)[0][0] + 1
+        alpha_rad = alpha_deg[0, :cutoff] * (np.pi/180)
+
+        # Set inputs
+        x = np.zeros((Np, 10))
+        x[:, 0] = pb[:, 0]      # Torr
+        x[:, 1] = 0.5073
+        x[:, 2] = 0.3031
+        x[:, 3] = 9.73
+        x[:, 4] = 0.261
+        x[:, 5] = 3.17e19
+        x[:, 6] = 1.09e16
+        x[:, 7] = 55e-20
+        x[:, 8] = r_m[:, 0]     # m
+        x[:, 9] = 3.6           # A
+        pem_res = plume_pem(x, compress=True)   # (Np, 2+r)
+        _, pem_interp = jion_reconstruct(pem_res[:, 2:], alpha=alpha_rad)  # (Np, M)
+        pem_interp = pem_interp * (1000) * (1 / 100 ** 2)  # mA/cm^2
+
+        fig, ax = plt.subplots(2, 4, sharey='all', sharex='all')
+        fig.set_size_inches(12, 6)
+        idx = 0
+        for j in range(2):
+            for i in range(4):
+                pass
+                # Plot model against experimental data
+                yerr = 2 * np.sqrt(jion_var[idx, :cutoff])
+                ax[j, i].errorbar(alpha_deg[idx, :cutoff], jion_exp[idx, :cutoff], yerr=yerr, fmt='or', capsize=3,
+                                  markerfacecolor='none', label='Experimental', markersize=5)
+                ax[j, i].plot(alpha_deg[idx, :cutoff], pem_interp[idx, :], '-k', label='PEM')
+                ax[j, i].set_title(f'{pb[idx, 0]:.02} Torr')
+                ax[j, i].set_yscale('log')
+                ax_default(ax[j, i], 'Angle from thruster centerline (deg)', 'Ion current density ($mA/cm^2$)')
+                idx += 1
+        fig.tight_layout()
+        plt.show()
+
+    # save_svd()
+    reconstruct()
+
+
+def test_thruster_svd():
+    """Test dimension reduction for thruster avg ion velocity profile"""
+    def sampler(N):
+        # Sample over entire input space
+        PB = 10 ** (np.random.rand(N, 1) * (-3 + 8) - 8)
+        Va = np.random.rand(N, 1) * (400-200) + 200
+        mdot_a = np.random.rand(N, 1) * (7e-6 - 3e-6) + 3e-6
+        Tec = np.random.rand(N, 1) * (5 - 1) + 1
+        un = np.random.rand(N, 1) * (500 - 50) + 50
+        cw = np.random.rand(N, 1) * (0.3 - 0.1) + 0.1
+        lt = np.random.rand(N, 1) * (0.02 - 0.001) + 0.001
+        scale = np.log10(np.e)
+        van_1 = np.random.lognormal(mean=(1/scale)*(-3), sigma=np.sqrt((1/scale**2) * 0.25), size=(N, 1))
+        van_2 = np.random.randn(N, 1)*np.sqrt(0.25) + 1
+        l_cathode = np.random.rand(N, 1) * (0.09 - 0.07) + 0.07
+        Ti = np.random.rand(N, 1) * (1200 - 800) + 800
+        Tn = np.random.rand(N, 1) * (320 - 280) + 280
+        Tb = np.random.rand(N, 1) * (320 - 280) + 280
+        Vcc = np.random.rand(N, 1) * (60 - 0) + 0
+        x = np.concatenate((PB, Va, mdot_a, Tec, un, cw, lt, van_1, van_2, l_cathode, Ti, Tn, Tb, Vcc), axis=-1)
+        return x
+
+    def save_svd():
+        """Save svd results for a test set of N=1000"""
+        x = sampler(2000)
+        alpha = (3, 1)
+        timestamp = datetime.datetime.now(tz=timezone.utc).isoformat().replace(':', '.')
+        save_dir = Path('../results/svd') / timestamp
+        os.mkdir(save_dir)
+        y, _ = thruster_pem(x, alpha, output_dir=save_dir, compress=False, n_jobs=-1)
+        idx = ~np.isnan(y[:, 0])
+        IB0 = y[idx, 0]
+        T = y[idx, 1]
+        eta_v = y[idx, 2]
+        eta_c = y[idx, 3]
+        eta_m = y[idx, 4]
+        u_avg = y[idx, 5]
+        uion = y[idx, 6:]
+
+        # Data matrix and SVD dimension reduction
+        N = 1000
+        r_pct = 0.99
+        M = uion.shape[1]
+        A = uion[:N, :]
+        u, s, vt = np.linalg.svd(A)  # (NxN), (NxM), (MxM)
+        frac = np.cumsum(s / np.sum(s))
+        idx = int(np.where(frac >= r_pct)[0][0])
+        r = idx + 1  # Number of singular values to take
+        print(f'r={r} with singular values {s[:r]} and cumsum {frac[:r]}')
+        vtr = vt[:r, :]  # (r x M)
+        save_dict = {'A': A, 'r_pct': r_pct, 'r': r, 'vtr': vtr}
+        with open(Path('../models') / 'thruster_svd.pkl', 'wb') as fd:
+            pickle.dump(save_dict, fd)
+
+        # Plot results for sanity check
+        fig, ax = plt.subplots()
+        ax.plot(s, '.k')
+        ax.set_yscale('log')
+        ax_default(ax, 'Index', 'Singular value', legend=False)
+        plt.show()
+        fig, ax = plt.subplots(1, 2)
+        ax[0].hist(IB0, color='r', edgecolor='black', linewidth=1.2, density=True)
+        ax[1].hist(T*1000, color='r', edgecolor='black', linewidth=1.2, density=True)
+        ax_default(ax[0], 'Total beam current at exit (A)', '', legend=False)
+        ax_default(ax[1], 'Thrust (mN)', '', legend=False)
+        fig.set_size_inches(7, 3)
+        fig.tight_layout()
+        plt.show()
+        fig, ax = plt.subplots()
+        z = np.linspace(0, 0.08, M)
+        lb = np.percentile(uion, 5, axis=0)
+        mid = np.percentile(uion, 50, axis=0)
+        ub = np.percentile(uion, 95, axis=0)
+        ax.plot(z*1000, mid, '-k')
+        for i in range(4):
+            ax.plot(z*1000, uion[i, :], linestyle='--')
+        ax.fill_between(z*1000, lb, ub, alpha=0.3, edgecolor=(0.5, 0.5, 0.5), facecolor='gray')
+        ax_default(ax, 'Distance from anode (mm)', 'Average ion velocity (m/s)', legend=False)
+        plt.show()
+
+    save_svd()
+
+
 if __name__ == '__main__':
     N = 200
     # test_cc_forward(N, n_jobs=-1)
     # test_feedforward_mc(N, n_jobs=-1)
+    # test_plume_svd()
+    test_thruster_svd()
 
     # Plot results (most recent run)
-    dir = Path('../results/forward')
-    files = os.listdir(dir)
-    most_recent = '1900'
-    for f in files:
-        if f > most_recent:
-            most_recent = f
-    base_path = dir / most_recent
-    plot_mc_experimental(base_path)
+    # dir = Path('../results/forward')
+    # files = os.listdir(dir)
+    # most_recent = '1900'
+    # for f in files:
+    #     if f > most_recent:
+    #         most_recent = f
+    # base_path = dir / most_recent
+    # plot_mc_experimental(base_path)
     # plot_mc(base_path)

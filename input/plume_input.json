@@ -34,18 +34,18 @@
         },
         "c4": {
             "nominal": 3.17e19,
-            "uncertainty": "uniform_bds",
+            "uncertainty": "loguniform_bds",
             "value": [
-                1e18,
-                1e22
+                18,
+                22
             ]
         },
         "c5": {
             "nominal": 1.09e16,
-            "uncertainty": "uniform_bds",
+            "uncertainty": "loguniform_bds",
             "value": [
-                1e14,
-                1e18
+                14,
+                18
             ]
         }
     },

@@ -2,6 +2,7 @@
 
 import math
 import logging
+import numpy as np
 
 Q_E = 1.602176634e-19   # Fundamental charge (C)
 kB = 1.380649e-23       # Boltzmann constant (J/K)
@@ -48,3 +49,24 @@ def cathode_coupling_model_feedforward(cc_input):
     V_cc = min(Va, max(0, V_cc))
 
     return {'cathode_potential': V_cc}
+
+
+def cc_pem(x, alpha=()):
+    """Compute cathode coupling model in PEM format
+    :param x: (..., xdim) Cathode model inputs
+    :param alpha: tuple() specifying model fidelity indices, (not used)
+    :returns y: (..., ydim) Cathode model outputs
+    """
+    # Load inputs
+    PB = x[..., 0, np.newaxis] * TORR_2_PA
+    Va = x[..., 1, np.newaxis]
+    Te = x[..., 2, np.newaxis]
+    V_vac = x[..., 3, np.newaxis]
+    Pstar = x[..., 4, np.newaxis] * TORR_2_PA
+    PT = x[..., 5, np.newaxis] * TORR_2_PA
+
+    # Compute cathode coupling voltage
+    y = V_vac + Te * np.log(1 + PB / PT) - (Te / (PT + Pstar)) * PB
+    y[y < 0] = 0
+    y[y > Va] = Va
+    return y

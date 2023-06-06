@@ -47,17 +47,19 @@ def spt100_log_likelihood(params, data, base_path='.', n_jobs=-1, ppool=None):
     Pstar = params[2]       # Cathode coupling model parameter (torr)
     P_T = params[3]         # Cathode coupling model parameter (torr)
     u_n = params[4]         # Neutral velocity (m/s)
-    Ti = params[5]          # Ion temperature (K)
-    c_w = params[6]         # Wall sheath loss coefficient
-    c_AN1 = params[7]       # Anomalous transport coefficient
-    c_AN2 = params[8]       # Anomalous transport coefficient (offset magnitude from cAN1)
-    l_z = params[9]         # Inner-outer transition length (m)
-    c0 = params[10]         # Plume model fit parameters
-    c1 = params[11]
-    c2 = params[12]
-    c3 = params[13]
-    c4 = params[14]
-    c5 = params[15]
+    # Ti = params[5]        # Ion temperature (K)
+    c_w = params[5]         # Wall sheath loss coefficient
+    c_AN1 = params[6]       # Anomalous transport coefficient
+    c_AN2 = params[7]       # Anomalous transport coefficient (offset magnitude from cAN1)
+    l_z = params[8]         # Inner-outer transition length (m)
+    c0 = params[9]          # Plume model fit parameters
+    c1 = params[10]
+    c2 = params[11]
+    c3 = params[12]
+    c4 = params[13]
+    c5 = params[14]
+
+    Ti = 1000
 
     # Load nominal inputs
     cc_nominal, _ = parse_input_file('cc_input.json')
@@ -423,13 +425,13 @@ def pem_pred(params, base_path, n_jobs=-1):
 
 
 def test_laplace():
-    # Load MLE point
+    # Load MLE point for thruster (vcc and plume params hard-coded)
     base_path = Path('../results')
     with open(base_path / 'mle' / 'optimizer_run-2023-02-18T00.10.46.040190+00.00' / 'opt-result.pkl', 'rb') as fd:
         data = pickle.load(fd)
     opt_params = data['res'].x
     opt_params = np.atleast_1d([1.99, 30.39, 2.87e-5, 3.89e-6, opt_params[0], opt_params[1], opt_params[2],
-                                opt_params[3], opt_params[4]])
+                                opt_params[3], opt_params[4], 0.5073, 0.3031, 9.73, 0.261, 3.17e19, 1.09e16])
 
     # Create output directory
     timestamp = datetime.datetime.now(tz=timezone.utc).isoformat().replace(':', '.')
@@ -438,7 +440,9 @@ def test_laplace():
 
     with open(base_path / 'opt-progress.txt', 'w') as fd:
         # print_str = f'{"ITERATION":>9} {"u_n":>7} {"c_w":>7} {"c_AN1":>7} {"c_AN2":>7} {"l_z":>7} {"f(X)":>7}'
-        print_str = f'{"ITERATION":>9} {"Te_c":>7} {"V_vac":>7} {"Pstar":>7} {"P_T":>7} {"u_n":>7} {"Ti":>7} {"c_w":>7} {"c_AN1":>7} {"c_AN2":>7} {"l_z":>7} {"f(X)":>7}'
+        print_str = f'{"ITERATION":>9} {"Te_c":>7} {"V_vac":>7} {"Pstar":>7} {"P_T":>7} {"u_n":>7} {"Ti":>7} ' \
+                    f'{"c_w":>7} {"c_AN1":>7} {"c_AN2":>7} {"l_z":>7} {"c0":>7} {"c1":>7} {"c2":>7} {"c3":>7} ' \
+                    f'{"c4":>7} {"c5":>7} {"f(X)":>7}'
         print(print_str)
         fd.write(print_str + '\n')
 
@@ -468,20 +472,22 @@ def test_laplace():
 
 def show_laplace():
     # Load Laplace results
-    base_path = Path('../results/laplace/laplace-2023-02-22T21.08.00.052683+00.00')
+    base_path = Path('../results/laplace/laplace-2023-03-08T18.30.42.595069+00.00')
     with open(base_path / 'laplace-result.pkl', 'rb') as fd:
         data = pickle.load(fd)
     map = data['mle']
     cov = data['hess_inv']
 
     if not is_positive_definite(cov):
+        print('Not positive definite, fixing now...')
         cov = nearest_positive_definite(cov)
 
     N = 10000
     samples = batch_normal_sample(map, cov, N)  # (N, 1, dim)
     samples = np.squeeze(samples, axis=1)       # (N, dim)
     names = ['$T_{e,c}$ [eV]', '$V_{vac}$ [V]', '$P^*$ [Torr]', '$P_T$ [Torr]', '$u_n$ [m/s]', '$c_w$',
-             '$c_{AN,1}$', '$c_{AN,2}$', '$l_z$ [m]']
+             '$c_{AN,1}$', '$c_{AN,2}$', '$l_z$ [m]', '$c_0$', '$c_1$', '$c_2$ [rad/Pa]', '$c_3$ [rad]', '$c_4$',
+             '$c_5$']
     font = {'family': 'sans-serif', 'size': 7}
     fig = pygtc.plotGTC(chains=[samples],
                         figureSize=8,
@@ -546,7 +552,7 @@ def show_laplace():
 
 if __name__ == '__main__':
     # Compute MLE
-    run_mle(optimizer='nelder-mead')
+    # run_mle(optimizer='nelder-mead')
 
     # Predict on most recent optimization run
     # dir = Path('../results/mle')
@@ -580,4 +586,4 @@ if __name__ == '__main__':
 
     # Obtain Laplace approximation at the MLE point
     # test_laplace()
-    # show_laplace()
+    show_laplace()
