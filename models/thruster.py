@@ -27,7 +27,8 @@ def hallthruster_jl_input(thruster_input):
     json_data = dict()
     data_dir = Path('../data/spt100')
     mag_offset = thruster_input['anom_coeff_2_mag_offset']
-    vAN2 = thruster_input['anom_coeff_1'] * max(1, 10 ** mag_offset)
+    # vAN2 = thruster_input['anom_coeff_1'] * max(1, 10 ** mag_offset)
+    vAN2 = thruster_input['anom_coeff_1'] * mag_offset
     json_data['parameters'] = {'neutral_temp_K': thruster_input['neutral_temp_K'],
                                'neutral_velocity_m_s': thruster_input['neutral_velocity_m_s'],
                                'ion_temp_K': thruster_input['ion_temp_K'],
@@ -219,7 +220,7 @@ def thruster_pem(x, alpha, compress=True, output_dir=None, n_jobs=1):
                 zg[0] = 0
                 zg[1] = dz / 2
                 zg[2:-1] = zg[1] + np.arange(1, n_cells) * dz
-                zg[-1] = zg[-2] + dz / 2
+                zg[-1] = L
                 z1 = np.atleast_1d(res['z'])
                 ui1 = np.atleast_1d(res['ui_1'])
                 uig = np.interp(zg, z1, ui1)  # Interpolated ui on reconstruction grid (M,)
@@ -264,14 +265,14 @@ def thruster_pem(x, alpha, compress=True, output_dir=None, n_jobs=1):
     y = np.memmap(y_fd.name, dtype='float32', mode='r+', shape=x.shape[:-1] + (ydim,))
     with Parallel(n_jobs=n_jobs, verbose=9) as ppool:
         res = ppool(delayed(run_batch)(job_num, index_batches, y) for job_num in range(num_batches))
+    y_ret = np.zeros(y.shape)
+    y_ret[:] = y[:]
+    del y
+    os.unlink(y_fd.name)
 
     # Save model eval summary to file
     files = []
     if output_dir is not None:
-        save_dict = {'alpha': alpha, 'x': x, 'y': y, 'is_compressed': compress}
-        with open(Path(output_dir) / 'eval.pkl', 'wb') as fd:
-            pickle.dump(save_dict, fd)
-
         # Re-order the resulting list of file names
         flat_idx = 0
         for input_index in np.ndindex(*x.shape[:-1]):
@@ -279,16 +280,18 @@ def thruster_pem(x, alpha, compress=True, output_dir=None, n_jobs=1):
             files.append(res[flat_idx % num_batches].pop(0))
             flat_idx += 1
 
-    del y_fd
-    os.remove(y_fd.name)
+        save_dict = {'alpha': alpha, 'x': x, 'y': y_ret, 'is_compressed': compress, 'files': files}
+        with open(Path(output_dir) / f'{eval_id}_eval.pkl', 'wb') as fd:
+            pickle.dump(save_dict, fd)
 
-    return (y, files) if output_dir is not None else y
+    return (y_ret, files) if output_dir is not None else y_ret
 
 
-def uion_reconstruct(xr, z=None):
+def uion_reconstruct(xr, z=None, L=0.08):
     """Reconstruct an ion velocity profile, interpolate to z if provided
     :param xr: (... r) The reduced dimension output of thruster_pem (just the ion velocity profile)
     :param z: (Nz,) The axial z grid points to interpolate to (in m, between 0 and L)
+    :param L: The full domain length of the reconstructed grid
     :returns z, uion_interp: (..., Nz or M) The reconstructed (and potentially interpolated) uion profile(s),
                 corresponds to z=(0, 0.08) m with M=202 points by default
     """
@@ -297,13 +300,12 @@ def uion_reconstruct(xr, z=None):
         vtr = svd_data['vtr']       # (r x M)
         r, M = vtr.shape
     n_cells = M - 2
-    L = z[-1] if z is not None else 0.08
     dz = L / n_cells
     zg = np.zeros(M)  # zg is the axial z grid points for the reconstructed field (of size M)
     zg[0] = 0
     zg[1] = dz / 2
     zg[2:-1] = zg[1] + np.arange(1, n_cells) * dz
-    zg[-1] = zg[-2] + dz / 2
+    zg[-1] = L
     uion_g = np.squeeze(vtr.T @ xr[..., np.newaxis], axis=-1)  # (..., M)
 
     # Do interpolation

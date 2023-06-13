@@ -22,7 +22,7 @@ logging.basicConfig(level=logging.INFO)
 from models.pem import feedforward_pem
 from models.cc import cathode_coupling_model_feedforward as cc_model
 from models.plume import plume_pem, jion_reconstruct
-from models.thruster import thruster_pem
+from models.thruster import thruster_pem, uion_reconstruct
 from utils import parse_input_file, data_write, ModelRunException, data_load, ax_default, spt100_data
 from utils import batch_normal_sample, is_positive_definite, nearest_positive_definite
 
@@ -653,7 +653,6 @@ def test_plume_svd():
         idx = 0
         for j in range(2):
             for i in range(4):
-                pass
                 # Plot model against experimental data
                 yerr = 2 * np.sqrt(jion_var[idx, :cutoff])
                 ax[j, i].errorbar(alpha_deg[idx, :cutoff], jion_exp[idx, :cutoff], yerr=yerr, fmt='or', capsize=3,
@@ -678,12 +677,14 @@ def test_thruster_svd():
         Va = np.random.rand(N, 1) * (400-200) + 200
         mdot_a = np.random.rand(N, 1) * (7e-6 - 3e-6) + 3e-6
         Tec = np.random.rand(N, 1) * (5 - 1) + 1
-        un = np.random.rand(N, 1) * (500 - 50) + 50
+        un = np.random.rand(N, 1) * (500 - 100) + 100
         cw = np.random.rand(N, 1) * (0.3 - 0.1) + 0.1
         lt = np.random.rand(N, 1) * (0.02 - 0.001) + 0.001
         scale = np.log10(np.e)
-        van_1 = np.random.lognormal(mean=(1/scale)*(-3), sigma=np.sqrt((1/scale**2) * 0.25), size=(N, 1))
-        van_2 = np.random.randn(N, 1)*np.sqrt(0.25) + 1
+        van_1 = 10 ** (np.random.rand(N, 1) * (-1 + 3) - 3)
+        van_2 = np.random.rand(N, 1) * (100 - 2) + 2
+        # van_1 = np.random.lognormal(mean=(1/scale)*(-3), sigma=np.sqrt((1/scale**2) * 0.25), size=(N, 1))
+        # van_2 = np.random.randn(N, 1)*np.sqrt(0.25) + 1
         l_cathode = np.random.rand(N, 1) * (0.09 - 0.07) + 0.07
         Ti = np.random.rand(N, 1) * (1200 - 800) + 800
         Tn = np.random.rand(N, 1) * (320 - 280) + 280
@@ -694,7 +695,7 @@ def test_thruster_svd():
 
     def save_svd():
         """Save svd results for a test set of N=1000"""
-        x = sampler(2000)
+        x = sampler(1500)
         alpha = (3, 1)
         timestamp = datetime.datetime.now(tz=timezone.utc).isoformat().replace(':', '.')
         save_dir = Path('../results/svd') / timestamp
@@ -729,6 +730,7 @@ def test_thruster_svd():
         ax.plot(s, '.k')
         ax.set_yscale('log')
         ax_default(ax, 'Index', 'Singular value', legend=False)
+        fig.savefig(str(Path('../results/figs')/'svd.png'), dpi=300, format='png')
         plt.show()
         fig, ax = plt.subplots(1, 2)
         ax[0].hist(IB0, color='r', edgecolor='black', linewidth=1.2, density=True)
@@ -738,6 +740,7 @@ def test_thruster_svd():
         fig.set_size_inches(7, 3)
         fig.tight_layout()
         plt.show()
+        fig.savefig(str(Path('../results/figs')/'qoi.png'), dpi=300, format='png')
         fig, ax = plt.subplots()
         z = np.linspace(0, 0.08, M)
         lb = np.percentile(uion, 5, axis=0)
@@ -749,8 +752,66 @@ def test_thruster_svd():
         ax.fill_between(z*1000, lb, ub, alpha=0.3, edgecolor=(0.5, 0.5, 0.5), facecolor='gray')
         ax_default(ax, 'Distance from anode (mm)', 'Average ion velocity (m/s)', legend=False)
         plt.show()
+        fig.savefig(str(Path('../results/figs')/'uion.png'), dpi=300, format='png')
 
-    save_svd()
+    # Test reconstruction against experimental data
+    def reconstruct():
+        data = np.loadtxt(Path('../data/spt100/ui_dataset5.csv'), delimiter=',', skiprows=1)
+        Np = 3
+        data = data.reshape((Np, -1, 7))
+        mdot_a = data[:, :, 2] * 1e-6    # kg/s
+        pb = data[:, :, 3]
+        z_m = data[:, :, 4]
+        uion_exp = data[:, :, 5]
+        uion_var = data[:, :, 6]
+
+        # Set inputs
+        x = np.zeros((Np, 14))
+        x[:, 0] = pb[:, 0]  # Torr
+        x[:, 1] = 300       # V
+        x[:, 2] = mdot_a[:, 0]  # kg/s
+        x[:, 3] = 2
+        x[:, 4] = 64
+        x[:, 5] = 0.2176
+        x[:, 6] = 0.01093
+        x[:, 7] = 0.0077361957
+        x[:, 8] = 6.07
+        x[:, 9] = 0.08
+        x[:, 10] = 1000
+        x[:, 11] = 300      # K
+        x[:, 12] = 300      # K
+        x[:, 13] = 30       # V
+        pem_res, files = thruster_pem(x, (3, 1), output_dir='.', compress=True, n_jobs=3)  # (Np, 6+r)
+        # with open('eval.pkl', 'rb') as fd:
+        #     d = pickle.load(fd)
+        #     pem_res = d['y']
+        #     files = d['files']
+        uion = pem_res[:, 6:]
+        uion_interp = np.zeros(z_m.shape)   # (Np, M)
+
+        fig, ax = plt.subplots()
+        colors = ['r', 'b', 'g']
+        for i in range(Np):
+            _, interp = uion_reconstruct(uion[i, np.newaxis, :], z=z_m[i, :], L=0.08)
+            uion_interp[i, :] = np.squeeze(interp)
+
+            with open(files[i], 'r') as fd:
+                pred = json.load(fd)
+                z_pred = np.array(pred['output']['z'])
+                uion_pred = np.array(pred['output']['ui_1'])
+
+            # Plot model against experimental data
+            yerr = 2 * np.sqrt(uion_var[i, :])
+            ax.errorbar(z_m[i, :], uion_exp[i, :], yerr=yerr, fmt=f'o{colors[i]}', capsize=3,
+                        markerfacecolor='none', label=f'{pb[i, 0]:.02} Torr', markersize=5)
+            ax.plot(z_pred, uion_pred, f'-{colors[i]}', linewidth=0.5)
+            ax.plot(z_m[i, :], uion_interp[i, :], f'--{colors[i]}')
+        ax_default(ax, 'Distance from anode (m)', 'Avg ion velocity (m/s)')
+        fig.tight_layout()
+        plt.show()
+
+    # save_svd()
+    reconstruct()
 
 
 if __name__ == '__main__':
