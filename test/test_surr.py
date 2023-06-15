@@ -8,6 +8,7 @@ import warnings
 import sys
 import logging
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 
 sys.path.append('..')
 
@@ -377,7 +378,12 @@ def test_fire_sat(filename=None):
         sys = SystemSurrogate.load_from_file(filename)
     else:
         sys = fire_sat_system()
+        t1 = time.time()
         sys.build_system(max_iter=10, max_tol=1e-3, max_runtime=3600)
+        # with ThreadPoolExecutor(max_workers=8) as e:
+        #     sys.set_executor(e)
+        #     sys.build_system(max_iter=10, max_tol=1e-3, max_runtime=3600)
+        print(f'Final time: {time.time() - t1} s')
 
     x = sys.sample_exo_inputs((1000,))
     logger.info('---Evaluating ground truth system on test set---')

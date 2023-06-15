@@ -172,7 +172,7 @@ def fire_sat_system():
     coupling_vars = [UniformRV(2000, 6000), UniformRV(20000, 60000), UniformRV(1000, 5000), UniformRV(0, 4),
                      UniformRV(0, 12000), UniformRV(0, 12000), UniformRV(0, 10000), UniformRV(0, 50),
                      UniformRV(0, 100), UniformRV(0, 5)]
-    sys = SystemSurrogate([orbit, power, attitude], exo_vars, coupling_vars, est_bds=500, root_dir='build')
+    sys = SystemSurrogate([orbit, power, attitude], exo_vars, coupling_vars, est_bds=500)
     return sys
 
 

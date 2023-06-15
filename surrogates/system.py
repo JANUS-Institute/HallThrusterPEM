@@ -14,10 +14,10 @@ from abc import ABC, abstractmethod
 from datetime import timezone
 from pathlib import Path
 import shutil
+from concurrent.futures import ALL_COMPLETED, wait
 
 sys.path.append('..')
 
-from utils import UniformRV
 
 # Setup logging for the module
 FORMATTER = logging.Formatter("%(asctime)s \u2014 [%(levelname)s] \u2014 %(name)-36s \u2014 %(message)s")
@@ -30,7 +30,7 @@ logger.addHandler(handler)
 
 class SystemSurrogate:
 
-    def __init__(self, components, exo_vars, coupling_vars, est_bds=0, root_dir=None):
+    def __init__(self, components, exo_vars, coupling_vars, est_bds=0, root_dir=None, executor=None):
         """Construct a multidisciplinary system surrogate
         :param components: list(Nk,) of dicts specifying component name (str), a callable function model(x, alpha), a
                            string specifying surrogate class type, the highest 'truth' set of model fidelity indices,
@@ -47,6 +47,7 @@ class SystemSurrogate:
         :param coupling_vars: list() of UniformRVs specifying estimated bounds for all coupling variables
         :param est_bds: (int) number of samples to estimate coupling variable bounds, do nothing if 0
         :param root_dir: (str) Root directory for all build products (.logs, .pkl, .json, etc.)
+        :param executor: An instance of a concurrent.futures.Executor, use to iterate new candidates in parallel
         """
         # Setup root directory
         if root_dir is None:
@@ -78,6 +79,7 @@ class SystemSurrogate:
         f_handler.setFormatter(FORMATTER)
         logger.addHandler(f_handler)
         self.logger = logger.getChild(self.__class__.__name__)
+        self.executor = executor
 
         # Store system info in a directed graph data structure
         self.graph = nx.DiGraph()
@@ -146,7 +148,7 @@ class SystemSurrogate:
         x_vars = [self.exo_vars[i] for i in component['exo_in']] + [self.coupling_vars[i] for i in global_idx]
         surr = surr_class([], x_vars, component['model'], component['truth_alpha'], interp=surr_type,
                           max_alpha=component.get('max_alpha', None), max_beta=component.get('max_beta', None),
-                          output_dir=output_dir)
+                          output_dir=output_dir, executor=self.executor)
         return global_idx, surr
 
     def swap_component(self, component, exo_add=None, exo_remove=None, qoi_add=None, qoi_remove=None):
@@ -634,8 +636,12 @@ class SystemSurrogate:
         if save_dir is not None:
             if not Path(save_dir).is_dir():
                 save_dir = '.'
+
+            exec_temp = self.executor   # Temporarily save executor obj (can't pickle it)
+            self.set_executor(None)
             with open(Path(save_dir) / filename, 'wb') as dill_file:
                 dill.dump(self, dill_file)
+            self.set_executor(exec_temp)
             self.logger.info(f'SystemSurrogate saved to {(Path(save_dir) / filename).resolve()}')
 
     def set_root_directory(self, dir):
@@ -669,11 +675,11 @@ class SystemSurrogate:
 
         # Update model output directories
         for node, node_obj in self.graph.nodes.items():
-            if node_obj['surr'].output_dir is not None:
+            if node_obj['surrogate'].output_dir is not None:
                 output_dir = str((Path(self.root_dir) / 'components' / node).resolve())
                 if not Path(output_dir).is_dir():
                     os.mkdir(output_dir)
-                node_obj['surr'].set_output_dir(output_dir)
+                node_obj['surrogate'].set_output_dir(output_dir)
 
     def __getitem__(self, component):
         """Convenience method to get the ComponentSurrogate object from the system
@@ -691,14 +697,22 @@ class SystemSurrogate:
     def __str__(self):
         return self.__repr__()
 
+    def set_executor(self, executor):
+        """Set a new concurrent.futures.Executor object"""
+        self.executor = executor
+        for node, node_obj in self.graph.nodes.items():
+            node_obj['surrogate'].executor = executor
+
     @staticmethod
-    def load_from_file(filename, log_file=None):
+    def load_from_file(filename, log_file=None, executor=None):
         """Load a SystemSurrogate object from file
         :param filename: .pkl file to load
         :param log_file: (str) Overrides existing log_file location (if available) or creates a new log file (abs path)
+        :param executor: a concurrent.futures.Executor object to set, clears if None
         """
         with open(filename, 'rb') as dill_file:
             sys = dill.load(dill_file)
+            sys.set_executor(executor)
             log_file = log_file if log_file is not None else sys.log_file
 
             # Remove all previous file handlers (to avoid duplication)
@@ -746,7 +760,7 @@ class ComponentSurrogate(ABC):
     """Multi-index stochastic collocation (MISC) surrogate abstract class for a component model"""
 
     def __init__(self, multi_index, x_vars, model, truth_alpha, interp='lagrange', max_alpha=None, max_beta=None,
-                 output_dir=None):
+                 output_dir=None, executor=None):
         """Construct the MISC surrogate from a multi-index
         :param multi_index: [((alpha1), (beta1)), ... ] List of concatenated multi-indices alpha, beta specifying
                             model and surrogate fidelity
@@ -757,6 +771,7 @@ class ComponentSurrogate(ABC):
         :param max_alpha: tuple(), the maximum model refinement indices to allow, defaults to (3,...)
         :param max_beta: tuple(), the maximum surrogate refinement level indices, defaults to (5,...) of len xdim
         :param output_dir: str() or Path-like specifying where to save model output files, don't save if None
+        :param executor: An instance of a concurrent.futures.executor, use to add candidate indices in parallel
         """
         self.logger = logger.getChild(self.__class__.__name__)
         assert self.is_downward_closed(multi_index), 'Must be a downward closed set.'
@@ -774,6 +789,7 @@ class ComponentSurrogate(ABC):
         max_beta = (3,)*len(self.x_vars) if max_beta is None else max_beta
         self.max_refine = list(max_alpha + max_beta)    # Max refinement indices
         self.output_dir = output_dir
+        self.executor = executor
 
         # Construct vectors of [0,1]^dim(alpha+beta), used for combination coefficients
         Nij = len(self.max_refine)
@@ -828,8 +844,21 @@ class ComponentSurrogate(ABC):
                         break
             if down_closed:
                 new_cand = (tuple(ind_new[:len(alpha)]), tuple(ind_new[len(alpha):]))
-                self.add_surrogate(*new_cand)
                 new_candidates.append(new_cand)
+
+        # Build an interpolant for each new candidate
+        if self.executor is not None:   # Parallel
+            fs = [self.executor.submit(self.add_surrogate, a, b) for a, b in new_candidates]
+            wait(fs, timeout=None, return_when=ALL_COMPLETED)
+            for i, future in enumerate(fs):
+                try:
+                    future.result()
+                except:
+                    self.logger.error(f'An exception occurred in a thread handling add_surrogate{new_candidates[i]}')
+                    raise
+        else:                           # Sequential
+            for a, b in new_candidates:
+                self.add_surrogate(a, b)
 
         # Move to the active index set
         if ele in self.candidate_set:
@@ -859,7 +888,8 @@ class ComponentSurrogate(ABC):
             interp, cost = self.add_interpolator(alpha, beta)
             self.surrogates[str(alpha)][str(beta)] = interp
             self.costs[str(alpha)][str(beta)] = cost
-            self.ydim = interp.ydim()
+            if self.ydim is None:
+                self.ydim = interp.ydim()
 
     def init_coarse(self):
         """Initialize the coarsest interpolation and add to active index set"""

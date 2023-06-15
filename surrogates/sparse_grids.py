@@ -49,7 +49,7 @@ class SparseGridSurrogate(ComponentSurrogate):
 
         # Look for multi-index neighbors that are one level of refinement away
         neighbors = []
-        for beta_old_str in self.surrogates[str(alpha)]:
+        for beta_old_str in list(self.surrogates[str(alpha)].keys()):
             beta_old = ast.literal_eval(beta_old_str)
             if self.is_one_level_refinement(beta_old, beta):
                 idx_refine = int(np.nonzero(np.array(beta, dtype=int) - np.array(beta_old, dtype=int))[0])
