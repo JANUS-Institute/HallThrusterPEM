@@ -1,6 +1,7 @@
 """Module for sparse-grid surrogates"""
 import numpy as np
 from scipy.optimize import direct
+from scipy.interpolate import LinearNDInterpolator, NearestNDInterpolator
 import itertools
 import ast
 import copy
@@ -326,6 +327,18 @@ class LagrangeInterpolator(TensorProductInterpolator):
         :param x: (..., xdim) the points to be interpolated, must be within domain of self.xi
         :returns y: (..., ydim) the interpolated value of the qois
         """
+        # Use linear/NN interpolation for yi=nan values (may have resulted from bad model outputs)
+        ydim = self.ydim()
+        yi = self.yi.copy()
+        for i in range(ydim):
+            nan_idx = np.isnan(self.yi[:, i])
+            if np.any(nan_idx):
+                yi[nan_idx, i] = LinearNDInterpolator(self.xi[~nan_idx, :], self.yi[~nan_idx, i])(self.xi[nan_idx, :])
+                nan_idx = np.isnan(yi[:, i])
+                if np.any(nan_idx):
+                    # Interpolate remaining nan by nearest neighbor (e.g. if they were outside linear's convex hull)
+                    yi[nan_idx, i] = NearestNDInterpolator(self.xi[~nan_idx, :], yi[~nan_idx, i])(self.xi[nan_idx, :])
+
         # Loop over multi-indices and compute tensor-product lagrange polynomials
         grid_sizes = self.get_grid_sizes(self.beta)
         ydim = self.ydim()
@@ -356,8 +369,8 @@ class LagrangeInterpolator(TensorProductInterpolator):
 
             # Add multivariate basis polynomial contribution to interpolation output
             shape = (1,)*len(x.shape[:-1]) + (ydim,)
-            yi = self.yi[i, :].reshape(shape)                   # (1..., ydim)
-            L_j = np.prod(L_j, axis=-1)[..., np.newaxis]        # (..., 1)
-            y += L_j * yi
+            y_i = yi[i, :].reshape(shape)                   # (1..., ydim)
+            L_j = np.prod(L_j, axis=-1)[..., np.newaxis]    # (..., 1)
+            y += L_j * y_i
 
         return y

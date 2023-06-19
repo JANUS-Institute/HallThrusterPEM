@@ -13,6 +13,8 @@ class Test:
         if self.executor is not None:
             fs = [self.executor.submit(self.add_surr, item1, item2) for item1, item2 in zip(l1, l2)]
             wait(fs, timeout=None, return_when=ALL_COMPLETED)
+            for i, future in enumerate(fs):
+                print(f'i={i}, item1={l1[i]}, item2={l2[i]}, res={future.result()}')
         else:
             for item1, item2 in zip(l1, l2):
                 self.add_surr(item1, item2)
@@ -22,6 +24,7 @@ class Test:
         self.l1.append(item1)
         self.l2.append(item2)
         print(f'Added surr for ({item1}, {item2})\n')
+        return item1**2, item2**2
 
     def __repr__(self):
         return f'l1: {self.l1}, l2: {self.l2}'

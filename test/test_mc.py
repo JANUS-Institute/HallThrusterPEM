@@ -665,7 +665,7 @@ def test_plume_svd():
         fig.tight_layout()
         plt.show()
 
-    # save_svd()
+    save_svd()
     reconstruct()
 
 
@@ -818,8 +818,8 @@ if __name__ == '__main__':
     N = 200
     # test_cc_forward(N, n_jobs=-1)
     # test_feedforward_mc(N, n_jobs=-1)
-    # test_plume_svd()
-    test_thruster_svd()
+    test_plume_svd()
+    # test_thruster_svd()
 
     # Plot results (most recent run)
     # dir = Path('../results/forward')
