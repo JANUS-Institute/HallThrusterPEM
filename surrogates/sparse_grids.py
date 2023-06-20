@@ -16,10 +16,9 @@ from surrogates.system import ComponentSurrogate, BaseInterpolator
 class SparseGridSurrogate(ComponentSurrogate):
     """Concrete MISC surrogate class that maintains a sparse grid composed of smaller tensor-product grids"""
 
-    def __init__(self, *args, interp='lagrange', **kwargs):
+    def __init__(self, *args, **kwargs):
         """Construct a MISC surrogate that uses a sparse grid for interpolation, see the parent
         ComponentSurrogate class for other required args and kwargs.
-        :param interp: (str) the interpolation method to use, defaults to barycentric Lagrange interpolation
         """
         # Initialize tree-like structures for maintaining a sparse grid of smaller tensor-product grids
         self.curr_max_beta = dict()     # Maps alphas -> current max refinement indices
@@ -27,11 +26,11 @@ class SparseGridSurrogate(ComponentSurrogate):
         self.interp_class = None
 
         # Must be a class that implements TensorProductInterpolator
-        match interp:
+        match kwargs.get('method', 'lagrange'):
             case 'lagrange':
                 self.interp_class = LagrangeInterpolator
             case other:
-                raise NotImplementedError(f"Interpolation type '{interp}' is not known at this time.")
+                raise NotImplementedError(f"Interpolation type '{kwargs.get('method')}' is not known at this time.")
 
         super().__init__(*args, **kwargs)
 
@@ -39,8 +38,9 @@ class SparseGridSurrogate(ComponentSurrogate):
         """Abstract method implementation for constructing tensor-product grid interpolants"""
         # Create a new tensor-product grid interpolator for the base index (0, 0, ...)
         if np.sum(beta) == 0:
-            interp = self.interp_class(list(beta), self.x_vars, model=self.alpha_models[str(alpha)],
-                                       output_dir=self.output_dir)
+            args = (alpha,) + self._model_args
+            interp = self.interp_class(list(beta), self.x_vars, model=self._model, model_args=args,
+                                       model_kwargs=self._model_kwargs)
             interp.set_yi()
             cost = interp.wall_time * interp.xi.shape[0]
             self.curr_max_beta[str(alpha)] = list(beta)
@@ -69,13 +69,6 @@ class SparseGridSurrogate(ComponentSurrogate):
                                                                                   manual=True)
                     neighbors.append(refine_tup)
 
-        if len(neighbors) > 1:
-            xi = neighbors[0][2].xi
-            for n in neighbors[1:]:
-                diff = xi - n[2].xi
-                if not np.isclose(np.max(diff), 0):
-                    raise Exception("Buh oh, you just can't figure it out can ya")
-
         # Refine the neighbor with the fewest new points (and merge pre-computed points from other neighbors)
         min_idx = np.argmin([len(neighbor[0]) for neighbor in neighbors])
         x_new_idx, x_new, interp = neighbors.pop(min_idx)
@@ -86,7 +79,7 @@ class SparseGridSurrogate(ComponentSurrogate):
                 if interp_idx not in neighbor[0] and i not in del_idx:
                     # Assume the exact same interpolation indexing for all neighbors (true for tensor-product grids)
                     interp.yi[interp_idx, :] = neighbor[2].yi[interp_idx, :]
-                    if self.output_dir is not None:
+                    if self.save_enabled():
                         interp.output_files[interp_idx] = neighbor[2].output_files[interp_idx]
                     del_idx.append(i)
         x_new_idx = list(np.delete(x_new_idx, del_idx))
@@ -97,6 +90,27 @@ class SparseGridSurrogate(ComponentSurrogate):
 
         cost = interp.wall_time * len(x_new_idx)
         return interp, cost
+
+    def _add_interpolator_mpi(self, alpha, beta):
+        """Work-around to make sure mutable instance variable changes are made during add_interpolator(). Since
+        add_interpolator() may have been broken up over MPI workers, the changes that MPI workers make to 'self' don't
+        get saved in the master task. This function should only be run in the master task after all MPI workers have
+        returned from add_interpolator(). Can simply pass if no instance variables need updating.
+        """
+        if np.sum(beta) == 0:
+            interp = self.surrogates[str(alpha)][str(beta)]  # add_interpolator() should already be done for this beta
+            self.curr_max_beta[str(alpha)] = list(beta)
+            self.x_grids[str(alpha)] = copy.deepcopy(interp.x_grids)
+        else:
+            for beta_old_str in list(self.surrogates[str(alpha)].keys()):
+                beta_old = ast.literal_eval(beta_old_str)
+                if self.is_one_level_refinement(beta_old, beta):
+                    idx_refine = int(np.nonzero(np.array(beta, dtype=int) - np.array(beta_old, dtype=int))[0])
+                    refine_level = beta[idx_refine]
+                    if refine_level > self.curr_max_beta[str(alpha)][idx_refine]:
+                        interp = self.surrogates[str(alpha)][str(beta)]
+                        self.curr_max_beta[str(alpha)][idx_refine] = refine_level
+                        self.x_grids[str(alpha)][idx_refine] = copy.deepcopy(interp.x_grids[idx_refine])
 
 
 class TensorProductInterpolator(BaseInterpolator):
@@ -114,7 +128,7 @@ class TensorProductInterpolator(BaseInterpolator):
         if init_grids:
             # Construct 1d univariate Leja sequences in each dimension
             grid_sizes = self.get_grid_sizes(self.beta)
-            self.x_grids = [self.leja_1d(grid_sizes[n], self.x_bds[n], wt_fcn=self.x_vars[n].pdf)
+            self.x_grids = [self.leja_1d(grid_sizes[n], self.x_vars[n].bounds(), wt_fcn=self.x_vars[n].pdf)
                             for n in range(self.xdim())]
 
             # Cartesian product of univariate grids
@@ -134,60 +148,67 @@ class TensorProductInterpolator(BaseInterpolator):
                                           you want to manually set yi for each new xi outside this function
         """
         # Initialize a new interpolant with the new refinement levels (child class will provide this method)
-        interp = self.new_interpolator(beta)
+        try:
+            interp = self.new_interpolator(beta)
 
-        # Find the dimension and number of new points to add
-        old_grid_sizes = self.get_grid_sizes(self.beta)
-        new_grid_sizes = interp.get_grid_sizes(beta)
-        dim_refine = 0
-        num_new_pts = 0
-        for idx, grid_size in enumerate(new_grid_sizes):
-            if grid_size != old_grid_sizes[idx]:
-                dim_refine = idx
-                num_new_pts = grid_size - old_grid_sizes[idx]
-                break
+            # Find the dimension and number of new points to add
+            old_grid_sizes = self.get_grid_sizes(self.beta)
+            new_grid_sizes = interp.get_grid_sizes(beta)
+            dim_refine = 0
+            num_new_pts = 0
+            for idx, grid_size in enumerate(new_grid_sizes):
+                if grid_size != old_grid_sizes[idx]:
+                    dim_refine = idx
+                    num_new_pts = grid_size - old_grid_sizes[idx]
+                    break
 
-        # Add points to leja grid in this dimension
-        interp.x_grids = copy.deepcopy(self.x_grids)
-        xi = copy.deepcopy(x_refine) if x_refine is not None else self.leja_1d(num_new_pts, interp.x_bds[dim_refine],
-                                                                               z_pts=interp.x_grids[dim_refine],
-                                                                               wt_fcn=interp.x_vars[dim_refine].pdf)
-        interp.x_grids[dim_refine] = xi
+            # Add points to leja grid in this dimension
+            interp.x_grids = copy.deepcopy(self.x_grids)
+            xi = copy.deepcopy(x_refine) if x_refine is not None else self.leja_1d(num_new_pts,
+                                                                                   interp.x_vars[dim_refine].bounds(),
+                                                                                   z_pts=interp.x_grids[dim_refine],
+                                                                                   wt_fcn=interp.x_vars[dim_refine].pdf)
+            interp.x_grids[dim_refine] = xi
 
-        # Copy yi over at existing interpolation points
-        x_new = np.zeros((0, interp.xdim()))
-        x_new_idx = []
-        tol = 1e-12     # Tolerance for floating point comparison
-        j = 0           # Use this idx for iterating over existing yi
-        interp.xi = np.zeros((np.prod(new_grid_sizes), self.xdim()))
-        interp.yi = np.zeros((np.prod(new_grid_sizes), self.ydim()))
-        if self.output_dir is not None:
-            interp.output_files = [None] * interp.xi.shape[0]
+            # Copy yi over at existing interpolation points
+            x_new = np.zeros((0, interp.xdim()))
+            x_new_idx = []
+            tol = 1e-12     # Tolerance for floating point comparison
+            j = 0           # Use this idx for iterating over existing yi
+            interp.xi = np.zeros((np.prod(new_grid_sizes), self.xdim()))
+            interp.yi = np.zeros((np.prod(new_grid_sizes), self.ydim()))
+            if self.save_enabled():
+                interp.output_files = [None] * interp.xi.shape[0]
 
-        for i, ele in enumerate(itertools.product(*interp.x_grids)):
-            interp.xi[i, :] = ele
-            if j < self.xi.shape[0] and np.all(np.abs(self.xi[j, :] - interp.xi[i, :]) < tol):
-                # If we already have this interpolation point
-                interp.yi[i, :] = self.yi[j, :]
-                if self.output_dir is not None:
-                    interp.output_files[i] = self.output_files[j]
-                j += 1
+            for i, ele in enumerate(itertools.product(*interp.x_grids)):
+                interp.xi[i, :] = ele
+                if j < self.xi.shape[0] and np.all(np.abs(self.xi[j, :] - interp.xi[i, :]) < tol):
+                    # If we already have this interpolation point
+                    interp.yi[i, :] = self.yi[j, :]
+                    if self.save_enabled():
+                        interp.output_files[i] = self.output_files[j]
+                    j += 1
+                else:
+                    # Otherwise, save new interpolation point and its index
+                    x_new = np.concatenate((x_new, interp.xi[i, :].reshape((1, self.xdim()))))
+                    x_new_idx.append(i)
+
+            # Evaluate the model at new interpolation points
+            interp.wall_time = self.wall_time
+            if self._model is None:
+                self.logger.warning(f'No model available to evaluate new interpolation points, returning the points '
+                                    f'to you instead...')
+                return x_new_idx, x_new, interp
+            elif manual:
+                return x_new_idx, x_new, interp
             else:
-                # Otherwise, save new interpolation point and its index
-                x_new = np.concatenate((x_new, interp.xi[i, :].reshape((1, self.xdim()))))
-                x_new_idx.append(i)
-
-        # Evaluate the model at new interpolation points
-        interp.wall_time = self.wall_time
-        if self._model is None:
-            self.logger.warning(f'No model available to evaluate new interpolation points, returning the points '
-                                f'to you instead...')
-            return x_new_idx, x_new, interp
-        elif manual:
-            return x_new_idx, x_new, interp
-        else:
-            interp.set_yi(x_new=(x_new_idx, x_new))
-            return interp
+                interp.set_yi(x_new=(x_new_idx, x_new))
+                return interp
+        except Exception as e:
+            import traceback
+            tb_str = str(traceback.format_exception(e))
+            self.logger.error(tb_str)
+            raise Exception(f'Original exception in refine(): {tb_str}')
 
     @abstractmethod
     def new_interpolator(self, beta):
@@ -226,7 +247,7 @@ class TensorProductInterpolator(BaseInterpolator):
 
         # Construct leja sequence by maximizing the objective sequentially
         for i in range(N):
-            obj_fun = lambda z: -wt_fcn(z) * np.prod(np.abs(z - z_pts))
+            obj_fun = lambda z: -wt_fcn(np.array(z).astype(np.float64)) * np.prod(np.abs(z - z_pts))
             res = direct(obj_fun, [z_bds])  # Use global DIRECT optimization over 1d domain
             z_star = res.x
             z_pts = np.concatenate((z_pts, z_star))
@@ -252,7 +273,7 @@ class LagrangeInterpolator(TensorProductInterpolator):
             grid_sizes = self.get_grid_sizes(self.beta)
             for n in range(self.xdim()):
                 Nx = grid_sizes[n]
-                bds = self.x_bds[n]
+                bds = self.x_vars[n].bounds()
                 grid = self.x_grids[n]
                 C = (bds[1] - bds[0]) / 4.0     # Interval capacity (see Berrut and Trefethen 2004)
                 xj = grid.reshape((Nx, 1))
@@ -269,7 +290,8 @@ class LagrangeInterpolator(TensorProductInterpolator):
 
     def new_interpolator(self, beta):
         """Abstract implementation, admittedly a little messy way to instantiate new interpolator for super()"""
-        return LagrangeInterpolator(beta, self.x_vars, model=self._model, init_grids=False, output_dir=self.output_dir)
+        return LagrangeInterpolator(beta, self.x_vars, model=self._model, init_grids=False, model_args=self._model_args,
+                                    model_kwargs=self._model_kwargs)
 
     def refine(self, beta, manual=False, x_refine=None):
         """Adds required functionality of refining barycentric weights on tensor-product grid
@@ -306,7 +328,7 @@ class LagrangeInterpolator(TensorProductInterpolator):
         old_wts = copy.deepcopy(self.weights[dim_refine])
         new_wts = np.zeros(Nx_new)
         new_wts[:Nx_old] = old_wts
-        bds = interp.x_bds[dim_refine]
+        bds = interp.x_vars[dim_refine].bounds()
         C = (bds[1] - bds[0]) / 4.0        # Interval capacity
         xi = interp.x_grids[dim_refine]
         for j in range(Nx_old, Nx_new):
@@ -331,13 +353,25 @@ class LagrangeInterpolator(TensorProductInterpolator):
         ydim = self.ydim()
         yi = self.yi.copy()
         for i in range(ydim):
-            nan_idx = np.isnan(self.yi[:, i])
+            nan_idx = np.isnan(yi[:, i])
             if np.any(nan_idx):
-                yi[nan_idx, i] = LinearNDInterpolator(self.xi[~nan_idx, :], self.yi[~nan_idx, i])(self.xi[nan_idx, :])
+                try:
+                    yi[nan_idx, i] = LinearNDInterpolator(self.xi[~nan_idx, :], self.yi[~nan_idx, i],
+                                                          rescale=True)(self.xi[nan_idx, :])
+                except:
+                    pass  # If linear interpolation didn't work, just default to nearest neighbor
                 nan_idx = np.isnan(yi[:, i])
                 if np.any(nan_idx):
-                    # Interpolate remaining nan by nearest neighbor (e.g. if they were outside linear's convex hull)
-                    yi[nan_idx, i] = NearestNDInterpolator(self.xi[~nan_idx, :], yi[~nan_idx, i])(self.xi[nan_idx, :])
+                    try:
+                        yi[nan_idx, i] = NearestNDInterpolator(self.xi[~nan_idx, :], yi[~nan_idx, i],
+                                                               rescale=True)(self.xi[nan_idx, :])
+                    except:
+                        pass
+
+        # If any nans are left, then something else is going wrong, and you need to fix this error
+        if np.any(np.isnan(yi)):
+            raise Exception(f'Trying to interpolate with NaNs for beta {self.beta}, please check model {self._model} '
+                            f'for too many NaN outputs.')
 
         # Loop over multi-indices and compute tensor-product lagrange polynomials
         grid_sizes = self.get_grid_sizes(self.beta)
@@ -357,9 +391,13 @@ class LagrangeInterpolator(TensorProductInterpolator):
                 w_j = self.weights[n].reshape(shape)  # (1...,Nx)
 
                 # Compute the jth Lagrange basis polynomial L_j(x_n) for this x dimension (in barycentric form)
+                # Set floating point tolerance to 5 orders of magnitude smaller than smallest value
+                mag = abs(min(np.min(x_j), np.min(x_n)))
+                mag = 1e-5 if mag == 0 else mag
+                atol = 10 ** (np.log10(mag) - 5)
                 c = x_n - x_j
-                div_zero_idx = np.isclose(c, 0)     # Track where x is approx equal to an interpolation point x_j
-                c[div_zero_idx] = 1                 # Temporarily set to 1 to avoid divide by zero error
+                div_zero_idx = np.isclose(c, 0, atol=atol)  # Track where x is approx equal to an interpolation pnt x_j
+                c[div_zero_idx] = 1                         # Temporarily set to 1 to avoid divide by zero error
                 c = w_j / c
                 L_j[..., n] = c[..., j_n] / np.sum(c, axis=-1)  # (...) same size as original x
                 j_mask = np.full(div_zero_idx.shape, False)

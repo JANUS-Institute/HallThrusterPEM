@@ -183,24 +183,23 @@ def jion_modified(plume_input, compute_div=False):
             return ret
 
 
-def plume_pem(x, alpha=(), compress=True):
+def plume_pem(x, *args, compress=True, **kwargs):
     """Compute the ion current density plume model in PEM format
     :param x: (..., xdim) Plume inputs
-    :param alpha: Model fidelity indices (none for plume model, since it is analytical)
     :param compress: Whether to return the dimension-reduced jion profile
     :returns y: (..., ydim) Plume outputs
     """
     # Load plume inputs
-    P_B = x[..., 0, np.newaxis] * TORR_2_PA
+    P_B = 10 ** (x[..., 0, np.newaxis]) * TORR_2_PA
     c0 = x[..., 1, np.newaxis]
     c1 = x[..., 2, np.newaxis]
     c2 = x[..., 3, np.newaxis]
     c3 = x[..., 4, np.newaxis]
-    c4 = x[..., 5, np.newaxis]
-    c5 = x[..., 6, np.newaxis]
-    sigma_cex = x[..., 7, np.newaxis]   # m^2
-    r_m = x[..., 8, np.newaxis]         # m
-    I_B0 = x[..., 9, np.newaxis]        # A
+    c4 = 10 ** (x[..., 5, np.newaxis])
+    c5 = 10 ** (x[..., 6, np.newaxis])
+    sigma_cex = x[..., 7, np.newaxis] * 1e-20       # m^2
+    r_m = x[..., 8, np.newaxis]                     # m
+    I_B0 = x[..., 9, np.newaxis]                    # A
 
     # Load svd params for dimension reduction
     if compress:
@@ -208,10 +207,10 @@ def plume_pem(x, alpha=(), compress=True):
             svd_data = pickle.load(fd)
             vtr = svd_data['vtr']       # (r x M)
             r, M = vtr.shape
-            ydim = r+2
+            ydim = r + 1
     else:
-        ydim = 102
         M = 100
+        ydim = M + 1
 
     # Compute model prediction
     alpha_rad = np.reshape(np.linspace(0, np.pi/2, M), (1,)*len(x.shape[:-1]) + (M,))
@@ -224,23 +223,22 @@ def plume_pem(x, alpha=(), compress=True):
         alpha1 = c2 * P_B + c3  # Main beam divergence (rad)
         alpha2 = alpha1 / c1    # Scattered beam divergence (rad)
 
-        with np.errstate(invalid='ignore'):
+        with np.errstate(invalid='ignore', divide='ignore'):
             A1 = (1 - c0) / ((np.pi ** (3 / 2)) / 2 * alpha1 * np.exp(-(alpha1 / 2)**2) *
                              (2 * erfi(alpha1 / 2) + erfi((np.pi * 1j - (alpha1 ** 2)) / (2 * alpha1)) -
                               erfi((np.pi * 1j + (alpha1 ** 2)) / (2 * alpha1))))
             A2 = c0 / ((np.pi ** (3 / 2)) / 2 * alpha2 * np.exp(-(alpha2 / 2)**2) *
                        (2 * erfi(alpha2 / 2) + erfi((np.pi * 1j - (alpha2 ** 2)) / (2 * alpha2)) -
                         erfi((np.pi * 1j + (alpha2 ** 2)) / (2 * alpha2))))
+            I_B = I_B0 * np.exp(-r_m*n*sigma_cex)
+            j_beam = (I_B / r_m ** 2) * A1 * np.exp(-(alpha_rad / alpha1) ** 2)
+            j_scat = (I_B / r_m ** 2) * A2 * np.exp(-(alpha_rad / alpha2) ** 2)
+            j_cex = I_B0 * (1 - np.exp(-r_m*n*sigma_cex)) / (2 * np.pi * r_m ** 2)
+            j = j_beam + j_scat + j_cex
 
-        I_B = I_B0 * np.exp(-r_m*n*sigma_cex)
-        j_beam = (I_B / r_m ** 2) * A1 * np.exp(-(alpha_rad / alpha1) ** 2)
-        j_scat = (I_B / r_m ** 2) * A2 * np.exp(-(alpha_rad / alpha2) ** 2)
-        j_cex = I_B0 * (1 - np.exp(-r_m*n*sigma_cex)) / (2 * np.pi * r_m ** 2)
-        j = j_beam + j_scat + j_cex
-
-        # Check for case where divergence is less than 0 and return nan
-        neg_idx = np.where(alpha1[..., 0] <= 0)
-        j[neg_idx, :] = np.nan
+        # Set j~0 where alpha1 < 0 (invalid cases)
+        j[np.where(alpha1 <= 0)] = 1e-20
+        j[np.where(j <= 0)] = 1e-20
 
         if np.any(abs(j.imag) > 0):
             logger.warning('Predicted beam current has imaginary component')
@@ -254,11 +252,10 @@ def plume_pem(x, alpha=(), compress=True):
             cos_div = simps(num_int, alpha_rad, axis=-1) / simps(den_int, alpha_rad, axis=-1)
             cos_div[cos_div == np.inf] = np.nan
 
-        y[..., 0] = cos_div**2          # Divergence efficiency
-        y[..., 1] = np.arccos(cos_div)  # Divergence angle (rad)
+        y[..., 0] = np.arccos(cos_div)  # Divergence angle (rad)
 
         # Ion current density (A/m^2), in compressed dimension (r) or default dimension (M)
-        y[..., 2:] = np.squeeze(vtr @ np.log10(j[..., np.newaxis].real), axis=-1) if compress else j.real
+        y[..., 1:] = np.squeeze(vtr @ np.log10(j[..., np.newaxis].real), axis=-1) if compress else j.real
         return y
 
     except Exception as e:

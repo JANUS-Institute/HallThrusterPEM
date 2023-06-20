@@ -66,7 +66,7 @@ def hallthruster_jl_input(thruster_input):
                                'solve_background_neutrals': thruster_input['solve_background_neutrals']
                                }
 
-    data_write(json_data, 'julia_input.json')
+    # data_write(json_data, 'julia_input.json')
     return json_data
 
 
@@ -91,7 +91,7 @@ def hall_thruster_jl_model(thruster_input, jl=None):
             logger.warning(f'Transition length l_z = {l_z} m is out of bounds [1mm, 20mm]')
 
         t1 = time.time()
-        sol = jl.HallThruster.run_simulation(fd.name)
+        sol = jl.HallThruster.run_simulation(fd.name, verbose=False)
         # logger.info(f'Hallthruster.jl runtime: {time.time() - t1:.2f} s')
         os.unlink(fd.name)   # delete the tempfile
     except juliacall.JuliaError as e:
@@ -126,7 +126,7 @@ def hall_thruster_jl_model(thruster_input, jl=None):
     return thruster_output[0]
 
 
-def thruster_pem(x, alpha, compress=True, output_dir=None, n_jobs=1):
+def thruster_pem(x, alpha, *args, compress=True, output_dir=None, n_jobs=-1, **kwargs):
     """Run Hallthruster.jl in PEM format
     :param x: (..., xdim) Thruster inputs
     :param alpha: tuple(alpha_1, alpha_2) Model fidelity indices = (N_cells, N_charge)
@@ -174,19 +174,19 @@ def thruster_pem(x, alpha, compress=True, output_dir=None, n_jobs=1):
         for i, index in enumerate(curr_batch):
             x_curr = list(x[index + (slice(None),)])  # (xdim,)
             thruster_input.update({
-                'background_pressure_Torr': x_curr[0],
-                'anode_potential': x_curr[1],
-                'anode_mass_flow_rate': x_curr[2],
+                'background_pressure_Torr': 10 ** x_curr[0],
+                'anode_potential': x_curr[1] * 100,
+                'anode_mass_flow_rate': x_curr[2] * 1e-6,
                 'cathode_electron_temp_eV': x_curr[3],
-                'neutral_velocity_m_s': x_curr[4],
+                'neutral_velocity_m_s': x_curr[4] * 100,
                 'sheath_loss_coefficient': x_curr[5],
-                'inner_outer_transition_length_m': x_curr[6],
-                'anom_coeff_1': x_curr[7],
+                'inner_outer_transition_length_m': x_curr[6] * 1e-3,
+                'anom_coeff_1': 10 ** x_curr[7],
                 'anom_coeff_2_mag_offset': x_curr[8],
-                'cathode_location_m': x_curr[9],
-                'ion_temp_K': x_curr[10],
-                'neutral_temp_K': x_curr[11],
-                'background_temperature_K': x_curr[12],
+                'cathode_location_m': x_curr[9] * 1e-2,
+                'ion_temp_K': x_curr[10] * 100,
+                'neutral_temp_K': x_curr[11] * 100,
+                'background_temperature_K': x_curr[12] * 100,
                 'cathode_potential': x_curr[13]
             })
 
@@ -213,8 +213,8 @@ def thruster_pem(x, alpha, compress=True, output_dir=None, n_jobs=1):
 
             if compress:
                 # Interpolate ion velocity to the full reconstruction grid (of dim M)
-                n_cells = M - 2     # M = number of grid points = Ncells + 2 (half-grid cells at ends of FE domain)
-                L = x_curr[9]       # Cathode location is the end of axial z domain
+                n_cells = M - 2         # M = number of grid points = Ncells + 2 (half-grid cells at ends of FE domain)
+                L = x_curr[9] * 1e-2    # Cathode location is the end of axial z domain
                 dz = L / n_cells
                 zg = np.zeros(M)    # zg is the axial z grid points for the reconstructed field (of size M)
                 zg[0] = 0
@@ -263,7 +263,7 @@ def thruster_pem(x, alpha, compress=True, output_dir=None, n_jobs=1):
     with tempfile.NamedTemporaryFile(suffix='.dat', mode='w+b', delete=False) as y_fd:
         pass
     y = np.memmap(y_fd.name, dtype='float32', mode='r+', shape=x.shape[:-1] + (ydim,))
-    with Parallel(n_jobs=n_jobs, verbose=9) as ppool:
+    with Parallel(n_jobs=n_jobs, verbose=0) as ppool:
         res = ppool(delayed(run_batch)(job_num, index_batches, y) for job_num in range(num_batches))
     y_ret = np.zeros(y.shape)
     y_ret[:] = y[:]

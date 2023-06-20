@@ -7,8 +7,7 @@ from matplotlib.pyplot import cycler
 from matplotlib.colors import LinearSegmentedColormap, ListedColormap
 import numpy as np
 from numpy.linalg.linalg import LinAlgError
-from scipy.stats import uniform, norm, loguniform
-import os
+from abc import ABC, abstractmethod
 
 INPUT_DIR = Path(__file__).parent / 'input'
 
@@ -17,13 +16,12 @@ class ModelRunException(Exception):
     pass
 
 
-class BaseRV:
+class BaseRV(ABC):
     """Small wrapper class for scipy.stats random variables"""
 
     def __init__(self):
-        """Child classes must define bounds and a scipy.stats distribution"""
+        """Child classes must define bounds and sample/pdf functions"""
         self.bds = None     # (tuple)
-        self.rv = None      # Frozen distribution from scipy.stats
         self.disp = ''      # Display name for printing
 
     def __repr__(self):
@@ -36,17 +34,19 @@ class BaseRV:
         """Return the bounds of the RV"""
         return self.bds
 
+    @abstractmethod
     def pdf(self, x):
         """Compute the PDF of the RV at x locations
         :param x: (...,) np.ndarray of any shape
         """
-        return self.rv.pdf(x)
+        pass
 
+    @abstractmethod
     def sample(self, shape):
         """Draw samples from the RV
         :param shape: (...,) the shape of the returned samples
         """
-        return self.rv.rvs(size=shape)
+        pass
 
 
 class UniformRV(BaseRV):
@@ -55,11 +55,18 @@ class UniformRV(BaseRV):
         super().__init__()
         self.disp = f'U({a}, {b})' if name == '' else name
         self.bds = (a, b)
-        self.rv = uniform(loc=a, scale=b-a)
+
+    def pdf(self, x):
+        y = np.broadcast_to(1 / (self.bds[1] - self.bds[0]), x.shape).copy()
+        y[np.where(x > self.bds[1])] = 0
+        y[np.where(x < self.bds[0])] = 0
+        return y
+
+    def sample(self, shape):
+        return np.random.rand(*shape) * (self.bds[1] - self.bds[0]) + self.bds[0]
 
     def update_bounds(self, lb, ub):
         self.bds = (lb, ub)
-        self.rv = uniform(loc=lb, scale=ub-lb)
         self.disp = f'U({lb}, {ub})'
 
 
@@ -70,38 +77,35 @@ class LogUniformRV(BaseRV):
         super().__init__()
         self.bds = (10**log10_a, 10**log10_b)
         self.disp = f'LU({log10_a}, {log10_b})' if name == '' else name
-        self.rv = loguniform(10**log10_a, 10**log10_b)
+
+    def pdf(self, x):
+        return np.log10(np.e) / (x * (np.log10(self.bds[1]) - np.log10(self.bds[0])))
+
+    def sample(self, shape):
+        lb = np.log10(self.bds[0])
+        ub = np.log10(self.bds[1])
+        return 10 ** (np.random.rand(*shape) * (ub - lb) + lb)
 
 
 class LogNormalRV(BaseRV):
     """Base 10 lognormal"""
 
-    class lognormal:
-        """Kinda hated scipy.stats.lognorm, so this is a workaround"""
-
-        def __init__(self, mu, std):
-            self.mu = mu        # Mean of underlying distribution
-            self.std = std      # Standard deviation of underlying distribution
-
-        def pdf(self, x):
-            """Compute lognormal (base 10) pdf
-            :param x: (...,) np.ndarray of any shape
-            """
-            return (np.log10(np.e) / (x * self.std * np.sqrt(2*np.pi))) * \
-                np.exp(-0.5*((np.log10(x) - self.mu)/self.std) ** 2)
-
-        def rvs(self, size=(1,)):
-            """Sample from the lognormal base 10 distribution"""
-            scale = np.log10(np.e)
-            return np.random.lognormal(mean=(1/scale) * self.mu, sigma=(1/scale) * self.std, size=size)
-            # return 10 ** (np.random.randn(*size)*self.std + self.mu)  # Alternatively
-
     def __init__(self, mu, std, name=''):
         """Init with the mean and standard deviation of the underlying distribution, i.e. log10(x) ~ N(mu, std)"""
         super().__init__()
+        self.std = std
+        self.mu = mu
         self.bds = (10**(mu - 4*std), 10**(mu + 4*std))
         self.disp = f'LN_10({mu}, {std})' if name == '' else name
-        self.rv = self.lognormal(mu, std)
+
+    def pdf(self, x):
+        return (np.log10(np.e) / (x * self.std * np.sqrt(2 * np.pi))) * \
+               np.exp(-0.5 * ((np.log10(x) - self.mu) / self.std) ** 2)
+
+    def sample(self, shape):
+        scale = np.log10(np.e)
+        return np.random.lognormal(mean=(1 / scale) * self.mu, sigma=(1 / scale) * self.std, size=shape)
+        # return 10 ** (np.random.randn(*size)*self.std + self.mu)  # Alternatively
 
 
 class NormalRV(BaseRV):
@@ -109,8 +113,15 @@ class NormalRV(BaseRV):
     def __init__(self, mean, std, name=''):
         super().__init__()
         self.disp = f'N({mean}, {std})' if name == '' else name
+        self.mu = mean
+        self.std = std
         self.bds = (mean - 4*std, mean + 4*std)
-        self.rv = norm(loc=mean, scale=std)
+
+    def pdf(self, x):
+        return (1 / (np.sqrt(2 * np.pi) * self.std)) * np.exp(-0.5 * ((x - self.mu) / self.std) ** 2)
+
+    def sample(self, shape):
+        return np.random.randn(*shape) * self.std + self.mu
 
 
 def print_stats(data, logger=None):

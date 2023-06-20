@@ -28,6 +28,17 @@ logger.setLevel(logging.DEBUG)
 logger.addHandler(handler)
 
 
+def setup_file_logger(log_file):
+    """Setup the file logger"""
+    del_handlers = [h for h in logger.handlers if isinstance(h, logging.FileHandler)]
+    for h in del_handlers:
+        logger.removeHandler(h)
+    f_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
+    f_handler.setLevel(logging.DEBUG)
+    f_handler.setFormatter(FORMATTER)
+    logger.addHandler(f_handler)
+
+
 class SystemSurrogate:
 
     def __init__(self, components, exo_vars, coupling_vars, est_bds=0, root_dir=None, executor=None):
@@ -37,11 +48,11 @@ class SystemSurrogate:
                            the maximum level of model fidelity indices, the maximum surrogate refinement level, the
                            global indices of required system exogenous inputs, a dict specifying the indices of local
                            coupling variable inputs from other models, a list() that maps local component outputs
-                           to global coupling indices, and whether to save all model outputs to file
+                           to global coupling indices, whether to save all model outputs to file, and model args/kwargs
                            Ex: [{'name': 'Thruster', 'model': callable(x, alpha), 'truth_alpha': (3,), 'max_alpha': (3),
                                          'max_beta': (5,), 'exo_in': [0, 2, 6...], 'local_in': {'model1': [1,2,3],
                                          'model2': [0]}, 'global_out': [0, 1, 2, 3], 'type': 'lagrange',
-                                         'save_output': True},
+                                         'save_output': True, 'model_args': (), 'model_kwargs': {}},
                                 {'name': 'Plume', ...}, ...]
         :param exo_vars: list() of BaseRVs specifying the bounds/distributions for all system-level exogenous inputs
         :param coupling_vars: list() of UniformRVs specifying estimated bounds for all coupling variables
@@ -74,19 +85,14 @@ class SystemSurrogate:
         os.mkdir(Path(self.root_dir) / 'components')
         fname = datetime.datetime.now(tz=timezone.utc).isoformat().split('.')[0].replace(':', '.') + 'UTC_sys.log'
         self.log_file = str((Path(self.root_dir) / fname).resolve())
-        f_handler = logging.FileHandler(self.log_file, mode='w', encoding='utf-8')
-        f_handler.setLevel(logging.DEBUG)
-        f_handler.setFormatter(FORMATTER)
-        logger.addHandler(f_handler)
+        setup_file_logger(self.log_file)
         self.logger = logger.getChild(self.__class__.__name__)
         self.executor = executor
 
         # Store system info in a directed graph data structure
         self.graph = nx.DiGraph()
         self.exo_vars = copy.deepcopy(exo_vars)
-        self.exo_bds = [rv.bounds() for rv in self.exo_vars]
         self.coupling_vars = copy.deepcopy(coupling_vars)
-        self.coupling_bds = [rv.bounds() for rv in self.coupling_vars]
         self.refine_level = 0
 
         # Construct graph nodes
@@ -120,6 +126,8 @@ class SystemSurrogate:
         :returns global_idx, surr: the global coupling input indices and the ComponentSurrogate object
         """
         nodes = self.graph.nodes if nodes is None else nodes
+        args = component.get('model_args', ())
+        kwargs = component.get('model_kwargs', {})
 
         # Get global indices of coupling inputs
         global_idx = []
@@ -130,11 +138,11 @@ class SystemSurrogate:
         global_idx = sorted(global_idx)
 
         # Set up a component output save directory
-        output_dir = None
         if component.get('save_output', False):
             output_dir = str((Path(self.root_dir) / 'components' / component['name']).resolve())
             if not Path(output_dir).is_dir():
                 os.mkdir(output_dir)
+            kwargs['output_dir'] = output_dir
 
         # Initialize a new component surrogate
         surr_type = component.get('type', 'lagrange')
@@ -146,9 +154,9 @@ class SystemSurrogate:
             case other:
                 raise NotImplementedError(f"Surrogate type '{surr_type}' is not known at this time.")
         x_vars = [self.exo_vars[i] for i in component['exo_in']] + [self.coupling_vars[i] for i in global_idx]
-        surr = surr_class([], x_vars, component['model'], component['truth_alpha'], interp=surr_type,
+        surr = surr_class([], x_vars, component['model'], component['truth_alpha'], method=surr_type,
                           max_alpha=component.get('max_alpha', None), max_beta=component.get('max_beta', None),
-                          output_dir=output_dir, executor=self.executor)
+                          executor=self.executor, log_file=self.log_file, model_args=args, model_kwargs=kwargs)
         return global_idx, surr
 
     def swap_component(self, component, exo_add=None, exo_remove=None, qoi_add=None, qoi_remove=None):
@@ -176,14 +184,12 @@ class SystemSurrogate:
 
             # Need to update the remaining delete indices by -1 to account for each sequential deletion
             del self.exo_vars[exo_var_idx]
-            del self.exo_bds[exo_var_idx]
             for i in range(j+1, len(exo_remove)):
                 exo_remove[i] -= 1
 
         # Append any new exogenous inputs to the end
         if exo_add is not None:
             self.exo_vars.extend(exo_add)
-            self.exo_bds.extend([rv.bounds() for rv in exo_add])
 
         # Delete system qoi outputs (if not shared by other components)
         qoi_remove = [] if qoi_remove is not None else sorted(qoi_remove)
@@ -206,14 +212,12 @@ class SystemSurrogate:
 
             # Need to update the remaining delete indices by -1 to account for each sequential deletion
             del self.coupling_vars[qoi_idx]
-            del self.coupling_bds[qoi_idx]
             for i in range(j+1, len(qoi_remove)):
                 qoi_remove[i] -= 1
 
         # Append any new system QoI outputs to the end
         if qoi_add is not None:
             self.coupling_vars.extend(qoi_add)
-            self.coupling_bds.extend([rv.bounds() for rv in qoi_add])
 
         # Make changes to adj matrix if coupling inputs changed
         prev_neighbors = list(self.graph.nodes[component['name']]['local_in'].keys())
@@ -243,10 +247,8 @@ class SystemSurrogate:
         """
         if exo_add is not None:
             self.exo_vars.extend(exo_add)
-            self.exo_bds.extend([rv.bounds() for rv in exo_add])
         if qoi_add is not None:
             self.coupling_vars.extend(qoi_add)
-            self.coupling_bds.extend([rv.bounds() for rv in qoi_add])
 
         global_idx, surr = self.build_component(component)
         surr.init_coarse()
@@ -280,6 +282,10 @@ class SystemSurrogate:
         self.print_title_str('Initializing all component surrogates')
         for node, node_obj in self.graph.nodes.items():
             node_obj['surrogate'].init_coarse()
+            for alpha, beta in list(node_obj['surrogate'].candidate_set):
+                # Add one refinement in each input dimension to initialize
+                node_obj['surrogate'].activate_index(alpha, beta)
+            node_obj['surrogate'].update_misc_coeffs()
             self.logger.info(f"Initialized component '{node}'.")
 
     @save_on_error
@@ -295,6 +301,7 @@ class SystemSurrogate:
         max_iter = self.refine_level + max_iter
         curr_error = np.inf
         t_start = time.time()
+
         while True:
             # Check all end conditions
             if self.refine_level >= max_iter:
@@ -328,33 +335,11 @@ class SystemSurrogate:
         if qoi_ind is None:
             qoi_ind = slice(None)
 
-        # Construct a test set of random exogenous input samples
-        xtest = self.sample_exo_inputs((N_refine,))
-
-        # Initialize variables
-        local_estimate = False
-        y_curr = None
-        y_min = None
-        y_max = None
-        y_curr_local = dict()
-        x_couple = np.zeros((N_refine, len(self.coupling_vars)))
-
-        # Sample coupling vars (uniform) and evaluate each component surrogate individually for local error estimation
-        for i, bds in enumerate(self.coupling_vars):
-            x_couple[:, i] = self.coupling_vars[i].sample((N_refine,))
-        for node, node_obj in self.graph.nodes.items():
-            comp_input = np.concatenate((xtest[:, node_obj['exo_in']], x_couple[:, node_obj['global_in']]), axis=1)
-            y_curr_local[node] = node_obj['surrogate'](comp_input, training=True)
-
-            # Determine if local error estimate is needed (if any component surrogate is still a constant approximation)
-            if not local_estimate and np.any(np.isclose(np.std(y_curr_local[node], axis=0, keepdims=True), 0)):
-                local_estimate = True
-
-        # Compute entire integrated-surrogate for global system QoI error estimation
-        if not local_estimate:
-            y_curr = self(xtest, training=True)
-            y_min = np.min(y_curr, axis=0, keepdims=True)  # (1, ydim)
-            y_max = np.max(y_curr, axis=0, keepdims=True)  # (1, ydim)
+        # Compute entire integrated-surrogate on a random test set for global system QoI error estimation
+        x_exo = self.sample_exo_inputs((N_refine,))
+        y_curr = self(x_exo, training=True)
+        y_min = np.min(y_curr, axis=0, keepdims=True)  # (1, ydim)
+        y_max = np.max(y_curr, axis=0, keepdims=True)  # (1, ydim)
 
         # Find the candidate surrogate with the largest error indicator
         error_max = -np.inf
@@ -367,31 +352,19 @@ class SystemSurrogate:
             self.logger.info(f"Estimating error for component '{node}'...")
             no_cand_flag = True
             for alpha, beta in node_obj['surrogate'].iterate_candidates():
-                # Compute errors, ignoring NaN samples that may have resulted from bad FPI
-                delta_error = None
+                # Compute errors over global system QoI, ignoring NaN samples that may have resulted from bad FPI
+                node_obj['surrogate'].update_misc_coeffs()
                 no_cand_flag = False
-                if local_estimate:
-                    # Use a local estimate of error to avoid initialization issues with system QoI
-                    comp_input = np.concatenate((xtest[:, node_obj['exo_in']], x_couple[:, node_obj['global_in']]),
-                                                axis=1)
-                    y_cand = node_obj['surrogate'](comp_input, training=True)
-                    y_curr = y_curr_local[node]
-                    nrmse = np.sqrt(np.nanmean((y_cand - y_curr) ** 2, axis=0)) / np.abs(np.nanmean(y_curr, axis=0))
-                    delta_error = np.nanmax(nrmse)  # Max normalized rmse over all current component outputs
-                else:
-                    # Otherwise, use a global system QoI estimate of error
-                    y_cand = self(xtest, training=True)
-                    y_min = np.min(np.concatenate((y_min, y_cand), axis=0), axis=0, keepdims=True)
-                    y_max = np.max(np.concatenate((y_max, y_cand), axis=0), axis=0, keepdims=True)
-                    error = y_cand[:, qoi_ind] - y_curr[:, qoi_ind]
-                    nrmse = np.sqrt(np.nanmean(error ** 2, axis=0)) / np.abs(np.nanmean(y_curr[:, qoi_ind], axis=0))
-                    delta_error = np.nanmax(nrmse)  # Max normalized rmse over all system QoIs
-
-                # Ignore work in components that take less than 1 second to run (probably just analytical models)
+                y_cand = self(x_exo, training=True)
+                y_min = np.min(np.concatenate((y_min, y_cand), axis=0), axis=0, keepdims=True)
+                y_max = np.max(np.concatenate((y_max, y_cand), axis=0), axis=0, keepdims=True)
+                error = y_cand[:, qoi_ind] - y_curr[:, qoi_ind]
+                nrmse = np.sqrt(np.nanmean(error ** 2, axis=0)) / np.abs(np.nanmean(y_curr[:, qoi_ind], axis=0))
+                delta_error = np.nanmax(nrmse)  # Max normalized rmse over all system QoIs
                 delta_work = max(1, node_obj['surrogate'].get_cost(alpha, beta))    # Wall time (s)
                 refine_indicator = delta_error / delta_work
-                self.logger.info(f"Candidate multi-index: {(alpha, beta)}. "
-                                 f"{'(Local)' if local_estimate else '(Global)'} error indicator: {refine_indicator}")
+                self.logger.info(f"Candidate multi-index: {(alpha, beta)}. (Global) error indicator: "
+                                 f"{refine_indicator}")
 
                 if refine_indicator > error_max:
                     error_max = refine_indicator
@@ -402,16 +375,18 @@ class SystemSurrogate:
 
             if no_cand_flag:
                 self.logger.info(f"Component '{node}' has no available candidates left!")
+            else:
+                node_obj['surrogate'].update_misc_coeffs()  # Make sure MISC coeffs get reset for this node
 
         # Update all coupling variable ranges
-        if not local_estimate:
-            for i in range(y_curr.shape[-1]):
-                self.update_coupling_bds(i, (y_min[0, i], y_max[0, i]))
+        for i in range(y_curr.shape[-1]):
+            self.update_coupling_bds(i, (y_min[0, i], y_max[0, i]))
 
         # Add the chosen multi-index to the chosen component
         if node_star is not None:
             self.logger.info(f"Candidate multi-index {(alpha_star, beta_star)} chosen for component '{node_star}'")
             self.graph.nodes[node_star]['surrogate'].activate_index(alpha_star, beta_star)
+            self.graph.nodes[node_star]['surrogate'].update_misc_coeffs()
             self.refine_level += 1
         else:
             self.logger.info(f"No candidates left for refinement, iteration: {self.refine_level}")
@@ -421,7 +396,7 @@ class SystemSurrogate:
     def __call__(self, x, max_fpi_iter=100, anderson_mem=10, fpi_tol=1e-10, ground_truth=False, verbose=False,
                  training=False):
         """Evaluate the system surrogate at exogenous inputs x
-        :param x: (..., xdim) the points to be interpolated, must be within domain of self.exo_bds
+        :param x: (..., xdim) the points to be interpolated
         :param max_fpi_iter: the limit on convergence for the fixed-point iteration routine
         :param anderson_mem: hyperparameter for tuning the convergence of FPI with anderson acceleration
         :param fpi_tol: tolerance limit for convergence of fixed-point iteration
@@ -475,7 +450,8 @@ class SystemSurrogate:
             # Handle FPI for SCCs with more than one component
             else:
                 # Set the initial guess for all coupling vars (middle of domain)
-                x_couple = np.array([(bds[0] + bds[1]) / 2 for bds in self.coupling_bds])
+                coupling_bds = [rv.bounds() for rv in self.coupling_vars]
+                x_couple = np.array([(bds[0] + bds[1]) / 2 for bds in coupling_bds])
                 x_couple = np.broadcast_to(x_couple, x.shape[:-1] + x_couple.shape).copy()
 
                 adj_nodes = []
@@ -579,7 +555,7 @@ class SystemSurrogate:
         x = self.sample_exo_inputs((N_est,))
         y = self(x, ground_truth=True, verbose=True, anderson_mem=anderson_mem, fpi_tol=fpi_tol,
                  max_fpi_iter=max_fpi_iter)
-        for i in range(len(self.coupling_bds)):
+        for i in range(len(self.coupling_vars)):
             lb = np.min(y[:, i])
             ub = np.max(y[:, i])
             self.update_coupling_bds(i, (lb, ub), init=True)
@@ -593,10 +569,10 @@ class SystemSurrogate:
         """
         offset = buffer * (bds[1] - bds[0])
         offset_bds = (bds[0] - offset, bds[1] + offset)
-        new_bds = offset_bds if init else (min(self.coupling_bds[global_idx][0], offset_bds[0]),
-                                           max(self.coupling_bds[global_idx][1], offset_bds[1]))
+        coupling_bds = [rv.bounds() for rv in self.coupling_vars]
+        new_bds = offset_bds if init else (min(coupling_bds[global_idx][0], offset_bds[0]),
+                                           max(coupling_bds[global_idx][1], offset_bds[1]))
         self.coupling_vars[global_idx].update_bounds(*new_bds)
-        self.coupling_bds[global_idx] = new_bds
 
         # Iterate over all components and update internal coupling variable bounds
         for node_name, node_obj in self.graph.nodes.items():
@@ -662,24 +638,21 @@ class SystemSurrogate:
             fname = datetime.datetime.now(tz=timezone.utc).isoformat().split('.')[0].replace(':', '.') + 'UTC_sys.log'
             log_file = str((Path(self.root_dir) / fname).resolve())
 
-        # Remove all previous file handlers (to avoid duplication)
+        # Setup the log file
         self.log_file = log_file
-        del_handlers = [h for h in logger.handlers if isinstance(h, logging.FileHandler)]
-        for h in del_handlers:
-            logger.removeHandler(h)
-        f_handler = logging.FileHandler(self.log_file, mode='a', encoding='utf-8')
-        f_handler.setLevel(logging.DEBUG)
-        f_handler.setFormatter(FORMATTER)
-        logger.addHandler(f_handler)
+        setup_file_logger(self.log_file)
         self.logger = logger.getChild(SystemSurrogate.__name__)
 
         # Update model output directories
         for node, node_obj in self.graph.nodes.items():
-            if node_obj['surrogate'].output_dir is not None:
+            surr = node_obj['surrogate']
+            surr.logger = logger.getChild(surr.__class__.__name__)
+            surr.log_file = self.log_file
+            if surr.save_enabled():
                 output_dir = str((Path(self.root_dir) / 'components' / node).resolve())
                 if not Path(output_dir).is_dir():
                     os.mkdir(output_dir)
-                node_obj['surrogate'].set_output_dir(output_dir)
+                surr.set_output_dir(output_dir)
 
     def __getitem__(self, component):
         """Convenience method to get the ComponentSurrogate object from the system
@@ -704,33 +677,22 @@ class SystemSurrogate:
             node_obj['surrogate'].executor = executor
 
     @staticmethod
-    def load_from_file(filename, log_file=None, executor=None):
+    def load_from_file(filename, root_dir=None, executor=None):
         """Load a SystemSurrogate object from file
         :param filename: .pkl file to load
-        :param log_file: (str) Overrides existing log_file location (if available) or creates a new log file (abs path)
+        :param root_dir: str() or Path to a folder to use as the root directory, (uses file's parent dir by default)
         :param executor: a concurrent.futures.Executor object to set, clears if None
         """
+        if root_dir is None:
+            root_dir = Path(filename).parent
+
         with open(filename, 'rb') as dill_file:
-            sys = dill.load(dill_file)
-            sys.set_executor(executor)
-            log_file = log_file if log_file is not None else sys.log_file
+            sys_surr = dill.load(dill_file)
+            sys_surr.set_executor(executor)
+            sys_surr.set_root_directory(root_dir)
+            sys_surr.logger.info(f'SystemSurrogate loaded from {Path(filename).resolve()}')
 
-            # Remove all previous file handlers (to avoid duplication)
-            del_handlers = [h for h in logger.handlers if isinstance(h, logging.FileHandler)]
-            for h in del_handlers:
-                logger.removeHandler(h)
-
-            if log_file is not None and Path(log_file).is_file():
-                f_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
-                f_handler.setLevel(logging.DEBUG)
-                f_handler.setFormatter(FORMATTER)
-                logger.addHandler(f_handler)
-                sys.log_file = str(Path(log_file).resolve())
-
-            sys.logger = logger.getChild(SystemSurrogate.__name__)
-            sys.logger.info(f'SystemSurrogate loaded from {Path(filename).resolve()}')
-
-        return sys
+        return sys_surr
 
     @staticmethod
     def constrained_lls(A, b, C, d):
@@ -759,55 +721,54 @@ class SystemSurrogate:
 class ComponentSurrogate(ABC):
     """Multi-index stochastic collocation (MISC) surrogate abstract class for a component model"""
 
-    def __init__(self, multi_index, x_vars, model, truth_alpha, interp='lagrange', max_alpha=None, max_beta=None,
-                 output_dir=None, executor=None):
+    def __init__(self, multi_index, x_vars, model, truth_alpha, method='lagrange', max_alpha=None, max_beta=None,
+                 log_file=None, executor=None, model_args=(), model_kwargs=None):
         """Construct the MISC surrogate from a multi-index
         :param multi_index: [((alpha1), (beta1)), ... ] List of concatenated multi-indices alpha, beta specifying
                             model and surrogate fidelity
         :param x_vars: [X1, X2, ...] list of BaseRV() objects specifying bounds/pdfs for each input x
-        :param model: The function to approximate, callable as y = model(x, alpha, **kwargs)
+        :param model: The function to approximate, callable as y = model(x, alpha, *args, **kwargs)
         :param truth_alpha: tuple() specifying the highest model fidelity indices necessary for a 'truth' comparison
-        :param interp: (str) the interpolation method to use, defaults to barycentric Lagrange interpolation
+        :param method: (str) the interpolation method to use, defaults to barycentric Lagrange interpolation
         :param max_alpha: tuple(), the maximum model refinement indices to allow, defaults to (3,...)
-        :param max_beta: tuple(), the maximum surrogate refinement level indices, defaults to (5,...) of len xdim
-        :param output_dir: str() or Path-like specifying where to save model output files, don't save if None
+        :param max_beta: tuple(), the maximum surrogate refinement level indices, defaults to (3,...) of len xdim
+        :param log_file: str() or Path-like specifying a log file
         :param executor: An instance of a concurrent.futures.executor, use to add candidate indices in parallel
+        :param model_args: tuple() optional args to pass when calling the model
+        :param model_kwargs: dict() optional kwargs to pass when calling the model
         """
         self.logger = logger.getChild(self.__class__.__name__)
+        self.log_file = log_file
         assert self.is_downward_closed(multi_index), 'Must be a downward closed set.'
         self.index_set = []         # The active index set for the MISC approximation
         self.candidate_set = []     # Candidate indices for refinement
         self._model = model
+        self._model_args = model_args
+        self._model_kwargs = model_kwargs if model_kwargs is not None else {}
         self.truth_alpha = truth_alpha
-        self._truth_model = lambda x, **kwargs: self._model(x, self.truth_alpha, **kwargs)
-        self.x_vars = copy.deepcopy(x_vars)
-        self.x_bds = [rv.bounds() for rv in self.x_vars]
+        self.x_vars = x_vars
         self.ydim = None
-        self.ij = None
-        self.index_mat = None
         max_alpha = (3,)*len(truth_alpha) if max_alpha is None else max_alpha
         max_beta = (3,)*len(self.x_vars) if max_beta is None else max_beta
         self.max_refine = list(max_alpha + max_beta)    # Max refinement indices
-        self.output_dir = output_dir
         self.executor = executor
-
-        # Construct vectors of [0,1]^dim(alpha+beta), used for combination coefficients
-        Nij = len(self.max_refine)
-        self.ij = np.zeros((2 ** Nij, Nij), dtype=int)
-        for i, ele in enumerate(itertools.product([0, 1], repeat=Nij)):
-            self.ij[i, :] = ele
-
-        # This is a (N_indices, dim(alpha+beta)) refactor of self.index_set, useful for arrayed computations
-        self.index_mat = np.zeros((0, Nij), dtype=int)
+        self.training_flag = True       # Keep track of which MISC coeffs are active
 
         # Initialize important tree-like structures
         self.surrogates = dict()        # Maps alphas -> betas -> surrogates
         self.costs = dict()             # Maps alphas -> betas -> wall clock run times
-        self.alpha_models = dict()      # Maps alphas -> models
+        self.misc_coeff = dict()        # Maps alphas -> betas -> MISC coefficients
+
+        # Construct vectors of [0,1]^dim(alpha+beta)
+        Nij = len(self.max_refine)
+        self.ij = np.zeros((2 ** Nij, Nij), dtype=np.uint8)
+        for i, ele in enumerate(itertools.product([0, 1], repeat=Nij)):
+            self.ij[i, :] = ele
 
         # Initialize any indices that were passed in
         for alpha, beta in multi_index:
             self.activate_index(alpha, beta)
+        self.update_misc_coeffs()
 
     def activate_index(self, alpha, beta):
         """Add a multi-index to the active set and all neighbors to the candidate set
@@ -847,43 +808,65 @@ class ComponentSurrogate(ABC):
                 new_candidates.append(new_cand)
 
         # Build an interpolant for each new candidate
-        if self.executor is not None:   # Parallel
-            fs = [self.executor.submit(self.add_surrogate, a, b) for a, b in new_candidates]
-            wait(fs, timeout=None, return_when=ALL_COMPLETED)
-            for i, future in enumerate(fs):
-                try:
-                    future.result()
-                except:
-                    self.logger.error(f'An exception occurred in a thread handling add_surrogate{new_candidates[i]}')
-                    raise
-        else:                           # Sequential
+        if self.executor is None:   # Sequential
             for a, b in new_candidates:
                 self.add_surrogate(a, b)
+        else:                       # Parallel
+            temp_exc = self.executor
+            self.executor = None
+            for a, b in new_candidates:
+                self.add_surrogate(a, b, manual=True)
+
+            def manual_build(self, a, b):
+                if self.log_file is not None:
+                    setup_file_logger(self.log_file)
+                    self.logger = logger.getChild(self.__class__.__name__)
+                self.logger.info(f'Building interpolant for index {(a, b)} ...')
+                interp, cost = self.add_interpolator(a, b)
+                return interp, cost
+
+            # Wait for all parallel workers to return
+            fs = [temp_exc.submit(manual_build, self, a, b) for a, b in new_candidates]
+            wait(fs, timeout=None, return_when=ALL_COMPLETED)
+
+            # Update self with the results from all workers (and check for errors)
+            for i, future in enumerate(fs):
+                try:
+                    a = new_candidates[i][0]
+                    b = new_candidates[i][1]
+                    interp, cost = future.result()
+                    self.surrogates[str(a)][str(b)] = interp
+                    self.costs[str(a)][str(b)] = cost
+                    if self.ydim is None:
+                        self.ydim = interp.ydim()
+
+                    # Make sure all instance variables get updated here in the master task after all MPI workers return
+                    self._add_interpolator_mpi(a, b)
+                except:
+                    self.logger.error(f'An exception occurred in a thread handling add_interpolator{new_candidates[i]}')
+                    raise
+            self.executor = temp_exc
 
         # Move to the active index set
         if ele in self.candidate_set:
             self.candidate_set.remove(ele)
         self.index_set.append(ele)
-        self.index_mat = np.concatenate((self.index_mat, np.array(alpha + beta)[np.newaxis, :]), axis=0)
         new_candidates = [cand for cand in new_candidates if cand not in self.candidate_set]
         self.candidate_set.extend(new_candidates)
 
-    def add_surrogate(self, alpha, beta):
+    def add_surrogate(self, alpha, beta, manual=False):
         """Build a BaseInterpolator object for a given alpha, beta index
         :param alpha: A multi-index (tuple) specifying model fidelity
         :param beta: A multi-index (tuple) specifying surrogate fidelity
         """
-        # Store a new function for each unique fidelity (alpha) of the main forward model
-        if str(alpha) not in self.alpha_models:
-            self.alpha_models[str(alpha)] = lambda x, **kwargs: self._model(x, alpha, **kwargs)
-
         # Create a dictionary for each alpha model to store multiple surrogate fidelities (beta)
         if str(alpha) not in self.surrogates:
             self.surrogates[str(alpha)] = dict()
             self.costs[str(alpha)] = dict()
+            self.misc_coeff[str(alpha)] = dict()
 
         # Create a new interpolator object for this multi-index (abstract method)
-        if self.surrogates[str(alpha)].get(str(beta), None) is None:
+        if self.surrogates[str(alpha)].get(str(beta), None) is None and not manual:
             self.logger.info(f'Building interpolant for index {(alpha, beta)} ...')
             interp, cost = self.add_interpolator(alpha, beta)
             self.surrogates[str(alpha)][str(beta)] = interp
@@ -904,63 +887,63 @@ class ComponentSurrogate(ABC):
         for alpha, beta in self.candidate_set:
             # Temporarily add a candidate index to active set
             self.index_set.append((alpha, beta))
-            self.index_mat = np.concatenate((self.index_mat, np.array(alpha+beta)[np.newaxis, :]), axis=0)
             yield alpha, beta
-            self.index_set.remove((alpha, beta))
-            self.index_mat = self.index_mat[:-1, :]
+            del self.index_set[-1]
 
     def __call__(self, x, ground_truth=False, training=False):
         """Evaluate the surrogate at points x
-        :param x: (..., xdim) the points to be interpolated, must be within domain of self.x_bds
+        :param x: (..., xdim) the points to be interpolated, must be within domain of x bounds
         :param ground_truth: whether to use the highest fidelity model or the surrogate (default)
         :param training: if True, then only compute with active index set, otherwise use all candidates as well
         :returns y: (..., ydim) the surrogate approximation of the qois
         """
         if ground_truth:
-            # Bypass surrogate evaluation
-            return self._truth_model(x)
+            # Bypass surrogate evaluation (don't save outputs)
+            kwargs = copy.deepcopy(self._model_kwargs)
+            kwargs['output_dir'] = None
+            return self._model(x, self.truth_alpha, *self._model_args, **kwargs)
 
         index_set = self.index_set if training else self.index_set + self.candidate_set
-        # assert self.is_downward_closed(index_set)
 
-        if not training:
-            # Add candidate indices to MISC approximation if not training
-            cand_indices = np.zeros((len(self.candidate_set), self.index_mat.shape[1]))
-            for i, (alpha, beta) in enumerate(self.candidate_set):
-                cand_indices[i, :] = alpha + beta
-            self.index_mat = np.concatenate((self.index_mat, cand_indices), axis=0)
+        # MISC coefficients should be updated only on the logical XOR cases
+        if (not self.training_flag and training) or (self.training_flag and not training):
+            self.update_misc_coeffs(index_set)
 
         y = np.zeros(x.shape[:-1] + (self.ydim,))
         for alpha, beta in index_set:
-            comb_coeff = self.compute_misc_coefficient(alpha, beta)
+            comb_coeff = self.misc_coeff[str(alpha)][str(beta)]
             if np.abs(comb_coeff) > 0:
                 func = self.surrogates[str(alpha)][str(beta)]
                 y += comb_coeff * func(x)
 
-        if not training:
-            sl = slice(0, -len(self.candidate_set)) if len(self.candidate_set) else slice(None)
-            self.index_mat = self.index_mat[sl, :]
+        # Save an indication of what state the MISC coefficients are in (i.e. training or eval mode)
+        self.training_flag = training
 
         return y
 
-    def compute_misc_coefficient(self, alpha, beta):
-        """Compute combination technique formula for MISC
-        :param alpha: A multi-index (tuple) specifying model fidelity
-        :param beta: A multi-index (tuple) specifying surrogate fidelity
-        """
-        # Add permutations of [0, 1] to (alpha, beta)
-        alpha_beta = np.array(alpha+beta, dtype=int)[np.newaxis, :]     # (1, Nij)
-        new_indices = np.expand_dims(alpha_beta + self.ij, axis=1)      # (2**Nij, 1, Nij)
-        index_set = np.expand_dims(self.index_mat, axis=0)              # (1, Ns, Nij)
+    def update_misc_coeffs(self, index_set=None):
+        """Update comb technique coeffs for MISC using the given index set, defaults to the active index set"""
+        if index_set is None:
+            index_set = self.index_set
 
-        # Find which indices are in self.index_set (using np broadcasting comparison)
-        diff = new_indices - index_set                                  # (2**Nij, Ns, Nij)
-        idx = np.count_nonzero(diff, axis=-1) == 0                      # (2**Nij, Ns)
-        idx = np.any(idx, axis=-1)                                      # (2**Nij,)
-        ij_use = self.ij[idx, :]                                        # (*, Nij)
-        l1_norm = np.sum(np.abs(ij_use), axis=-1)                       # (*,)
+        # Construct a (N_indices, dim(alpha+beta)) refactor of the index_set for arrayed computations
+        index_mat = np.zeros((len(index_set), len(self.max_refine)), dtype=np.uint8)
+        for i, (alpha, beta) in enumerate(index_set):
+            index_mat[i, :] = alpha + beta
+        index_mat = np.expand_dims(index_mat, axis=0)                               # (1, Ns, Nij)
 
-        return np.sum((-1) ** l1_norm)
+        for alpha, beta in index_set:
+            # Add permutations of [0, 1] to (alpha, beta)
+            alpha_beta = np.array(alpha+beta, dtype=np.uint8)[np.newaxis, :]        # (1, Nij)
+            new_indices = np.expand_dims(alpha_beta + self.ij, axis=1)              # (2**Nij, 1, Nij)
+
+            # Find which indices are in the index_set (using np broadcasting comparison)
+            diff = new_indices - index_mat                                  # (2**Nij, Ns, Nij)
+            idx = np.count_nonzero(diff, axis=-1) == 0                      # (2**Nij, Ns)
+            idx = np.any(idx, axis=-1)                                      # (2**Nij,)
+            ij_use = self.ij[idx, :]                                        # (*, Nij)
+            l1_norm = np.sum(np.abs(ij_use), axis=-1)                       # (*,)
+            self.misc_coeff[str(alpha)][str(beta)] = np.sum((-1) ** l1_norm)
 
     def get_sub_surrogate(self, alpha, beta):
         """Get the specific sub-surrogate corresponding to the (alpha,beta) fidelity
@@ -982,28 +965,37 @@ class ComponentSurrogate(ABC):
         :param bds: tuple() specifying the new bounds to update
         """
         self.x_vars[idx].update_bounds(*bds)
-        self.x_bds[idx] = bds
 
         # Update the bounds in all associated tensor-product surrogates
         for alpha in self.surrogates:
             for beta in self.surrogates[alpha]:
                 self.surrogates[alpha][beta].update_input_bds(idx, bds)
 
-    def set_output_dir(self, dir):
+    def save_enabled(self):
+        """Return whether this model wants to save outputs to file"""
+        return self._model_kwargs.get('output_dir') is not None
+
+    def set_output_dir(self, output_dir):
         """Update the component model output directory
-        :param dir: str() or Path specifying new directory for model output files
+        :param output_dir: str() or Path specifying new directory for model output files
         """
-        self.output_dir = str(Path(dir).resolve())
+        self._model_kwargs['output_dir'] = str(Path(output_dir).resolve())
         for alpha in self.surrogates:
             for beta in self.surrogates[alpha]:
-                self.surrogates[alpha][beta].output_dir = self.output_dir
+                self.surrogates[alpha][beta]._model_kwargs['output_dir'] = str(Path(output_dir).resolve())
 
     def __repr__(self):
         s = f'Inputs \u2014 {self.x_vars}\n'
-        for alpha, beta in self.index_set:
-            s += f"[{int(self.compute_misc_coefficient(alpha, beta))}] \u2014 {alpha}, {beta}\n"
-        for alpha, beta in self.candidate_set:
-            s += f"[-] \u2014 {alpha}, {beta}\n"
+        if self.training_flag:
+            s += '(Training mode)\n'
+            for alpha, beta in self.index_set:
+                s += f"[{int(self.misc_coeff[str(alpha)][str(beta)])}] \u2014 {alpha}, {beta}\n"
+            for alpha, beta in self.candidate_set:
+                s += f"[-] \u2014 {alpha}, {beta}\n"
+        else:
+            s += '(Evaluation mode)\n'
+            for alpha, beta in self.index_set + self.candidate_set:
+                s += f"[{int(self.misc_coeff[str(alpha)][str(beta)])}] \u2014 {alpha}, {beta}\n"
         return s
 
     def __str__(self):
@@ -1040,34 +1032,44 @@ class ComponentSurrogate(ABC):
         """
         pass
 
+    @abstractmethod
+    def _add_interpolator_mpi(self, alpha, beta):
+        """Defines a post-processing function to call *after* add_interpolator() returns from all parallel
+        MPI workers. While add_interpolator() can make changes to 'self', these changes will not be saved
+        in the master task if running in parallel over MPI. This method is a workaround to make all 
+        required mutable changes to 'self' in the master task. Can pass if not needed.
+        """
+        pass
+
 
 class BaseInterpolator(ABC):
     """Base interpolator abstract class"""
 
-    def __init__(self, beta, x_vars, xi=None, yi=None, model=None, output_dir=None):
+    def __init__(self, beta, x_vars, xi=None, yi=None, model=None, model_args=(), model_kwargs=None):
         """Construct the interpolator
         :param beta: list(), refinement level indices for surrogate
         :param x_vars: list() of BaseRV() objects specifying bounds/pdfs for each input x
         :param xi: (Nx, xdim) interpolation points
         :param yi: the interpolation qoi values, y = (Nx, ydim)
         :param model: Callable as y = model(x), with x = (..., xdim), y = (..., ydim)
-        :param output_dir: str() or Path to save model outputs, if provided
+        :param model_args: tuple() of optional args for the model
+        :param model_kwargs: dict() of optional kwargs for the model
         """
         self.logger = logger.getChild(self.__class__.__name__)
         self._model = model
-        self.output_dir = output_dir
+        self._model_args = model_args
+        self._model_kwargs = model_kwargs if model_kwargs is not None else {}
         self.output_files = []                              # Save output files with same indexing as xi, yi
         self.xi = xi                                        # Interpolation points
         self.yi = yi                                        # Function values at interpolation points
         self.beta = beta                                    # Refinement level indices
         self.x_vars = x_vars                                # BaseRV() objects for each input
-        self.x_bds = [rv.bounds() for rv in self.x_vars]    # Bounds on inputs
         self.wall_time = 1                                  # Wall time to evaluate model (s)
+        self.x_idx = []
 
     def update_input_bds(self, idx, bds):
         """Update the input bounds at the given index (assume a uniform RV)"""
         self.x_vars[idx].update_bounds(*bds)
-        self.x_bds[idx] = bds
 
     def xdim(self):
         """Get the dimension of the inputs"""
@@ -1077,7 +1079,11 @@ class BaseInterpolator(ABC):
         """Get the dimension of the outputs"""
         return self.yi.shape[-1] if self.yi is not None else None
 
-    def set_yi(self, yi=None, model=None, x_new=()):
+    def save_enabled(self):
+        """Return whether this model wants to save outputs to file"""
+        return self._model_kwargs.get('output_dir') is not None
+
+    def set_yi(self, yi=None, model=None, x_new=(), x_idx=()):
         """Set the interpolation point qois, if yi is none then compute yi=model(self.xi)
         :param yi: (Nx, ydim) must match dimension of self.xi
         :param model: Callable as y, files = model(x), with x = (..., xdim), y = (..., ydim), files = list(.jsons),
@@ -1085,6 +1091,8 @@ class BaseInterpolator(ABC):
         :param x_new: tuple() specifying (x_new_idx, new_x), where new_x is an (N_new, xdim) array of new interpolation
                       points to include and x_new_idx is a list() specifying the indices of these points into self.xi,
                       overrides anything passed in for yi, and assumes a model is already specified
+        :param x_idx: tuple() specifying (idx, x) of interpolation points to compute and return QoIs, only saves the
+                      idx and not xi/yi, for use in sparse grids where xi/yi is saved somewhere else
         """
         if model is not None:
             self._model = model
@@ -1093,13 +1101,13 @@ class BaseInterpolator(ABC):
         if x_new:
             new_idx = x_new[0]
             new_x = x_new[1]
-            if self.output_dir is not None:
-                y_new, files_new = self._model(new_x, output_dir=self.output_dir)
+            if self._model_kwargs.get('output_dir') is not None:
+                y_new, files_new = self._model(new_x, *self._model_args, **self._model_kwargs)
                 for j in range(y_new.shape[0]):
                     self.yi[new_idx[j], :] = y_new[j, :]
                     self.output_files[new_idx[j]] = files_new[j]
             else:
-                y_new = self._model(new_x)  # (N_new, ydim)
+                y_new = self._model(new_x, *self._model_args, **self._model_kwargs)  # (N_new, ydim)
                 for j in range(y_new.shape[0]):
                     self.yi[new_idx[j], :] = y_new[j, :]
             return
@@ -1111,10 +1119,10 @@ class BaseInterpolator(ABC):
                 self.logger.error(error_msg)
                 raise Exception(error_msg)
             t1 = time.time()
-            if self.output_dir is not None:
-                self.yi, self.output_files = self._model(self.xi, output_dir=self.output_dir)
+            if self.save_enabled():
+                self.yi, self.output_files = self._model(self.xi, *self._model_args, **self._model_kwargs)
             else:
-                self.yi = self._model(self.xi)
+                self.yi = self._model(self.xi, *self._model_args, **self._model_kwargs)
             self.wall_time = (time.time() - t1) / self.xi.shape[0]
         else:
             self.yi = yi

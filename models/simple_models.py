@@ -75,7 +75,7 @@ def fire_sat_system():
     omega = 6000    # Max vel of wheel (rpm)
     nrw = 3         # Number of reaction wheels
 
-    def orbit_fun(x, alpha):
+    def orbit_fun(x, *args, **kwargs):
         H = x[..., 0:1]                         # Altitude (m)
         phi = x[..., 1:2]                       # Target diameter (m)
         vel = np.sqrt(mu / (Re + H))            # Satellite velocity (m/s)
@@ -85,7 +85,7 @@ def fire_sat_system():
         y = np.concatenate((vel, dt_orbit, dt_eclipse, theta_slew), axis=-1)
         return y
 
-    def power_fun(x, alpha, output_dir=None):
+    def power_fun(x, *args, output_dir=None, **kwargs):
         Po = x[..., 0:1]            # Other power sources (W)
         Fs = x[..., 1:2]            # Solar flux (W/m^2)
         dt_orbit = x[..., 2:3]      # Orbit period (s)
@@ -125,7 +125,7 @@ def fire_sat_system():
         else:
             return y
 
-    def attitude_fun(x, alpha, output_dir=None):
+    def attitude_fun(x, *args, output_dir=None, **kwargs):
         H = x[..., 0:1]             # Altitude (m)
         Fs = x[..., 1:2]            # Solar flux
         Lsp = x[..., 2:3]           # Moment arm for solar radiation pressure

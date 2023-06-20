@@ -51,22 +51,22 @@ def cathode_coupling_model_feedforward(cc_input):
     return {'cathode_potential': V_cc}
 
 
-def cc_pem(x, alpha=()):
+def cc_pem(x, *args, **kwargs):
     """Compute cathode coupling model in PEM format
     :param x: (..., xdim) Cathode model inputs
-    :param alpha: tuple() specifying model fidelity indices, (not used)
     :returns y: (..., ydim) Cathode model outputs
     """
     # Load inputs
-    PB = x[..., 0, np.newaxis] * TORR_2_PA
-    Va = x[..., 1, np.newaxis]
+    PB = 10 ** (x[..., 0, np.newaxis]) * TORR_2_PA
+    Va = x[..., 1, np.newaxis] * 100
     Te = x[..., 2, np.newaxis]
     V_vac = x[..., 3, np.newaxis]
-    Pstar = x[..., 4, np.newaxis] * TORR_2_PA
-    PT = x[..., 5, np.newaxis] * TORR_2_PA
+    Pstar = x[..., 4, np.newaxis] * 1e-5 * TORR_2_PA
+    PT = x[..., 5, np.newaxis] * 1e-5 * TORR_2_PA
 
     # Compute cathode coupling voltage
     y = V_vac + Te * np.log(1 + PB / PT) - (Te / (PT + Pstar)) * PB
     y[y < 0] = 0
-    y[y > Va] = Va
+    ind = np.where(y > Va)
+    y[ind] = Va[ind]
     return y

@@ -7,8 +7,12 @@ import time
 import warnings
 import sys
 import logging
+import dill
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor
+# from concurrent.futures import ThreadPoolExecutor, wait, ALL_COMPLETED
+# from mpi4py import MPI
+# MPI.pickle.__init__(dill.dumps, dill.loads)
+# from mpi4py.futures import MPICommExecutor
 
 sys.path.append('..')
 
@@ -378,39 +382,42 @@ def test_fire_sat(filename=None):
         sys = SystemSurrogate.load_from_file(filename)
     else:
         sys = fire_sat_system()
-        t1 = time.time()
         sys.build_system(max_iter=10, max_tol=1e-3, max_runtime=3600)
-        # with ThreadPoolExecutor(max_workers=8) as e:
-        #     sys.set_executor(e)
-        #     sys.build_system(max_iter=10, max_tol=1e-3, max_runtime=3600)
-        print(f'Final time: {time.time() - t1} s')
+        e = 1
+        # with MPICommExecutor(MPI.COMM_WORLD, root=0) as e:
+        #     if e is not None:
+        #         sys = fire_sat_system()
+        #         sys.set_executor(e)
+        #         sys.build_system(max_iter=10, max_tol=1e-3, max_runtime=3600)
 
-    x = sys.sample_exo_inputs((1000,))
-    logger.info('---Evaluating ground truth system on test set---')
-    yt = sys(x, ground_truth=True, verbose=True)
-    logger.info('---Evaluating system surrogate on test set---')
-    ysurr = sys(x, verbose=True)
+    if e is not None:
+        x = sys.sample_exo_inputs((1000,))
+        logger.info('---Evaluating ground truth system on test set---')
+        yt = sys(x, ground_truth=True, verbose=True)
+        logger.info('---Evaluating system surrogate on test set---')
+        ysurr = sys(x, verbose=True)
 
-    # Print test results
-    error = 100 * (np.abs(ysurr - yt)) / yt
-    for i in range(yt.shape[1]):
-        logger.info(f'Test set percent error results for QoI {i}')
-        print_stats(error[:, i], logger=logger)
+        # Print test results
+        error = 100 * (np.abs(ysurr - yt)) / yt
+        for i in range(yt.shape[1]):
+            logger.info(f'Test set percent error results for QoI {i}')
+            print_stats(error[:, i], logger=logger)
 
-    # Plot some output histograms
-    fig, ax = plt.subplots(1, 3)
-    ax[0].hist(yt[:, 0], color='red', bins=20, edgecolor='black', density=True, linewidth=1.2, label='Truth')
-    ax[0].hist(ysurr[:, 0], color='blue', bins=20, edgecolor='black', density=True, linewidth=1.2, alpha=0.4, label='Surrogate')
-    ax[1].hist(yt[:, 7], color='red', bins=20, edgecolor='black', density=True, linewidth=1.2, label='Truth')
-    ax[1].hist(ysurr[:, 7], color='blue', bins=20, edgecolor='black', density=True, linewidth=1.2, alpha=0.4, label='Surrogate')
-    ax[2].hist(yt[:, 8], color='red', bins=20, edgecolor='black', density=True, linewidth=1.2, label='Truth')
-    ax[2].hist(ysurr[:, 8], color='blue', bins=20, edgecolor='black', density=True, linewidth=1.2, alpha=0.4, label='Surrogate')
-    ax_default(ax[0], 'Satellite velocity ($m/s$)', '', legend=True)
-    ax_default(ax[1], 'Solar panel area ($m^2$)', '', legend=True)
-    ax_default(ax[2], 'Attitude control power ($W$)', '', legend=True)
-    fig.set_size_inches(9, 3)
-    fig.tight_layout()
-    plt.show()
+        # Plot some output histograms
+        fig, ax = plt.subplots(1, 3)
+        ax[0].hist(yt[:, 0], color='red', bins=20, edgecolor='black', density=True, linewidth=1.2, label='Truth')
+        ax[0].hist(ysurr[:, 0], color='blue', bins=20, edgecolor='black', density=True, linewidth=1.2, alpha=0.4, label='Surrogate')
+        ax[1].hist(yt[:, 7], color='red', bins=20, edgecolor='black', density=True, linewidth=1.2, label='Truth')
+        ax[1].hist(ysurr[:, 7], color='blue', bins=20, edgecolor='black', density=True, linewidth=1.2, alpha=0.4, label='Surrogate')
+        ax[2].hist(yt[:, 8], color='red', bins=20, edgecolor='black', density=True, linewidth=1.2, label='Truth')
+        ax[2].hist(ysurr[:, 8], color='blue', bins=20, edgecolor='black', density=True, linewidth=1.2, alpha=0.4, label='Surrogate')
+        ax_default(ax[0], 'Satellite velocity ($m/s$)', '', legend=True)
+        ax_default(ax[1], 'Solar panel area ($m^2$)', '', legend=True)
+        ax_default(ax[2], 'Attitude control power ($W$)', '', legend=True)
+        fig.set_size_inches(9, 3)
+        fig.tight_layout()
+        plt.show()
+        fig.savefig('test_surr.png', dpi=300, format='png')
 
 
 def test_fpi():
