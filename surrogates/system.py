@@ -1047,7 +1047,7 @@ class BaseInterpolator(ABC):
 
     def __init__(self, beta, x_vars, xi=None, yi=None, model=None, model_args=(), model_kwargs=None):
         """Construct the interpolator
-        :param beta: list(), refinement level indices for surrogate
+        :param beta: tuple(), refinement level indices for surrogate
         :param x_vars: list() of BaseRV() objects specifying bounds/pdfs for each input x
         :param xi: (Nx, xdim) interpolation points
         :param yi: the interpolation qoi values, y = (Nx, ydim)
@@ -1065,7 +1065,6 @@ class BaseInterpolator(ABC):
         self.beta = beta                                    # Refinement level indices
         self.x_vars = x_vars                                # BaseRV() objects for each input
         self.wall_time = 1                                  # Wall time to evaluate model (s)
-        self.x_idx = []
 
     def update_input_bds(self, idx, bds):
         """Update the input bounds at the given index (assume a uniform RV)"""
@@ -1083,7 +1082,7 @@ class BaseInterpolator(ABC):
         """Return whether this model wants to save outputs to file"""
         return self._model_kwargs.get('output_dir') is not None
 
-    def set_yi(self, yi=None, model=None, x_new=(), x_idx=()):
+    def set_yi(self, yi=None, model=None, x_new=()):
         """Set the interpolation point qois, if yi is none then compute yi=model(self.xi)
         :param yi: (Nx, ydim) must match dimension of self.xi
         :param model: Callable as y, files = model(x), with x = (..., xdim), y = (..., ydim), files = list(.jsons),
@@ -1091,17 +1090,19 @@ class BaseInterpolator(ABC):
         :param x_new: tuple() specifying (x_new_idx, new_x), where new_x is an (N_new, xdim) array of new interpolation
                       points to include and x_new_idx is a list() specifying the indices of these points into self.xi,
                       overrides anything passed in for yi, and assumes a model is already specified
-        :param x_idx: tuple() specifying (idx, x) of interpolation points to compute and return QoIs, only saves the
-                      idx and not xi/yi, for use in sparse grids where xi/yi is saved somewhere else
         """
         if model is not None:
             self._model = model
+        if self._model is None:
+            error_msg = 'Model not specified for computing QoIs at interpolation grid points.'
+            self.logger.error(error_msg)
+            raise Exception(error_msg)
 
         # Overrides anything passed in for yi (you would only be using this if yi was set previously)
         if x_new:
             new_idx = x_new[0]
             new_x = x_new[1]
-            if self._model_kwargs.get('output_dir') is not None:
+            if self.save_enabled():
                 y_new, files_new = self._model(new_x, *self._model_args, **self._model_kwargs)
                 for j in range(y_new.shape[0]):
                     self.yi[new_idx[j], :] = y_new[j, :]
@@ -1112,20 +1113,18 @@ class BaseInterpolator(ABC):
                     self.yi[new_idx[j], :] = y_new[j, :]
             return
 
-        # Set the interpolation qois yi for every interpolation point xi
-        if yi is None:
-            if self._model is None:
-                error_msg = 'Model not specified for computing QoIs at interpolation grid points.'
-                self.logger.error(error_msg)
-                raise Exception(error_msg)
-            t1 = time.time()
-            if self.save_enabled():
-                self.yi, self.output_files = self._model(self.xi, *self._model_args, **self._model_kwargs)
-            else:
-                self.yi = self._model(self.xi, *self._model_args, **self._model_kwargs)
-            self.wall_time = (time.time() - t1) / self.xi.shape[0]
-        else:
+        # Set yi directly
+        if yi is not None:
             self.yi = yi
+            return
+
+        # Compute yi
+        t1 = time.time()
+        if self.save_enabled():
+            self.yi, self.output_files = self._model(self.xi, *self._model_args, **self._model_kwargs)
+        else:
+            self.yi = self._model(self.xi, *self._model_args, **self._model_kwargs)
+        self.wall_time = (time.time() - t1) / self.xi.shape[0]
 
     @abstractmethod
     def refine(self, beta, manual=False):

@@ -18,7 +18,7 @@ sys.path.append('..')
 
 from utils import ax_default, print_stats, UniformRV
 from surrogates.system import SystemSurrogate
-from surrogates.sparse_grids import SparseGridSurrogate, LagrangeInterpolator
+from surrogates.sparse_grids import SparseGridSurrogate, TensorProductInterpolator
 from models.simple_models import tanh_func, custom_nonlinear, fire_sat_system, fake_pem
 
 FORMATTER = logging.Formatter("%(asctime)s — [%(levelname)s] — %(name)s — %(message)s")
@@ -34,7 +34,7 @@ def test_tensor_product_1d():
     x_var = [UniformRV(0, 1)]
     x_grid = np.linspace(0, 1, 100).reshape((100, 1))
     y_grid = tanh_func(x_grid)
-    interp = LagrangeInterpolator(beta, x_var, model=tanh_func)
+    interp = TensorProductInterpolator(beta, x_var, model=tanh_func)
     interp.set_yi()
     y_interp = interp(x_grid)
 
@@ -86,7 +86,7 @@ def test_tensor_product_2d():
     z = bb_2d_func(x)
 
     # Set up interpolant
-    interp = LagrangeInterpolator(beta, x_vars, model=bb_2d_func)
+    interp = TensorProductInterpolator(beta, x_vars, model=bb_2d_func)
     interp.set_yi()
     z_interp = interp(x)
     error = np.abs(z_interp - z)
@@ -198,7 +198,7 @@ def test_high_dimension():
     dim = 8
     x_bds = [(-5, 10) for i in range(dim)]
     beta = [2]*dim
-    interp = LagrangeInterpolator(beta, x_bds, model=rosenbrock)
+    interp = TensorProductInterpolator(beta, x_bds, model=rosenbrock)
     interp.set_yi()
 
     # Test and compute error
@@ -221,19 +221,19 @@ def test_high_dimension():
 def test_system_surrogate():
     # Figure 6 in Jakeman 2022
     def coupled_system(D1, D2, Q1, Q2):
-        def f1(x, alpha):
+        def f1(x, alpha, *args, **kwargs):
             eps = 10 ** (-float(alpha[0]))
             q = np.arange(1, Q1+1).reshape((1,)*len(x.shape[:-1]) + (Q1,))
             return (x[..., 0, np.newaxis] ** (q-1)) * np.sin(np.sum(x, axis=-1, keepdims=True) + eps)
 
-        def f2(x, alpha):
+        def f2(x, alpha, *args, **kwargs):
             eps = 10 ** (-float(alpha[0]))
             q = np.arange(1, Q2+1).reshape((1,)*len(x.shape) + (Q2,))
             prod1 = np.prod(x[..., D2:, np.newaxis] ** (q) - eps, axis=-2)  # (..., Q2)
             prod2 = np.prod(x[..., :D2], axis=-1, keepdims=True)              # (..., 1)
             return prod1 * prod2
 
-        def f3(x, alpha, D3=D1):
+        def f3(x, alpha, *args, D3=D1, **kwargs):
             eps = 10 ** (-float(alpha[0]))
             prod1 = np.exp(-np.sum((x[..., D3:] - eps) ** 2, axis=-1))  # (...,)
             prod2 = 1 + (25/16)*np.sum(x[..., :D3], axis=-1) ** 2       # (...,)
@@ -551,10 +551,12 @@ def test_system_refine():
         surr = comp.get_sub_surrogate((), (beta_max,))
         ax[i, 0].plot(surr.xi, surr.yi, 'ok', markersize=8, label='')
         for alpha, beta in comp.iterate_candidates():
+            comp.update_misc_coeffs()
             yJ1 = sys(x, training=True)
             ax[i, 0].plot(x, comp(x, training=True), ':b', label='$f_1$ candidate')
             surr = comp.get_sub_surrogate(alpha, beta)
             ax[i, 0].plot(surr.xi, surr.yi, 'xb', markersize=8, label='')
+        comp.update_misc_coeffs()
 
         # Plot second component surrogates
         comp = sys.get_component('Model2')
@@ -566,10 +568,12 @@ def test_system_refine():
         surr = comp.get_sub_surrogate((), (beta_max,))
         ax[i, 1].plot(surr.xi, surr.yi, 'ok', markersize=8, label='')
         for alpha, beta in comp.iterate_candidates():
+            comp.update_misc_coeffs()
             yJ2 = sys(x, training=True)
             ax[i, 1].plot(x, comp(x, training=True), '-.g', label='$f_2$ candidate')
             surr = comp.get_sub_surrogate(alpha, beta)
             ax[i, 1].plot(surr.xi, surr.yi, 'xg', markersize=8, label='')
+        comp.update_misc_coeffs()
 
         # Plot integrated surrogates
         ysurr = sys(x, training=True)
@@ -596,9 +600,9 @@ if __name__ == '__main__':
     # test_high_dimension()
     # test_lls()
     # test_feedforward()
-    # test_system_surrogate()
+    test_system_surrogate()
     # test_system_refine()
-    test_fire_sat(filename=None)
+    # test_fire_sat(filename=None)
     # test_fire_sat(filename=Path('save')/'sys_error.pkl')
     # test_fpi()
     # test_fake_pem()
