@@ -1,5 +1,4 @@
 """Module for thruster models"""
-import logging
 import sys
 from pathlib import Path
 import numpy as np
@@ -17,9 +16,9 @@ import uuid
 
 Q_E = 1.602176634e-19   # Fundamental charge (C)
 sys.path.append('..')
-logger = logging.getLogger(__name__)
 
-from utils import ModelRunException, data_write, parse_input_file
+from utils import ModelRunException, data_write, parse_input_file, get_logger
+logger = get_logger(__name__)
 
 
 def hallthruster_jl_input(thruster_input):
@@ -175,18 +174,18 @@ def thruster_pem(x, alpha, *args, compress=True, output_dir=None, n_jobs=-1, **k
             x_curr = list(x[index + (slice(None),)])  # (xdim,)
             thruster_input.update({
                 'background_pressure_Torr': 10 ** x_curr[0],
-                'anode_potential': x_curr[1] * 100,
+                'anode_potential': x_curr[1],
                 'anode_mass_flow_rate': x_curr[2] * 1e-6,
                 'cathode_electron_temp_eV': x_curr[3],
-                'neutral_velocity_m_s': x_curr[4] * 100,
+                'neutral_velocity_m_s': x_curr[4],
                 'sheath_loss_coefficient': x_curr[5],
                 'inner_outer_transition_length_m': x_curr[6] * 1e-3,
                 'anom_coeff_1': 10 ** x_curr[7],
                 'anom_coeff_2_mag_offset': x_curr[8],
-                'cathode_location_m': x_curr[9] * 1e-2,
-                'ion_temp_K': x_curr[10] * 100,
-                'neutral_temp_K': x_curr[11] * 100,
-                'background_temperature_K': x_curr[12] * 100,
+                'cathode_location_m': x_curr[9],
+                'ion_temp_K': x_curr[10],
+                'neutral_temp_K': x_curr[11],
+                'background_temperature_K': x_curr[12],
                 'cathode_potential': x_curr[13]
             })
 
@@ -214,7 +213,7 @@ def thruster_pem(x, alpha, *args, compress=True, output_dir=None, n_jobs=-1, **k
             if compress:
                 # Interpolate ion velocity to the full reconstruction grid (of dim M)
                 n_cells = M - 2         # M = number of grid points = Ncells + 2 (half-grid cells at ends of FE domain)
-                L = x_curr[9] * 1e-2    # Cathode location is the end of axial z domain
+                L = x_curr[9]           # Cathode location is the end of axial z domain
                 dz = L / n_cells
                 zg = np.zeros(M)    # zg is the axial z grid points for the reconstructed field (of size M)
                 zg[0] = 0

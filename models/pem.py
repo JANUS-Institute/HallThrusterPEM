@@ -47,15 +47,15 @@ def feedforward_pem(model_inputs, jl=None):
     return pem_result
 
 
-def pem_system(root_dir=None, executor=None):
+def pem_system(root_dir=None, executor=None, init=True):
     """Return a SystemSurrogate object for the feedforward PEM system"""
     # Pressure is in Torr, mass flow rate in kg/s, and everything else base SI except where specified otherwise
-    exo_vars = [UniformRV(-8, -3, 'PB'), UniformRV(2, 4, 'Va'), UniformRV(3, 7, 'mdot_a'),
-                UniformRV(1, 5, 'T_ec'), UniformRV(0, 60, 'V_vac'), UniformRV(-2, 10, 'P*'),
-                UniformRV(0, 15, 'PT'), UniformRV(1, 5, 'u_n'), UniformRV(0.1, 0.3, 'c_w'),
+    exo_vars = [UniformRV(-8, -3, 'PB'), UniformRV(200, 400, 'Va'), UniformRV(3, 7, 'mdot_a'),
+                UniformRV(1, 5, 'T_ec'), UniformRV(0, 60, 'V_vac'), UniformRV(1, 10, 'P*'),
+                UniformRV(1, 10, 'PT'), UniformRV(100, 500, 'u_n'), UniformRV(0.1, 0.3, 'c_w'),
                 UniformRV(1, 20, 'l_t'), UniformRV(-3, -1, 'vAN1'), UniformRV(2, 100, 'vAN2'),
-                UniformRV(7, 9, 'l_c'), UniformRV(8, 12, 'Ti'), UniformRV(2.8, 3.2, 'Tn'),
-                UniformRV(2.8, 3.2, 'Tb'), UniformRV(0, 1, 'c0'), UniformRV(0.1, 0.9, 'c1'), UniformRV(-15, 15, 'c2'),
+                UniformRV(0.07, 0.09, 'l_c'), UniformRV(800, 1200, 'Ti'), UniformRV(280, 320, 'Tn'),
+                UniformRV(280, 320, 'Tb'), UniformRV(0, 1, 'c0'), UniformRV(0.1, 0.9, 'c1'), UniformRV(-15, 15, 'c2'),
                 UniformRV(0, np.pi/2, 'c3'), UniformRV(18, 22, 'c4'), UniformRV(14, 18, 'c5'),
                 UniformRV(51, 58, 'sigma_cex'), UniformRV(0.5, 1.5, 'r_m')]
     coupling_vars = [UniformRV(0, 60, 'V_cc'), UniformRV(0, 10, 'I_B0'), UniformRV(0, 0.2, 'T'),
@@ -78,7 +78,7 @@ def pem_system(root_dir=None, executor=None):
     plume_exo = [0, 16, 17, 18, 19, 20, 21, 22, 23]
     # Models must be specified at the global scope for pickling
     cathode = {'name': 'Cathode', 'model': cc_pem, 'truth_alpha': (), 'exo_in': cathode_exo, 'local_in': {},
-               'global_out': [0], 'max_alpha': (), 'max_beta': (3,)*len(cathode_exo), 'type': 'lagrange',
+               'global_out': [0], 'max_alpha': (), 'max_beta': (3,)*len(cathode_exo), 'type': 'analytical',
                'model_args': (), 'model_kwargs': {}}
     thruster = {'name': 'Thruster', 'model': thruster_pem, 'truth_alpha': (3, 2), 'max_alpha': (3, 2),
                 'exo_in': thruster_exo, 'local_in': {'Cathode': [0]}, 'global_out': list(np.arange(1, 6+r1+1)),
@@ -86,8 +86,8 @@ def pem_system(root_dir=None, executor=None):
                 'model_args': (), 'model_kwargs': {'n_jobs': -1, 'compress': True}}
     plume = {'name': 'Plume', 'model': plume_pem, 'truth_alpha': (), 'exo_in': plume_exo, 'max_alpha': (),
              'local_in': {'Thruster': [0]}, 'global_out': list(np.arange(6+r1+1, len(coupling_vars))),
-             'type': 'lagrange', 'max_beta': (3,)*(len(plume_exo)+1), 'model_args': (),
+             'type': 'analytical', 'max_beta': (3,)*(len(plume_exo)+1), 'model_args': (),
              'model_kwargs': {'compress': True}}
-    sys = SystemSurrogate([cathode, thruster, plume], exo_vars, coupling_vars, executor=executor)
+    sys = SystemSurrogate([cathode, thruster, plume], exo_vars, coupling_vars, executor=executor, init_surr=init)
 
     return sys

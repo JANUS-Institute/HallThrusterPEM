@@ -28,7 +28,7 @@ logger = get_logger(__name__)
 class SystemSurrogate:
 
     def __init__(self, components, exo_vars, coupling_vars, est_bds=0, root_dir=None, executor=None,
-                 suppress_stdout=False):
+                 suppress_stdout=False, init_surr=True):
         """Construct a multidisciplinary system surrogate
         :param components: list(Nk,) of dicts specifying component name (str), a callable function model(x, alpha), a
                            string specifying surrogate class type, the highest 'truth' set of model fidelity indices,
@@ -47,6 +47,7 @@ class SystemSurrogate:
         :param root_dir: (str) Root directory for all build products (.logs, .pkl, .json, etc.)
         :param executor: An instance of a concurrent.futures.Executor, use to iterate new candidates in parallel
         :param suppress_stdout: only log to file, don't print INFO logs in console
+        :param init_surr: whether to initialize the surrogate with the coarsest fidelity index
         """
         # Setup root directory
         if root_dir is None:
@@ -108,7 +109,8 @@ class SystemSurrogate:
             self.estimate_coupling_bds(est_bds)
 
         # Init system with most coarse fidelity indices in each component
-        self.init_system()
+        if init_surr:
+            self.init_system()
         self.save_to_file('sys_init.pkl')
 
     def build_component(self, component, nodes=None):
@@ -143,10 +145,12 @@ class SystemSurrogate:
             case 'lagrange':
                 from surrogates.sparse_grids import SparseGridSurrogate
                 surr_class = SparseGridSurrogate
+            case 'analytical':
+                surr_class = AnalyticalSurrogate
             case other:
                 raise NotImplementedError(f"Surrogate type '{surr_type}' is not known at this time.")
         x_vars = [self.exo_vars[i] for i in component['exo_in']] + [self.coupling_vars[i] for i in global_idx]
-        surr = surr_class([], x_vars, component['model'], component['truth_alpha'], method=surr_type,
+        surr = surr_class([], x_vars, component['model'], component['truth_alpha'],
                           max_alpha=component.get('max_alpha', None), max_beta=component.get('max_beta', None),
                           executor=self.executor, log_file=self.log_file, model_args=args, model_kwargs=kwargs)
         return global_idx, surr
@@ -721,7 +725,7 @@ class SystemSurrogate:
 class ComponentSurrogate(ABC):
     """Multi-index stochastic collocation (MISC) surrogate abstract class for a component model"""
 
-    def __init__(self, multi_index, x_vars, model, truth_alpha, method='lagrange', max_alpha=None, max_beta=None,
+    def __init__(self, multi_index, x_vars, model, truth_alpha, max_alpha=None, max_beta=None,
                  log_file=None, executor=None, model_args=(), model_kwargs=None):
         """Construct the MISC surrogate from a multi-index
         :param multi_index: [((alpha1), (beta1)), ... ] List of concatenated multi-indices alpha, beta specifying
@@ -729,7 +733,6 @@ class ComponentSurrogate(ABC):
         :param x_vars: [X1, X2, ...] list of BaseRV() objects specifying bounds/pdfs for each input x
         :param model: The function to approximate, callable as y = model(x, alpha, *args, **kwargs)
         :param truth_alpha: tuple() specifying the highest model fidelity indices necessary for a 'truth' comparison
-        :param method: (str) the interpolation method to use, defaults to barycentric Lagrange interpolation
         :param max_alpha: tuple(), the maximum model refinement indices to allow, defaults to (3,...)
         :param max_beta: tuple(), the maximum surrogate refinement level indices, defaults to (3,...) of len xdim
         :param log_file: str() or Path-like specifying a log file
@@ -874,10 +877,10 @@ class ComponentSurrogate(ABC):
         :returns y: (..., ydim) the surrogate approximation of the qois
         """
         if ground_truth:
-            # Bypass surrogate evaluation (don't save outputs)
-            kwargs = copy.deepcopy(self._model_kwargs)
-            kwargs['output_dir'] = None
-            return self._model(x, self.truth_alpha, *self._model_args, **kwargs)
+            # Bypass surrogate evaluation
+            ret = self._model(x, self.truth_alpha, *self._model_args, **self._model_kwargs)
+            y = ret[0] if self.save_enabled() else ret
+            return y
 
         index_set = self.index_set if training else self.index_set + self.candidate_set
 
@@ -1158,4 +1161,68 @@ class BaseInterpolator(ABC):
         :param x: (..., xdim) the points to be interpolated, must be within domain of self.xi
         :returns y: (..., ydim) the interpolated value of the qois
         """
+        pass
+
+
+class AnalyticalSurrogate(ComponentSurrogate):
+    """Concrete 'surrogate' class that just uses the analytical model (i.e. bypasses surrogate evaluation)"""
+
+    def __init__(self, multi_index, x_vars, model, truth_alpha, *args, **kwargs):
+        """Initializes a stand-in ComponentSurrogate with all unnecessary fields set to empty. This ignores the
+        multi_index and truth_alpha required args (since they don't mean anything for an analytical model).
+        """
+        kwargs['max_alpha'] = ()
+        kwargs['max_beta'] = ()
+        super().__init__([], x_vars, model, (), *args, **kwargs)
+
+    # Override
+    def __call__(self, x, **kwargs):
+        """Evaluate the analytical model at points x, ignore extra kwargs passed in
+        :param x: (..., xdim) the points to be evaluated
+        :returns y: (..., ydim) the exact model output at the input points
+        """
+        ret = self._model(x, *self._model_args, **self._model_kwargs)
+        y = ret[0] if self.save_enabled() else ret
+        return y
+
+    # Override
+    def activate_index(self, *args):
+        """Do nothing"""
+        pass
+
+    # Override
+    def add_surrogate(self, *args):
+        """Do nothing"""
+        pass
+
+    # Override
+    def init_coarse(self):
+        """Do nothing"""
+        pass
+
+    # Override
+    def update_misc_coeffs(self, **kwargs):
+        """Do nothing"""
+        pass
+
+    # Override
+    def get_sub_surrogate(self, *args):
+        """Nothing to return for analytical model"""
+        return None
+
+    # Override
+    def get_cost(self, *args):
+        """Return nothing"""
+        return None
+
+    def add_interpolator(self, *args):
+        """Abstract method implementation, return none for an analytical model"""
+        return None
+
+    def _add_interpolator(self, *args):
+        """Abstract method implementation, return cost=0 for an analytical model"""
+        return 0
+
+    def _parallel_add_candidates(self, *args):
+        """Abstract method implementation, do nothing"""
         pass

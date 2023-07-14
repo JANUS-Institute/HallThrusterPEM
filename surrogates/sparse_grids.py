@@ -38,10 +38,10 @@ class SparseGridSurrogate(ComponentSurrogate):
         :returns y: (..., ydim) the surrogate approximation of the qois
         """
         if ground_truth:
-            # Bypass surrogate evaluation (don't save outputs)
-            kwargs = copy.deepcopy(self._model_kwargs)
-            kwargs['output_dir'] = None
-            return self._model(x, self.truth_alpha, *self._model_args, **kwargs)
+            # Bypass surrogate evaluation
+            ret = self._model(x, self.truth_alpha, *self._model_args, **self._model_kwargs)
+            y = ret[0] if self.save_enabled() else ret
+            return y
 
         index_set = self.index_set if training else self.index_set + self.candidate_set
 
