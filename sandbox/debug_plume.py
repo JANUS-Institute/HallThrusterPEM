@@ -8,7 +8,7 @@ sys.path.append('..')
 
 from utils import UniformRV, LogUniformRV, ax_default
 from models.plume import plume_pem, jion_reconstruct
-from surrogates.sparse_grids import LagrangeInterpolator
+from surrogates.sparse_grids import TensorProductInterpolator
 from surrogates.system import SystemSurrogate
 
 exo_vars = [UniformRV(-8, -3, 'PB'), UniformRV(200, 400, 'Va'), UniformRV(3e-6, 7e-6, 'mdot_a'),
@@ -37,7 +37,7 @@ def sample(shape):
 
 def test_interp():
     beta = [1]*len(vars)
-    interp = LagrangeInterpolator(beta, vars, model=plume_pem)
+    interp = TensorProductInterpolator(beta, vars, model=plume_pem)
     interp.set_yi()
 
     N = 10000
@@ -134,5 +134,5 @@ def test_refine():
 
 
 if __name__ == '__main__':
-    # test_interp()
-    test_refine()
+    test_interp()
+    # test_refine()

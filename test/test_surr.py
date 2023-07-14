@@ -163,7 +163,7 @@ def test_component():
     for alpha in range(3):
         for beta in range(3):
             ax = axs[2-alpha, beta]
-            surr = comp.get_sub_surrogate((alpha,), (beta,))
+            surr = comp.get_sub_surrogate((alpha,), (beta,), include_grid=True)
             s = f'$\hat{{f}}_{{{alpha}, {beta}}}$'
             ax.plot(xg, surr(xg), '--k', label=r'{}'.format(s), linewidth=1.5)
             s = f'$\hat{{f}}_{alpha}$'
@@ -382,7 +382,7 @@ def test_fire_sat(filename=None):
         sys = SystemSurrogate.load_from_file(filename)
     else:
         sys = fire_sat_system()
-        sys.build_system(max_iter=10, max_tol=1e-3, max_runtime=3600)
+        sys.build_system(max_iter=5, max_tol=1e-3, max_runtime=3600)
         e = 1
         # with MPICommExecutor(MPI.COMM_WORLD, root=0) as e:
         #     if e is not None:
@@ -600,9 +600,9 @@ if __name__ == '__main__':
     # test_high_dimension()
     # test_lls()
     # test_feedforward()
-    test_system_surrogate()
+    # test_system_surrogate()
     # test_system_refine()
-    # test_fire_sat(filename=None)
+    test_fire_sat(filename=None)
     # test_fire_sat(filename=Path('save')/'sys_error.pkl')
     # test_fpi()
     # test_fake_pem()

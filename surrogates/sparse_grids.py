@@ -6,11 +6,12 @@ import itertools
 import ast
 import copy
 import sys
-from abc import abstractmethod
+from concurrent.futures import ALL_COMPLETED, wait
 
 sys.path.append('..')
 
 from surrogates.system import ComponentSurrogate, BaseInterpolator
+from utils import get_logger, add_file_logging
 
 
 class SparseGridSurrogate(ComponentSurrogate):
@@ -23,7 +24,76 @@ class SparseGridSurrogate(ComponentSurrogate):
         # Initialize tree-like structures for maintaining a sparse grid of smaller tensor-product grids
         self.curr_max_beta = dict()     # Maps alphas -> current max refinement indices
         self.x_grids = dict()           # Maps alphas -> list of ndarrays specifying 1d grids corresponding to max_beta
+        self.xi_map = dict()            # Maps grid locations/coords to interpolation points
+        self.yi_map = dict()            # Maps grid locations/coords to interpolation qois
+        self.yi_files = dict()          # Maps grid locations/coords to model output files (optional)
         super().__init__(*args, **kwargs)
+
+    # Override super
+    def __call__(self, x, ground_truth=False, training=False):
+        """Evaluate the surrogate at points x (use xi,yi interpolation points specific to each sub tensor-product grid)
+        :param x: (..., xdim) the points to be interpolated, must be within domain of x bounds
+        :param ground_truth: whether to use the highest fidelity model or the surrogate (default)
+        :param training: if True, then only compute with active index set, otherwise use all candidates as well
+        :returns y: (..., ydim) the surrogate approximation of the qois
+        """
+        if ground_truth:
+            # Bypass surrogate evaluation (don't save outputs)
+            kwargs = copy.deepcopy(self._model_kwargs)
+            kwargs['output_dir'] = None
+            return self._model(x, self.truth_alpha, *self._model_args, **kwargs)
+
+        index_set = self.index_set if training else self.index_set + self.candidate_set
+
+        # MISC coefficients should be updated only on the logical XOR cases
+        if (not self.training_flag and training) or (self.training_flag and not training):
+            self.update_misc_coeffs(index_set)
+
+        y = np.zeros(x.shape[:-1] + (self.ydim,))
+        for alpha, beta in index_set:
+            comb_coeff = self.misc_coeff[str(alpha)][str(beta)]
+            if np.abs(comb_coeff) > 0:
+                # Gather the xi/yi interpolation points/qois for this sub tensor-product grid
+                interp = self.surrogates[str(alpha)][str(beta)]
+                xi, yi = self.get_tensor_grid(alpha, beta)
+
+                # Add this sub tensor-product grid to the MISC approximation
+                y += comb_coeff * interp(x, xi=xi, yi=yi)
+
+        # Save an indication of what state the MISC coefficients are in (i.e. training or eval mode)
+        self.training_flag = training
+
+        return y
+
+    def get_tensor_grid(self, alpha, beta):
+        """Convenience function to construct the xi/yi sub tensor-product grids for a given (alpha, beta) multi-index
+        :param alpha: model fidelity multi-index, tuple()
+        :param beta: surrogate fidelity multi-index, tuple()
+        :returns xi, yi: with shapes (prod(grid_sizes), xdim) and (prod(grid_sizes), ydim) respectively, the
+                         interpolation grid points and corresponding qois for this tensor-product grid
+        """
+        interp = self.surrogates[str(alpha)][str(beta)]
+        grid_sizes = interp.get_grid_sizes(beta)
+        coords = [np.arange(grid_sizes[n]) for n in range(interp.xdim())]
+        xi = np.zeros((np.prod(grid_sizes), interp.xdim()), dtype=np.float32)
+        yi = np.zeros((np.prod(grid_sizes), self.ydim), dtype=np.float32)
+        for i, coord in enumerate(itertools.product(*coords)):
+            xi[i, :] = self.xi_map[str(alpha)][str(coord)]
+            yi[i, :] = self.yi_map[str(alpha)][str(coord)]
+
+        return xi, yi
+
+    # Override
+    def get_sub_surrogate(self, alpha, beta, include_grid=False):
+        """Get the specific sub-surrogate corresponding to the (alpha,beta) fidelity
+        :param alpha: A multi-index (tuple) specifying model fidelity
+        :param beta: A multi-index (tuple) specifying surrogate fidelity
+        :param include_grid: whether to add the xi/yi points to the returned BaseInterpolator object
+        """
+        interp = super().get_sub_surrogate(alpha, beta)
+        if include_grid:
+            interp.xi, interp.yi = self.get_tensor_grid(alpha, beta)
+        return interp
 
     def add_interpolator(self, alpha, beta):
         """Abstract method implementation for constructing tensor-product grid interpolants"""
@@ -31,16 +101,20 @@ class SparseGridSurrogate(ComponentSurrogate):
         if np.sum(beta) == 0:
             args = (alpha,) + self._model_args
             interp = TensorProductInterpolator(beta, self.x_vars, model=self._model, model_args=args,
-                                               model_kwargs=self._model_kwargs)
-            interp.set_yi()
-            cost = interp.wall_time * interp.xi.shape[0]
+                                               model_kwargs=self._model_kwargs, init_grids=True, reduced=True)
+            x_pt = np.array([float(interp.x_grids[n][beta[n]]) for n in range(interp.xdim())], dtype=np.float32)
             self.curr_max_beta[str(alpha)] = list(beta)
             self.x_grids[str(alpha)] = copy.deepcopy(interp.x_grids)
-            return interp, cost
+            self.xi_map[str(alpha)] = {str(beta): x_pt}
+            self.yi_map[str(alpha)] = dict()
+            if self.save_enabled():
+                self.yi_files[str(alpha)] = dict()
+
+            return [beta], x_pt.reshape((1, len(self.x_vars))), interp
         # Otherwise, all other indices are a refinement of previous grids
 
-        # Look for multi-index neighbors that are one level of refinement away
-        neighbors = []
+        # Look for first multi-index neighbor that is one level of refinement away
+        refine_tup = None
         for beta_old_str in list(self.surrogates[str(alpha)].keys()):
             beta_old = ast.literal_eval(beta_old_str)
             if self.is_one_level_refinement(beta_old, beta):
@@ -48,79 +122,115 @@ class SparseGridSurrogate(ComponentSurrogate):
                 refine_level = beta[idx_refine]
                 if refine_level > self.curr_max_beta[str(alpha)][idx_refine]:
                     # Generate next refinement grid and save (refine_tup = tuple(x_new_idx, x_new, interp))
-                    refine_tup = self.surrogates[str(alpha)][beta_old_str].refine(list(beta), manual=True)
+                    refine_tup = self.surrogates[str(alpha)][beta_old_str].refine(beta, manual=True)
                     self.curr_max_beta[str(alpha)][idx_refine] = refine_level
                     self.x_grids[str(alpha)][idx_refine] = copy.deepcopy(refine_tup[2].x_grids[idx_refine])
-                    neighbors.append(refine_tup)
                 else:
                     # Access the refinement grid from memory (it is already computed)
                     num_pts = self.surrogates[str(alpha)][beta_old_str].get_grid_sizes(beta)[idx_refine]
                     x_refine = self.x_grids[str(alpha)][idx_refine][:num_pts]
-                    refine_tup = self.surrogates[str(alpha)][beta_old_str].refine(list(beta), x_refine=x_refine,
+                    refine_tup = self.surrogates[str(alpha)][beta_old_str].refine(beta, x_refine=x_refine,
                                                                                   manual=True)
-                    neighbors.append(refine_tup)
+                break  # Only need to grab one neighbor
 
-        # Refine the neighbor with the fewest new points (and merge pre-computed points from other neighbors)
-        min_idx = np.argmin([len(neighbor[0]) for neighbor in neighbors])
-        x_new_idx, x_new, interp = neighbors.pop(min_idx)
-        del_idx = []
-        for neighbor in neighbors:
-            for i, interp_idx in enumerate(x_new_idx):
-                # If a neighbor's new index list doesn't have an index, then the neighbor has already computed it
-                if interp_idx not in neighbor[0] and i not in del_idx:
-                    # Assume the exact same interpolation indexing for all neighbors (true for tensor-product grids)
-                    interp.yi[interp_idx, :] = neighbor[2].yi[interp_idx, :]
-                    if self.save_enabled():
-                        interp.output_files[interp_idx] = neighbor[2].output_files[interp_idx]
-                    del_idx.append(i)
-        x_new_idx = list(np.delete(x_new_idx, del_idx))
-        x_new = np.delete(x_new, del_idx, axis=0)
+        # Gather new interpolation grid points
+        x_new_idx, x_new, interp = refine_tup
+        xn_coord = []   # Save multi-index coordinates of points to compute model at for refinement
+        xn_pts = np.zeros((0, interp.xdim()), dtype=np.float32)     # Save physical x location of new points
+        for i, multi_idx in enumerate(x_new_idx):
+            if str(multi_idx) not in self.yi_map[str(alpha)]:
+                # We have not computed this grid coordinate yet
+                xn_coord.append(multi_idx)
+                xn_pts = np.concatenate((xn_pts, x_new[i, np.newaxis, :]), axis=0)  # (N_new, xdim)
+                self.xi_map[str(alpha)][str(multi_idx)] = x_new[i, :]
 
-        # Compute the model outputs at all remaining refinement points
-        interp.set_yi(x_new=(x_new_idx, x_new))
+        return xn_coord, xn_pts, interp
 
-        cost = interp.wall_time * len(x_new_idx)
-        return interp, cost
-
-    def _add_interpolator_mpi(self, alpha, beta):
-        """Work-around to make sure mutable instance variable changes are made during add_interpolator(). Since
-        add_interpolator() may have been broken up over MPI workers, the changes that MPI workers make to 'self' don't
-        get saved in the master task. This function should only be run in the master task after all MPI workers have
-        returned from add_interpolator(). Can simply pass if no instance variables need updating.
-        """
-        if np.sum(beta) == 0:
-            interp = self.surrogates[str(alpha)][str(beta)]  # add_interpolator() should already be done for this beta
-            self.curr_max_beta[str(alpha)] = list(beta)
-            self.x_grids[str(alpha)] = copy.deepcopy(interp.x_grids)
+    def _add_interpolator(self, x_new_idx, x_new, interp):
+        """Awkward solution, I know, but actually compute and save the model evaluations here"""
+        # Compute and store model output at new refinement points in a hash structure
+        yi_ret = interp.set_yi(x_new=(x_new_idx, x_new))
+        alpha = interp._model_args[0]
+        if self.save_enabled():
+            self.yi_map[str(alpha)].update(yi_ret[0])
+            self.yi_files[str(alpha)].update(yi_ret[1])
         else:
-            for beta_old_str in list(self.surrogates[str(alpha)].keys()):
-                beta_old = ast.literal_eval(beta_old_str)
-                if self.is_one_level_refinement(beta_old, beta):
-                    idx_refine = int(np.nonzero(np.array(beta, dtype=int) - np.array(beta_old, dtype=int))[0])
-                    refine_level = beta[idx_refine]
-                    if refine_level > self.curr_max_beta[str(alpha)][idx_refine]:
-                        interp = self.surrogates[str(alpha)][str(beta)]
-                        self.curr_max_beta[str(alpha)][idx_refine] = refine_level
-                        self.x_grids[str(alpha)][idx_refine] = copy.deepcopy(interp.x_grids[idx_refine])
+            self.yi_map[str(alpha)].update(yi_ret)
+        cost = interp.wall_time * len(x_new_idx)
+
+        if self.ydim is None:
+            for coord_str, yi in self.yi_map[str(alpha)].items():
+                self.ydim = yi.shape[0]
+                break
+
+        return cost
+
+    def _parallel_add_candidates(self, candidates, executor):
+        """Work-around to make sure mutable instance variable changes are made during add_interpolator() before
+        splitting tasks using this method over parallel (potentially MPI) workers. MPI workers cannot save changes to
+        'self', so this method should only distribute static tasks to the workers.
+        :param candidates: list of [(alpha, beta),...] candidate multi-indices
+        :param executor: An instance of a concurrent.futures.Executor, use to iterate candidates in parallel
+        """
+        # Do sequential tasks first (i.e. make mutable changes to self), build up parallel task args
+        task_args = []
+        for alpha, beta in candidates:
+            x_new_idx, x_new, interp = self.add_interpolator(alpha, beta)
+            task_args.append((alpha, beta, x_new_idx, x_new, interp))
+
+        def parallel_task(alpha, beta, x_new_idx, x_new, interp):
+            if self.log_file is not None:
+                logger = get_logger(__name__)
+                add_file_logging(logger, self.log_file)
+                self.logger = logger.getChild(self.__class__.__name__)
+            self.logger.info(f'Building interpolant for index {(alpha, beta)} ...')
+            yi_ret = interp.set_yi(x_new=(x_new_idx, x_new))
+            return yi_ret
+
+        # Wait for all parallel workers to return
+        fs = [executor.submit(parallel_task, *args) for args in task_args]
+        wait(fs, timeout=None, return_when=ALL_COMPLETED)
+
+        # Update self with the results from all workers (and check for errors)
+        for i, future in enumerate(fs):
+            try:
+                a = task_args[i][0]
+                b = task_args[i][1]
+                x_new_idx = task_args[i][2]
+                interp = task_args[i][4]
+                yi_ret = future.result()
+                if self.save_enabled():
+                    self.yi_map[str(a)].update(yi_ret[0])
+                    self.yi_files[str(a)].update(yi_ret[1])
+                else:
+                    self.yi_map[str(a)].update(yi_ret)
+                cost = interp.wall_time * len(x_new_idx)
+                self.surrogates[str(a)][str(b)] = interp
+                self.costs[str(a)][str(b)] = cost
+            except:
+                self.logger.error(f'An exception occurred in a thread handling add_interpolator{candidates[i]}')
+                raise
 
 
 class TensorProductInterpolator(BaseInterpolator):
     """Abstract tensor-product (multivariate) interpolator"""
 
-    def __init__(self, beta, x_vars, init_grids=True, **kwargs):
+    def __init__(self, beta, x_vars, init_grids=True, reduced=False, **kwargs):
         """Initialize a tensor-product grid interpolator
         :param beta: tuple(), refinement level in each dimension of xdim
         :param x_vars: list() of BaseRV() objects specifying bounds/pdfs for each input x
         :param init_grids: Whether to compute 1d leja sequences on init
+        :param reduced: Whether to store xi/yi matrices, e.g. set true if storing in external sparse grid structure
         """
         self.weights = []   # Barycentric weights for each dimension
         self.x_grids = []   # Univariate nested leja sequences in each dimension
+        self.reduced = reduced
         super().__init__(beta, x_vars, **kwargs)
 
         if init_grids:
             # Construct 1d univariate Leja sequences in each dimension
             grid_sizes = self.get_grid_sizes(self.beta)
-            self.x_grids = [self.leja_1d(grid_sizes[n], self.x_vars[n].bounds(), wt_fcn=self.x_vars[n].pdf)
+            self.x_grids = [self.leja_1d(grid_sizes[n], self.x_vars[n].bounds(), wt_fcn=self.x_vars[n].pdf).astype(np.float32)
                             for n in range(self.xdim())]
 
             for n in range(self.xdim()):
@@ -132,12 +242,13 @@ class TensorProductInterpolator(BaseInterpolator):
                 xi = grid.reshape((1, Nx))
                 dist = (xj - xi) / C
                 np.fill_diagonal(dist, 1)  # Ignore product when i==j
-                self.weights.append(1.0 / np.prod(dist, axis=1))  # (Nx,)
+                self.weights.append((1.0 / np.prod(dist, axis=1)).astype(np.float32))  # (Nx,)
 
             # Cartesian product of univariate grids
-            self.xi = np.zeros((np.prod(grid_sizes), self.xdim()))
-            for i, ele in enumerate(itertools.product(*self.x_grids)):
-                self.xi[i, :] = ele
+            if not self.reduced:
+                self.xi = np.zeros((np.prod(grid_sizes), self.xdim()), dtype=np.float32)
+                for i, ele in enumerate(itertools.product(*self.x_grids)):
+                    self.xi[i, :] = ele
 
     def refine(self, beta, manual=False, x_refine=None):
         """Return a new interpolator with one dimension refined by one level, specified by beta
@@ -148,12 +259,13 @@ class TensorProductInterpolator(BaseInterpolator):
              or x_new_idx, x_new, interp: where x_new are the newly refined interpolation points (N_new, xdim) and
                                           x_new_idx is the list of indices of these points into interp.xi and interp.yi,
                                           Would use this if you did not provide a callable model to the Interpolator or
-                                          you want to manually set yi for each new xi outside this function
+                                          you want to manually set yi for each new xi outside this function. Sets
+                                          elements of x_new_idx to tuple() indices if self.reduced, otherwise integers
         """
-        # Initialize a new interpolant with the new refinement levels (child class will provide this method)
+        # Initialize a new interpolant with the new refinement levels
         try:
             interp = TensorProductInterpolator(beta, self.x_vars, model=self._model, model_args=self._model_args,
-                                               model_kwargs=self._model_kwargs, init_grids=False)
+                                               model_kwargs=self._model_kwargs, init_grids=False, reduced=self.reduced)
 
             # Find the dimension and number of new points to add
             old_grid_sizes = self.get_grid_sizes(self.beta)
@@ -172,14 +284,14 @@ class TensorProductInterpolator(BaseInterpolator):
                                                                                    interp.x_vars[dim_refine].bounds(),
                                                                                    z_pts=interp.x_grids[dim_refine],
                                                                                    wt_fcn=interp.x_vars[dim_refine].pdf)
-            interp.x_grids[dim_refine] = xi
+            interp.x_grids[dim_refine] = xi.astype(np.float32)
 
             # Update barycentric weights in this dimension
             interp.weights = copy.deepcopy(self.weights)
             Nx_old = old_grid_sizes[dim_refine]
             Nx_new = new_grid_sizes[dim_refine]
             old_wts = copy.deepcopy(self.weights[dim_refine])
-            new_wts = np.zeros(Nx_new)
+            new_wts = np.zeros(Nx_new, dtype=np.float32)
             new_wts[:Nx_old] = old_wts
             bds = interp.x_vars[dim_refine].bounds()
             C = (bds[1] - bds[0]) / 4.0  # Interval capacity
@@ -190,27 +302,48 @@ class TensorProductInterpolator(BaseInterpolator):
             interp.weights[dim_refine] = new_wts
 
             # Copy yi over at existing interpolation points
-            x_new = np.zeros((0, interp.xdim()))
+            x_new = np.zeros((0, interp.xdim()), dtype=np.float32)
             x_new_idx = []
-            tol = 1e-12  # Tolerance for floating point comparison
-            j = 0  # Use this idx for iterating over existing yi
-            interp.xi = np.zeros((np.prod(new_grid_sizes), self.xdim()))
-            interp.yi = np.zeros((np.prod(new_grid_sizes), self.ydim()))
-            if self.save_enabled():
-                interp.output_files = [None] * interp.xi.shape[0]
+            tol = 1e-12     # Tolerance for floating point comparison
+            j = 0           # Use this idx for iterating over existing yi
+            if not self.reduced:
+                interp.xi = np.zeros((np.prod(new_grid_sizes), self.xdim()), dtype=np.float32)
+                interp.yi = np.zeros((np.prod(new_grid_sizes), self.ydim()), dtype=np.float32)
+                if self.save_enabled():
+                    interp.output_files = [None] * np.prod(new_grid_sizes)
 
-            for i, ele in enumerate(itertools.product(*interp.x_grids)):
-                interp.xi[i, :] = ele
-                if j < self.xi.shape[0] and np.all(np.abs(self.xi[j, :] - interp.xi[i, :]) < tol):
-                    # If we already have this interpolation point
-                    interp.yi[i, :] = self.yi[j, :]
-                    if self.save_enabled():
-                        interp.output_files[i] = self.output_files[j]
-                    j += 1
+            old_indices = [np.arange(old_grid_sizes[n]) for n in range(self.xdim())]
+            old_indices = list(itertools.product(*old_indices))
+            new_indices = [np.arange(new_grid_sizes[n]) for n in range(self.xdim())]
+            new_indices = list(itertools.product(*new_indices))
+            for i in range(len(new_indices)):
+                # Get the new grid coordinate/index and physical x location/point
+                new_x_idx = new_indices[i]
+                new_x_pt = np.array([float(interp.x_grids[n][new_x_idx[n]]) for n in range(self.xdim())],
+                                    dtype=np.float32)
+
+                if not self.reduced:
+                    # Store the old xi/yi and return new x points
+                    interp.xi[i, :] = new_x_pt
+                    if j < len(old_indices) and np.all(np.abs(np.array(old_indices[j]) -
+                                                              np.array(new_indices[i])) < tol):
+                        # If we already have this interpolation point
+                        interp.yi[i, :] = self.yi[j, :]
+                        if self.save_enabled():
+                            interp.output_files[i] = self.output_files[j]
+                        j += 1
+                    else:
+                        # Otherwise, save new interpolation point and its index
+                        x_new = np.concatenate((x_new, new_x_pt.reshape((1, self.xdim()))))
+                        x_new_idx.append(i)
                 else:
-                    # Otherwise, save new interpolation point and its index
-                    x_new = np.concatenate((x_new, interp.xi[i, :].reshape((1, self.xdim()))))
-                    x_new_idx.append(i)
+                    # Just find the new x indices and return those for the reduced case
+                    if j < len(old_indices) and np.all(np.abs(np.array(old_indices[j]) -
+                                                              np.array(new_indices[i])) < tol):
+                        j += 1
+                    else:
+                        x_new = np.concatenate((x_new, new_x_pt.reshape((1, self.xdim()))))
+                        x_new_idx.append(new_x_idx)     # Add a tuple() multi-index if not saving xi/yi
 
             # Evaluate the model at new interpolation points
             interp.wall_time = self.wall_time
@@ -218,7 +351,7 @@ class TensorProductInterpolator(BaseInterpolator):
                 self.logger.warning(f'No model available to evaluate new interpolation points, returning the points '
                                     f'to you instead...')
                 return x_new_idx, x_new, interp
-            elif manual:
+            elif manual or self.reduced:
                 return x_new_idx, x_new, interp
             else:
                 interp.set_yi(x_new=(x_new_idx, x_new))
@@ -230,27 +363,32 @@ class TensorProductInterpolator(BaseInterpolator):
             self.logger.error(tb_str)
             raise Exception(f'Original exception in refine(): {tb_str}')
 
-    def __call__(self, x):
+    def __call__(self, x, xi=None, yi=None):
         """Evaluate the barycentric interpolation at points x (abstract implementation)
         :param x: (..., xdim) the points to be interpolated, must be within domain of self.xi
+        :param xi: (Ni, xdim) optional, interpolation grid points to use (e.g. if self.xi is none)
+        :param yi: (Ni, ydim) optional, interpolation qois at xi to use (e.g. if self.yi is none)
         :returns y: (..., ydim) the interpolated value of the qois
         """
         # Use linear/NN interpolation for yi=nan values (may have resulted from bad model outputs)
-        ydim = self.ydim()
-        yi = self.yi.copy()
+        if yi is None:
+            yi = self.yi.copy()
+        if xi is None:
+            xi = self.xi.copy()
+        ydim = yi.shape[-1]
         for i in range(ydim):
             nan_idx = np.isnan(yi[:, i])
             if np.any(nan_idx):
                 try:
-                    yi[nan_idx, i] = LinearNDInterpolator(self.xi[~nan_idx, :], self.yi[~nan_idx, i],
-                                                          rescale=True)(self.xi[nan_idx, :])
+                    yi[nan_idx, i] = LinearNDInterpolator(xi[~nan_idx, :], yi[~nan_idx, i],
+                                                          rescale=True)(xi[nan_idx, :])
                 except:
                     pass  # If linear interpolation didn't work, just default to nearest neighbor
                 nan_idx = np.isnan(yi[:, i])
                 if np.any(nan_idx):
                     try:
-                        yi[nan_idx, i] = NearestNDInterpolator(self.xi[~nan_idx, :], yi[~nan_idx, i],
-                                                               rescale=True)(self.xi[nan_idx, :])
+                        yi[nan_idx, i] = NearestNDInterpolator(xi[~nan_idx, :], yi[~nan_idx, i],
+                                                               rescale=True)(xi[nan_idx, :])
                     except:
                         pass
 
@@ -261,7 +399,6 @@ class TensorProductInterpolator(BaseInterpolator):
 
         # Loop over multi-indices and compute tensor-product lagrange polynomials
         grid_sizes = self.get_grid_sizes(self.beta)
-        ydim = self.ydim()
         y = np.zeros(x.shape[:-1] + (ydim,))    # (..., ydim)
         indices = [np.arange(grid_sizes[n]) for n in range(self.xdim())]
         for i, j in enumerate(itertools.product(*indices)):
@@ -270,7 +407,7 @@ class TensorProductInterpolator(BaseInterpolator):
             # Compute univariate Lagrange polynomials in each dimension
             for n in range(self.xdim()):
                 j_n = j[n]
-                x_n = x[..., n, np.newaxis]     # (..., 1)
+                x_n = x[..., n, np.newaxis]                       # (..., 1)
 
                 # Expand axes of interpolation points and weights to match x
                 shape = (1,)*len(x_n.shape[:-1]) + (grid_sizes[n],)
@@ -289,8 +426,8 @@ class TensorProductInterpolator(BaseInterpolator):
                 L_j[..., n] = c[..., j_n] / np.sum(c, axis=-1)  # (...) same size as original x
                 j_mask = np.full(div_zero_idx.shape, False)
                 j_mask[..., j_n] = True
-                L_j[np.any(div_zero_idx & j_mask, axis=-1), n] = 1      # Set L_j(x==x_j)=1 for the current j
-                L_j[np.any(div_zero_idx & ~j_mask, axis=-1), n] = 0     # Set L_j(x==x_j)=0 for x_j = x_i, i != j
+                L_j[np.any(np.logical_and(div_zero_idx, j_mask), axis=-1), n] = 1      # Set L_j(x==x_j)=1 for the current j
+                L_j[np.any(np.logical_and(div_zero_idx, ~j_mask), axis=-1), n] = 0     # Set L_j(x==x_j)=0 for x_j = x_i, i != j
 
             # Add multivariate basis polynomial contribution to interpolation output
             shape = (1,)*len(x.shape[:-1]) + (ydim,)
@@ -318,11 +455,11 @@ class TensorProductInterpolator(BaseInterpolator):
         if z_pts is None:
             z_pts = (z_bds[1] + z_bds[0]) / 2
             N = N - 1
-        z_pts = np.atleast_1d(z_pts)
+        z_pts = np.atleast_1d(z_pts).astype(np.float32)
 
         # Construct leja sequence by maximizing the objective sequentially
         for i in range(N):
-            obj_fun = lambda z: -wt_fcn(np.array(z).astype(np.float64)) * np.prod(np.abs(z - z_pts))
+            obj_fun = lambda z: -wt_fcn(np.array(z).astype(np.float32)) * np.prod(np.abs(z - z_pts))
             res = direct(obj_fun, [z_bds])  # Use global DIRECT optimization over 1d domain
             z_star = res.x
             z_pts = np.concatenate((z_pts, z_star))

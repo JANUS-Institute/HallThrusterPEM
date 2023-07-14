@@ -8,8 +8,11 @@ from matplotlib.colors import LinearSegmentedColormap, ListedColormap
 import numpy as np
 from numpy.linalg.linalg import LinAlgError
 from abc import ABC, abstractmethod
+import logging
+import sys
 
 INPUT_DIR = Path(__file__).parent / 'input'
+LOG_FORMATTER = logging.Formatter("%(asctime)s \u2014 [%(levelname)s] \u2014 %(name)-36s \u2014 %(message)s")
 
 
 class ModelRunException(Exception):
@@ -122,6 +125,27 @@ class NormalRV(BaseRV):
 
     def sample(self, shape):
         return np.random.randn(*shape) * self.std + self.mu
+
+
+def get_logger(name):
+    """Setup a generic stdout logger with the given name"""
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(LOG_FORMATTER)
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
+    logger.addHandler(handler)
+    return logger
+
+
+def add_file_logging(logger, log_file):
+    """Setup file logging for this logger"""
+    del_handlers = [h for h in logger.handlers if isinstance(h, logging.FileHandler)]
+    for h in del_handlers:
+        logger.removeHandler(h)
+    f_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
+    f_handler.setLevel(logging.DEBUG)
+    f_handler.setFormatter(LOG_FORMATTER)
+    logger.addHandler(f_handler)
 
 
 def print_stats(data, logger=None):

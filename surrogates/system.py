@@ -1,4 +1,6 @@
 """Module for system-level adaptive multidisciplinary, multi-fidelity surrogate implementation"""
+import logging
+
 import numpy as np
 import networkx as nx
 import itertools
@@ -7,41 +9,26 @@ import os
 import time
 import datetime
 import functools
-import logging
 import dill
 import copy
 from abc import ABC, abstractmethod
 from datetime import timezone
 from pathlib import Path
 import shutil
-from concurrent.futures import ALL_COMPLETED, wait
 
 sys.path.append('..')
 
+from utils import get_logger, add_file_logging
+
 
 # Setup logging for the module
-FORMATTER = logging.Formatter("%(asctime)s \u2014 [%(levelname)s] \u2014 %(name)-36s \u2014 %(message)s")
-handler = logging.StreamHandler(sys.stdout)
-handler.setFormatter(FORMATTER)
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-logger.addHandler(handler)
-
-
-def setup_file_logger(log_file):
-    """Setup the file logger"""
-    del_handlers = [h for h in logger.handlers if isinstance(h, logging.FileHandler)]
-    for h in del_handlers:
-        logger.removeHandler(h)
-    f_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
-    f_handler.setLevel(logging.DEBUG)
-    f_handler.setFormatter(FORMATTER)
-    logger.addHandler(f_handler)
+logger = get_logger(__name__)
 
 
 class SystemSurrogate:
 
-    def __init__(self, components, exo_vars, coupling_vars, est_bds=0, root_dir=None, executor=None):
+    def __init__(self, components, exo_vars, coupling_vars, est_bds=0, root_dir=None, executor=None,
+                 suppress_stdout=False):
         """Construct a multidisciplinary system surrogate
         :param components: list(Nk,) of dicts specifying component name (str), a callable function model(x, alpha), a
                            string specifying surrogate class type, the highest 'truth' set of model fidelity indices,
@@ -59,6 +46,7 @@ class SystemSurrogate:
         :param est_bds: (int) number of samples to estimate coupling variable bounds, do nothing if 0
         :param root_dir: (str) Root directory for all build products (.logs, .pkl, .json, etc.)
         :param executor: An instance of a concurrent.futures.Executor, use to iterate new candidates in parallel
+        :param suppress_stdout: only log to file, don't print INFO logs in console
         """
         # Setup root directory
         if root_dir is None:
@@ -85,7 +73,11 @@ class SystemSurrogate:
         os.mkdir(Path(self.root_dir) / 'components')
         fname = datetime.datetime.now(tz=timezone.utc).isoformat().split('.')[0].replace(':', '.') + 'UTC_sys.log'
         self.log_file = str((Path(self.root_dir) / fname).resolve())
-        setup_file_logger(self.log_file)
+        add_file_logging(logger, self.log_file)
+        if suppress_stdout:
+            for handler in logger.handlers:
+                if not isinstance(handler, logging.FileHandler):
+                    handler.setLevel(logging.WARNING)
         self.logger = logger.getChild(self.__class__.__name__)
         self.executor = executor
 
@@ -282,14 +274,15 @@ class SystemSurrogate:
         self.print_title_str('Initializing all component surrogates')
         for node, node_obj in self.graph.nodes.items():
             node_obj['surrogate'].init_coarse()
-            for alpha, beta in list(node_obj['surrogate'].candidate_set):
-                # Add one refinement in each input dimension to initialize
-                node_obj['surrogate'].activate_index(alpha, beta)
+            # for alpha, beta in list(node_obj['surrogate'].candidate_set):
+            #     # Add one refinement in each input dimension to initialize
+            #     node_obj['surrogate'].activate_index(alpha, beta)
             node_obj['surrogate'].update_misc_coeffs()
             self.logger.info(f"Initialized component '{node}'.")
 
     @save_on_error
-    def build_system(self, qoi_ind=None, N_refine=100, max_iter=20, max_tol=0.001, max_runtime=60, save_interval=0):
+    def build_system(self, qoi_ind=None, N_refine=100, max_iter=20, max_tol=0.001, max_runtime=60, save_interval=0,
+                     update_bounds=True):
         """Build the system surrogate by iterative refinement until an end condition is met
         :param qoi_ind: list(), Indices of system QoI to focus refinement on, use all QoI if not specified
         :param N_refine: number of samples of exogenous inputs to compute error indicators on
@@ -297,6 +290,7 @@ class SystemSurrogate:
         :param max_tol: the max allowable value in normalized RMSE to achieve (in units of 'pct of QoI mean')
         :param max_runtime: the maximum wall clock time (s) to run refinement for (will go until all models finish)
         :param save_interval (int) number of refinement steps between each progress save, none if 0
+        :param update_bounds: whether to continuously update coupling variable bounds during refinement
         """
         max_iter = self.refine_level + max_iter
         curr_error = np.inf
@@ -319,17 +313,18 @@ class SystemSurrogate:
                 self.print_title_str(f'Termination criteria reached: runtime {str(actual)} > {str(target)}')
                 break
 
-            curr_error = self.refine(qoi_ind=qoi_ind, N_refine=N_refine)
+            curr_error = self.refine(qoi_ind=qoi_ind, N_refine=N_refine, update_bounds=update_bounds)
             if save_interval > 0 and self.refine_level % save_interval == 0:
                 self.save_to_file(f'sys_iter_{self.refine_level}.pkl')
 
         self.save_to_file(f'sys_final.pkl')
         self.logger.info(f'Final system surrogate:\n {self}')
 
-    def refine(self, qoi_ind=None, N_refine=100):
+    def refine(self, qoi_ind=None, N_refine=100, update_bounds=True):
         """Find and refine the component surrogate with the largest error on system QoI
         :param qoi_ind: list(), Indices of system QoI to focus surrogate refinement on, use all QoI if not specified
         :param N_refine: number of samples of exogenous inputs to compute error indicators on
+        :param update_bounds: whether to continuously update coupling variable bounds
         """
         self.print_title_str(f'Refining system surrogate: iteration {self.refine_level+1}')
         if qoi_ind is None:
@@ -338,8 +333,11 @@ class SystemSurrogate:
         # Compute entire integrated-surrogate on a random test set for global system QoI error estimation
         x_exo = self.sample_exo_inputs((N_refine,))
         y_curr = self(x_exo, training=True)
-        y_min = np.min(y_curr, axis=0, keepdims=True)  # (1, ydim)
-        y_max = np.max(y_curr, axis=0, keepdims=True)  # (1, ydim)
+        y_min = None
+        y_max = None
+        if update_bounds:
+            y_min = np.min(y_curr, axis=0, keepdims=True)  # (1, ydim)
+            y_max = np.max(y_curr, axis=0, keepdims=True)  # (1, ydim)
 
         # Find the candidate surrogate with the largest error indicator
         error_max = -np.inf
@@ -356,8 +354,9 @@ class SystemSurrogate:
                 node_obj['surrogate'].update_misc_coeffs()
                 no_cand_flag = False
                 y_cand = self(x_exo, training=True)
-                y_min = np.min(np.concatenate((y_min, y_cand), axis=0), axis=0, keepdims=True)
-                y_max = np.max(np.concatenate((y_max, y_cand), axis=0), axis=0, keepdims=True)
+                if update_bounds:
+                    y_min = np.min(np.concatenate((y_min, y_cand), axis=0), axis=0, keepdims=True)
+                    y_max = np.max(np.concatenate((y_max, y_cand), axis=0), axis=0, keepdims=True)
                 error = y_cand[:, qoi_ind] - y_curr[:, qoi_ind]
                 nrmse = np.sqrt(np.nanmean(error ** 2, axis=0)) / np.abs(np.nanmean(y_curr[:, qoi_ind], axis=0))
                 delta_error = np.nanmax(nrmse)  # Max normalized rmse over all system QoIs
@@ -379,8 +378,9 @@ class SystemSurrogate:
                 node_obj['surrogate'].update_misc_coeffs()  # Make sure MISC coeffs get reset for this node
 
         # Update all coupling variable ranges
-        for i in range(y_curr.shape[-1]):
-            self.update_coupling_bds(i, (y_min[0, i], y_max[0, i]))
+        if update_bounds:
+            for i in range(y_curr.shape[-1]):
+                self.update_coupling_bds(i, (y_min[0, i], y_max[0, i]))
 
         # Add the chosen multi-index to the chosen component
         if node_star is not None:
@@ -640,7 +640,7 @@ class SystemSurrogate:
 
         # Setup the log file
         self.log_file = log_file
-        setup_file_logger(self.log_file)
+        add_file_logging(logger, self.log_file)
         self.logger = logger.getChild(SystemSurrogate.__name__)
 
         # Update model output directories
@@ -815,36 +815,11 @@ class ComponentSurrogate(ABC):
             temp_exc = self.executor
             self.executor = None
             for a, b in new_candidates:
-                self.add_surrogate(a, b, manual=True)
-
-            def manual_build(self, a, b):
-                if self.log_file is not None:
-                    setup_file_logger(self.log_file)
-                    self.logger = logger.getChild(self.__class__.__name__)
-                self.logger.info(f'Building interpolant for index {(a, b)} ...')
-                interp, cost = self.add_interpolator(a, b)
-                return interp, cost
-
-            # Wait for all parallel workers to return
-            fs = [temp_exc.submit(manual_build, self, a, b) for a, b in new_candidates]
-            wait(fs, timeout=None, return_when=ALL_COMPLETED)
-
-            # Update self with the results from all workers (and check for errors)
-            for i, future in enumerate(fs):
-                try:
-                    a = new_candidates[i][0]
-                    b = new_candidates[i][1]
-                    interp, cost = future.result()
-                    self.surrogates[str(a)][str(b)] = interp
-                    self.costs[str(a)][str(b)] = cost
-                    if self.ydim is None:
-                        self.ydim = interp.ydim()
-
-                    # Make sure all instance variables get updated here in the master task after all MPI workers return
-                    self._add_interpolator_mpi(a, b)
-                except:
-                    self.logger.error(f'An exception occurred in a thread handling add_interpolator{new_candidates[i]}')
-                    raise
+                if str(a) not in self.surrogates:
+                    self.surrogates[str(a)] = dict()
+                    self.costs[str(a)] = dict()
+                    self.misc_coeff[str(a)] = dict()
+            self._parallel_add_candidates(new_candidates, temp_exc)
             self.executor = temp_exc
 
         # Move to the active index set
@@ -854,7 +829,7 @@ class ComponentSurrogate(ABC):
         new_candidates = [cand for cand in new_candidates if cand not in self.candidate_set]
         self.candidate_set.extend(new_candidates)
 
-    def add_surrogate(self, alpha, beta, manual=False):
+    def add_surrogate(self, alpha, beta):
         """Build a BaseInterpolator object for a given alpha, beta index
         :param alpha: A multi-index (tuple) specifying model fidelity
         :param beta: A multi-index (tuple) specifying surrogate fidelity
@@ -866,9 +841,10 @@ class ComponentSurrogate(ABC):
             self.misc_coeff[str(alpha)] = dict()
 
         # Create a new interpolator object for this multi-index (abstract method)
-        if self.surrogates[str(alpha)].get(str(beta), None) is None and not manual:
+        if self.surrogates[str(alpha)].get(str(beta), None) is None:
             self.logger.info(f'Building interpolant for index {(alpha, beta)} ...')
-            interp, cost = self.add_interpolator(alpha, beta)
+            x_new_idx, x_new, interp = self.add_interpolator(alpha, beta)
+            cost = self._add_interpolator(x_new_idx, x_new, interp)  # Awkward, but needed to separate the model evals
             self.surrogates[str(alpha)][str(beta)] = interp
             self.costs[str(alpha)][str(beta)] = cost
             if self.ydim is None:
@@ -1025,19 +1001,32 @@ class ComponentSurrogate(ABC):
 
     @abstractmethod
     def add_interpolator(self, alpha, beta):
-        """Return a BaseInterpolator object and the wall time cost for a given alpha, beta index
+        """Return a BaseInterpolator object and new refinement points for a given alpha, beta index
         :param alpha: A multi-index (tuple) specifying model fidelity
         :param beta: A multi-index (tuple) specifying surrogate fidelity
-        :returns interp, cost: the BaseInterpolator object and the wall time (s) required to construct it
+        :returns x_new_idx, x_new, interp: list() of new grid indices, the new grid points (N_new, xdim), and the
+                                           BaseInterpolator object. Similar to BaseInterpolator.refine()
         """
         pass
 
     @abstractmethod
-    def _add_interpolator_mpi(self, alpha, beta):
-        """Defines a post-processing function to call *after* add_interpolator() returns from all parallel
-        MPI workers. While add_interpolator() can make changes to 'self', these changes will not be saved
-        in the master task if running in parallel over MPI. This method is a workaround to make all 
-        required mutable changes to 'self' in the master task. Can pass if not needed.
+    def _add_interpolator(self, x_new_idx, x_new, interp):
+        """Secondary method to actually compute and save model evaluations within the interpolator
+        :param x_new_idx: Return value of add_interpolator, list of new grid point indices
+        :param x_new: (N_new, xdim), the new grid point locations
+        :param interp: the BaseInterpolator object to compute model evaluations with
+        :returns cost: the cost required to add this Interpolator object
+        """
+        pass
+
+    @abstractmethod
+    def _parallel_add_candidates(self, candidates, executor):
+        """Defines a function to handle adding candidate indices in parallel. While add_interpolator() can make
+        changes to 'self', these changes will not be saved in the master task if running in parallel over MPI.
+        This method is a workaround so that all required mutable changes to 'self' are made in the master task, before
+        distributing tasks to parallel workers using this method.
+        :param candidates: list of [(alpha, beta),...] multi-indices
+        :param executor: An instance of a concurrent.futures.Executor, use to iterate candidates in parallel
         """
         pass
 
@@ -1064,7 +1053,7 @@ class BaseInterpolator(ABC):
         self.yi = yi                                        # Function values at interpolation points
         self.beta = beta                                    # Refinement level indices
         self.x_vars = x_vars                                # BaseRV() objects for each input
-        self.wall_time = 1                                  # Wall time to evaluate model (s)
+        self.wall_time = None                               # Wall time to evaluate model (s)
 
     def update_input_bds(self, idx, bds):
         """Update the input bounds at the given index (assume a uniform RV)"""
@@ -1090,6 +1079,7 @@ class BaseInterpolator(ABC):
         :param x_new: tuple() specifying (x_new_idx, new_x), where new_x is an (N_new, xdim) array of new interpolation
                       points to include and x_new_idx is a list() specifying the indices of these points into self.xi,
                       overrides anything passed in for yi, and assumes a model is already specified
+        :returns: dict() of {tuple(new_idx): np.array(yi)} if x_new_idx contains tuple elements, otherwise none
         """
         if model is not None:
             self._model = model
@@ -1102,20 +1092,40 @@ class BaseInterpolator(ABC):
         if x_new:
             new_idx = x_new[0]
             new_x = x_new[1]
+            return_y = isinstance(new_idx[0], tuple)  # Return y rather than storing it if tuple indices are passed in
+            ret = None
+            if return_y:
+                ret = (dict(), dict()) if self.save_enabled() else dict()
+
             if self.save_enabled():
+                t1 = time.time()
                 y_new, files_new = self._model(new_x, *self._model_args, **self._model_kwargs)
+                wall_time = (time.time() - t1) / new_x.shape[0]
                 for j in range(y_new.shape[0]):
-                    self.yi[new_idx[j], :] = y_new[j, :]
-                    self.output_files[new_idx[j]] = files_new[j]
+                    if return_y:
+                        ret[0][str(new_idx[j])] = y_new[j, :].astype(np.float32)
+                        ret[1][str(new_idx[j])] = files_new[j]
+                    else:
+                        self.yi[new_idx[j], :] = y_new[j, :].astype(np.float32)
+                        self.output_files[new_idx[j]] = files_new[j]
             else:
+                t1 = time.time()
                 y_new = self._model(new_x, *self._model_args, **self._model_kwargs)  # (N_new, ydim)
+                wall_time = (time.time() - t1) / new_x.shape[0]
                 for j in range(y_new.shape[0]):
-                    self.yi[new_idx[j], :] = y_new[j, :]
-            return
+                    if return_y:
+                        ret[str(new_idx[j])] = y_new[j, :].astype(np.float32)
+                    else:
+                        self.yi[new_idx[j], :] = y_new[j, :].astype(np.float32)
+
+            if self.wall_time is None:
+                self.wall_time = max(1, wall_time)
+
+            return ret
 
         # Set yi directly
         if yi is not None:
-            self.yi = yi
+            self.yi = yi.astype(np.float32)
             return
 
         # Compute yi
@@ -1124,7 +1134,9 @@ class BaseInterpolator(ABC):
             self.yi, self.output_files = self._model(self.xi, *self._model_args, **self._model_kwargs)
         else:
             self.yi = self._model(self.xi, *self._model_args, **self._model_kwargs)
-        self.wall_time = (time.time() - t1) / self.xi.shape[0]
+
+        if self.wall_time is None:
+            self.wall_time = max(1, (time.time() - t1) / self.xi.shape[0])
 
     @abstractmethod
     def refine(self, beta, manual=False):

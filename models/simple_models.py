@@ -46,6 +46,62 @@ def tanh_func(x, A=2, L=1, frac=4):
     return A*np.tanh(2/(L/frac)*(x-L/2)) + A + 1
 
 
+def borehole_func(x, *args, **kwargs):
+    """Model found at https://www.sfu.ca/~ssurjano/borehole.html
+    :returns vdot: Water flow rate in m^3/yr
+    """
+    rw = x[..., 0]      # Radius of borehole (m)
+    r = x[..., 1]       # Radius of influence (m)
+    Tu = x[..., 2]      # Transmissivity (m^2/yr)
+    Hu = x[..., 3]      # Potentiometric head (m)
+    Tl = x[..., 4]      # Transmissivity (m^2/yr)
+    Hl = x[..., 5]      # Potentiometric head (m)
+    L = x[..., 6]       # Length of borehole (m)
+    Kw = x[..., 7]      # Hydraulic conductivity (m/yr)
+    # rw = 0.1
+    # r = 10000
+    # Tu = 80000
+    # Hu = 1000
+    # Tl = 90
+    # Hl = 750
+    # L = 1400
+    # Kw = 11000
+    vdot = 2*np.pi*Tu*(Hu-Hl) / (np.log(r/rw) * (1 + (2*L*Tu/(np.log(r/rw)*Kw*rw**2)) + (Tu/Tl)))
+
+    return vdot[..., np.newaxis]
+
+
+def wing_weight_func(x, *args, **kwargs):
+    """Model found at https://www.sfu.ca/~ssurjano/wingweight.html
+    :returns Wwing: the weight of the airplane wing (lb)
+    """
+    Sw = x[..., 0]      # Wing area (ft^2)
+    Wfw = x[..., 1]     # Weight of fuel (lb)
+    A = x[..., 2]       # Aspect ratio
+    Lambda = x[..., 3]  # Quarter-chord sweep (deg)
+    q = x[..., 4]       # Dynamic pressure (lb/ft^2)
+    lamb = x[..., 5]    # taper ratio
+    tc = x[..., 6]      # Aerofoil thickness to chord ratio
+    Nz = x[..., 7]      # Ultimate load factor
+    Wdg = x[..., 8]     # Design gross weight (lb)
+    Wp = x[..., 9]      # Paint weight (lb/ft^2)
+    # Sw = 175
+    # Wfw = 270
+    # A = 8
+    # Lambda = 1
+    # q = 30
+    # lamb = 0.7
+    # tc = 0.1
+    # Nz = 4
+    # Wdg = 2000
+    # Wp = 0.05
+    Lambda = Lambda*(np.pi/180)
+    Wwing = 0.036*(Sw**0.758)*(Wfw**0.0035)*((A/(np.cos(Lambda))**2)**0.6)*(q**0.006)*(lamb**0.04)*\
+            (100*tc/np.cos(Lambda))**(-0.3)*((Nz*Wdg)**0.49) + Sw*Wp
+
+    return Wwing[..., np.newaxis]
+
+
 def fire_sat_system():
     """Fire satellite detection system model from Chaudhuri 2018"""
     Re = 6378140    # Radius of Earth (m)
@@ -250,3 +306,35 @@ def fake_pem():
         return y
 
     return cathode, thruster, plume, beam_dump, chamber_wall, spacecraft
+
+
+def borehole_system():
+    d = 8
+    idx = list(np.arange(d))
+    vars = [UniformRV(0.05, 0.15, 'rw'), UniformRV(100, 50000, 'r'), UniformRV(63070, 115600, 'Tu'),
+            UniformRV(990, 1110, 'Hu'), UniformRV(63.1, 116, 'Tl'), UniformRV(700, 820, 'Hl'),
+            UniformRV(1120, 1680, 'L'), UniformRV(9855, 12045, 'Kw')]
+    coupling_vars = [UniformRV(0, 1000, 'vdot')]
+    exo_vars = [vars[i] for i in idx]
+    comp = {'name': 'Borehole', 'model': borehole_func, 'exo_in': idx, 'local_in': {}, 'global_out': [0],
+            'truth_alpha': (), 'max_beta': (3,)*d}
+    sys = SystemSurrogate([comp], exo_vars, coupling_vars, root_dir='build', suppress_stdout=True, est_bds=1000)
+
+    return sys
+
+
+def wing_weight_system():
+    d = 10
+    idx = list(np.arange(d))
+    vars = [UniformRV(150, 250, 'Sw'), UniformRV(220, 300, 'Wfw'), UniformRV(6, 10, 'A'),
+            UniformRV(-10, 10, 'Lambda'), UniformRV(16, 45, 'q'), UniformRV(0.5, 1, 'lambda'),
+            UniformRV(0.08, 0.18, 'tc'), UniformRV(2.5, 6, 'Nz'), UniformRV(1700, 2500, 'Wdg'),
+            UniformRV(0.025, 0.08, 'Wp')]
+    coupling_vars = [UniformRV(0, 10000, 'Wwing')]
+    exo_vars = [vars[i] for i in idx]
+    comp = {'name': 'Wing', 'model': wing_weight_func, 'exo_in': idx, 'local_in': {}, 'global_out': [0],
+            'truth_alpha': (), 'max_beta': (3,)*d}
+    sys = SystemSurrogate([comp], exo_vars, coupling_vars, root_dir='build', suppress_stdout=True, est_bds=1000)
+
+    return sys
+
