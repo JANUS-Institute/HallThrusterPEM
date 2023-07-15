@@ -207,6 +207,11 @@ class SparseGridSurrogate(ComponentSurrogate):
                 cost = interp.wall_time * len(x_new_idx)
                 self.surrogates[str(a)][str(b)] = interp
                 self.costs[str(a)][str(b)] = cost
+
+                if self.ydim is None:
+                    for coord_str, yi in self.yi_map[str(a)].items():
+                        self.ydim = yi.shape[0]
+                        break
             except:
                 self.logger.error(f'An exception occurred in a thread handling add_interpolator{candidates[i]}')
                 raise

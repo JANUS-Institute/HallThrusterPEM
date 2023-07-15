@@ -381,8 +381,12 @@ def test_fire_sat(filename=None):
     if filename is not None:
         sys = SystemSurrogate.load_from_file(filename)
     else:
+        N = 1000
         sys = fire_sat_system()
-        sys.build_system(max_iter=5, max_tol=1e-3, max_runtime=3600)
+        xt = sys.sample_exo_inputs((N,))
+        yt = sys(xt, ground_truth=True, training=False)
+        test_set = {'xt': xt, 'yt': yt}
+        sys.build_system(max_iter=15, max_tol=1e-3, max_runtime=3600, test_set=test_set)
         e = 1
         # with MPICommExecutor(MPI.COMM_WORLD, root=0) as e:
         #     if e is not None:

@@ -15,10 +15,11 @@ from abc import ABC, abstractmethod
 from datetime import timezone
 from pathlib import Path
 import shutil
+import matplotlib.pyplot as plt
 
 sys.path.append('..')
 
-from utils import get_logger, add_file_logging
+from utils import get_logger, add_file_logging, ax_default
 
 
 # Setup logging for the module
@@ -87,6 +88,7 @@ class SystemSurrogate:
         self.exo_vars = copy.deepcopy(exo_vars)
         self.coupling_vars = copy.deepcopy(coupling_vars)
         self.refine_level = 0
+        self.build_metrics = dict()     # Save refinement error metrics during build
 
         # Construct graph nodes
         Nk = len(components)
@@ -286,7 +288,7 @@ class SystemSurrogate:
 
     @save_on_error
     def build_system(self, qoi_ind=None, N_refine=100, max_iter=20, max_tol=0.001, max_runtime=60, save_interval=0,
-                     update_bounds=True):
+                     update_bounds=True, test_set=None):
         """Build the system surrogate by iterative refinement until an end condition is met
         :param qoi_ind: list(), Indices of system QoI to focus refinement on, use all QoI if not specified
         :param N_refine: number of samples of exogenous inputs to compute error indicators on
@@ -295,10 +297,24 @@ class SystemSurrogate:
         :param max_runtime: the maximum wall clock time (s) to run refinement for (will go until all models finish)
         :param save_interval (int) number of refinement steps between each progress save, none if 0
         :param update_bounds: whether to continuously update coupling variable bounds during refinement
+        :param test_set: a dict() of xt=(Nt, xdim), yt=(Nt, ydim) to show convergence of surrogate to the truth model
         """
         max_iter = self.refine_level + max_iter
         curr_error = np.inf
         t_start = time.time()
+
+        # Track convergence progress on a test set and on the max error indicator
+        err_record = []
+        err_fig, err_ax = plt.subplots()
+        err_stats, xt, yt, t_fig, t_ax = None, None, None, None, None
+        if test_set is not None:
+            xt = test_set['xt']
+            yt = test_set['yt']
+            self.build_metrics['xt'] = xt
+            self.build_metrics['yt'] = yt
+            err_stats = self.get_test_metrics(xt, yt)   # Get initial performance metrics
+            err_stats = err_stats[np.newaxis, :]
+            t_fig, t_ax = plt.subplots()
 
         while True:
             # Check all end conditions
@@ -317,12 +333,55 @@ class SystemSurrogate:
                 self.print_title_str(f'Termination criteria reached: runtime {str(actual)} > {str(target)}')
                 break
 
+            # Refine surrogate and save progress
             curr_error = self.refine(qoi_ind=qoi_ind, N_refine=N_refine, update_bounds=update_bounds)
             if save_interval > 0 and self.refine_level % save_interval == 0:
                 self.save_to_file(f'sys_iter_{self.refine_level}.pkl')
 
+            # Plot progress of maximum error indicator
+            err_record.append(curr_error)
+            err_ax.clear(); err_ax.grid(); err_ax.plot(err_record, '-k')
+            ax_default(err_ax, 'Refine iteration', 'Max error indicator', legend=False)
+            err_ax.set_yscale('log')
+            err_fig.savefig(str(Path(self.root_dir) / 'error_indicator.png'), dpi=300, format='png')
+
+            # Plot progress on test set
+            if test_set is not None:
+                stats = self.get_test_metrics(xt, yt)
+                err_stats = np.concatenate((err_stats, stats[np.newaxis, ...]), axis=0)
+                t_ax.clear(); t_ax.grid(); t_ax.set_yscale('log')
+                t_ax.plot(err_stats[:, 4], '-g', label='Median')
+                t_ax.plot(err_stats[:, 7], '-k', label='Mean')
+                t_ax.plot(err_stats[:, 6], '-r', label='Max')
+                ax_default(t_ax, 'Refine iteration', 'Relative percent difference (RPD)', legend=True)
+                t_fig.savefig(str(Path(self.root_dir) / 'rpd.png'), dpi=300, format='png')
+                self.build_metrics['err_stats'] = err_stats
+
         self.save_to_file(f'sys_final.pkl')
+        self.build_metrics['err_record'] = err_record
         self.logger.info(f'Final system surrogate:\n {self}')
+
+    def get_test_metrics(self, xt, yt):
+        """Get relative percent difference (RPD) error metric on a test set
+        :param xt: (Nt, xdim) random test set of inputs
+        :param yt: (Nt, ydim) random test set outputs
+        :returns stats: [refine_level, num_cands, min, 25th, 50th, 75th, max, mean] of RPD on test set
+        """
+        ysurr = self(xt)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            rpd = 2 * np.abs(ysurr - yt) / (np.abs(ysurr) + np.abs(yt))  # RPD\in [0, 2]
+            rpd = rpd[:, 0]
+            rpd[np.logical_and(ysurr[:, 0] == 0, yt[:, 0] == 0)] = 0
+        num_cands = 0
+        for node, node_obj in self.graph.nodes.items():
+            num_cands += len(node_obj['surrogate'].index_set) + len(node_obj['surrogate'].candidate_set)
+        stats = np.array([self.refine_level, num_cands, np.min(rpd), np.percentile(rpd, 25),
+                          np.percentile(rpd, 50), np.percentile(rpd, 75), np.max(rpd), np.mean(rpd)])
+        self.logger.debug(f'{"Iteration":>10} {"len(I_k)":>10} {"Min":>10} {"25th pct":>10} {"50th pct":>10} '
+                          f'{"75th pct":>10} {"Max":>10} {"Mean":>10}')
+        self.logger.debug(f'{self.refine_level: 10d} {num_cands: 10d} {stats[2]: 10.3f} {stats[3]: 10.3f} '
+                          f'{stats[4]: 10.3f} {stats[5]: 10.3f} {stats[6]: 10.3f} {stats[7]: 10.3f}')
+        return stats
 
     def refine(self, qoi_ind=None, N_refine=100, update_bounds=True):
         """Find and refine the component surrogate with the largest error on system QoI
