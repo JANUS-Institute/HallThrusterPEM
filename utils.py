@@ -137,15 +137,19 @@ def get_logger(name):
     return logger
 
 
-def add_file_logging(logger, log_file):
-    """Setup file logging for this logger"""
-    del_handlers = [h for h in logger.handlers if isinstance(h, logging.FileHandler)]
-    for h in del_handlers:
-        logger.removeHandler(h)
+def add_file_logging(logger, log_file, suppress_stdout=False):
+    """Setup file logging for this logger (clear all handlers and add file+stdout logging"""
+    logger.handlers.clear()
     f_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
     f_handler.setLevel(logging.DEBUG)
     f_handler.setFormatter(LOG_FORMATTER)
     logger.addHandler(f_handler)
+
+    if not suppress_stdout:
+        s_handler = logging.StreamHandler(sys.stdout)
+        s_handler.setFormatter(LOG_FORMATTER)
+        s_handler.setLevel(logging.DEBUG)
+        logger.addHandler(s_handler)
 
 
 def print_stats(data, logger=None):

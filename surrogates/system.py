@@ -47,7 +47,7 @@ class SystemSurrogate:
         :param est_bds: (int) number of samples to estimate coupling variable bounds, do nothing if 0
         :param root_dir: (str) Root directory for all build products (.logs, .pkl, .json, etc.)
         :param executor: An instance of a concurrent.futures.Executor, use to iterate new candidates in parallel
-        :param suppress_stdout: only log to file, don't print INFO logs in console
+        :param suppress_stdout: only log to file, don't print to console
         :param init_surr: whether to initialize the surrogate with the coarsest fidelity index
         """
         # Setup root directory
@@ -75,11 +75,7 @@ class SystemSurrogate:
         os.mkdir(Path(self.root_dir) / 'components')
         fname = datetime.datetime.now(tz=timezone.utc).isoformat().split('.')[0].replace(':', '.') + 'UTC_sys.log'
         self.log_file = str((Path(self.root_dir) / fname).resolve())
-        add_file_logging(logger, self.log_file)
-        if suppress_stdout:
-            for handler in logger.handlers:
-                if not isinstance(handler, logging.FileHandler):
-                    handler.setLevel(logging.WARNING)
+        add_file_logging(logger, self.log_file, suppress_stdout=suppress_stdout)
         self.logger = logger.getChild(self.__class__.__name__)
         self.executor = executor
 
@@ -288,7 +284,7 @@ class SystemSurrogate:
 
     @save_on_error
     def build_system(self, qoi_ind=None, N_refine=100, max_iter=20, max_tol=0.001, max_runtime=60, save_interval=0,
-                     update_bounds=True, test_set=None):
+                     prune_tol=1e-20, update_bounds=True, test_set=None, continue_plot=True):
         """Build the system surrogate by iterative refinement until an end condition is met
         :param qoi_ind: list(), Indices of system QoI to focus refinement on, use all QoI if not specified
         :param N_refine: number of samples of exogenous inputs to compute error indicators on
@@ -296,25 +292,32 @@ class SystemSurrogate:
         :param max_tol: the max allowable value in normalized RMSE to achieve (in units of 'pct of QoI mean')
         :param max_runtime: the maximum wall clock time (s) to run refinement for (will go until all models finish)
         :param save_interval (int) number of refinement steps between each progress save, none if 0
+        :param prune_tol: numerical tolerance in NRMSE below which a candidate multi-index is removed from consideration
         :param update_bounds: whether to continuously update coupling variable bounds during refinement
         :param test_set: a dict() of xt=(Nt, xdim), yt=(Nt, ydim) to show convergence of surrogate to the truth model
+        :param continue_plot: whether to append previous error metrics for plotting or start fresh (will need to
+                              keep qoi_ind consistent between runs if True)
         """
         max_iter = self.refine_level + max_iter
         curr_error = np.inf
         t_start = time.time()
 
         # Track convergence progress on a test set and on the max error indicator
-        err_record = []
+        err_record = self.build_metrics.get('err_record', []) if continue_plot else []
         err_fig, err_ax = plt.subplots()
-        err_stats, xt, yt, t_fig, t_ax = None, None, None, None, None
+        test_stats, xt, yt, t_fig, t_ax, Nqoi = None, None, None, None, None, 0
         if test_set is not None:
             xt = test_set['xt']
             yt = test_set['yt']
             self.build_metrics['xt'] = xt
             self.build_metrics['yt'] = yt
-            err_stats = self.get_test_metrics(xt, yt)   # Get initial performance metrics
-            err_stats = err_stats[np.newaxis, :]
-            t_fig, t_ax = plt.subplots()
+            if continue_plot and self.build_metrics.get('test_stats') is not None:
+                test_stats = self.build_metrics.get('test_stats')
+            else:
+                # Get initial perf metrics, (8, Nqoi)
+                test_stats = np.expand_dims(self.get_test_metrics(xt, yt, qoi_ind=qoi_ind), axis=0)
+            Nqoi = test_stats.shape[-1]
+            t_fig, t_ax = plt.subplots(1, Nqoi) if Nqoi > 1 else plt.subplots()
 
         while True:
             # Check all end conditions
@@ -334,60 +337,80 @@ class SystemSurrogate:
                 break
 
             # Refine surrogate and save progress
-            curr_error = self.refine(qoi_ind=qoi_ind, N_refine=N_refine, update_bounds=update_bounds)
+            curr_error = self.refine(qoi_ind=qoi_ind, N_refine=N_refine, update_bounds=update_bounds,
+                                     prune_tol=prune_tol)
             if save_interval > 0 and self.refine_level % save_interval == 0:
                 self.save_to_file(f'sys_iter_{self.refine_level}.pkl')
 
             # Plot progress of maximum error indicator
             err_record.append(curr_error)
             err_ax.clear(); err_ax.grid(); err_ax.plot(err_record, '-k')
-            ax_default(err_ax, 'Refine iteration', 'Max error indicator', legend=False)
+            ax_default(err_ax, 'Iteration', 'Max error indicator', legend=False)
             err_ax.set_yscale('log')
             err_fig.savefig(str(Path(self.root_dir) / 'error_indicator.png'), dpi=300, format='png')
 
             # Plot progress on test set
             if test_set is not None:
-                stats = self.get_test_metrics(xt, yt)
-                err_stats = np.concatenate((err_stats, stats[np.newaxis, ...]), axis=0)
-                t_ax.clear(); t_ax.grid(); t_ax.set_yscale('log')
-                t_ax.plot(err_stats[:, 4], '-g', label='Median')
-                t_ax.plot(err_stats[:, 7], '-k', label='Mean')
-                t_ax.plot(err_stats[:, 6], '-r', label='Max')
-                ax_default(t_ax, 'Refine iteration', 'Relative percent difference (RPD)', legend=True)
+                stats = self.get_test_metrics(xt, yt, qoi_ind=qoi_ind)
+                test_stats = np.concatenate((test_stats, stats[np.newaxis, ...]), axis=0)
+                for i in range(Nqoi):
+                    ax = t_ax if Nqoi == 1 else t_ax[i]
+                    ax.clear(); ax.grid(); ax.set_yscale('log')
+                    ax.plot(test_stats[:, 4, i], '-g', label='Median')
+                    ax.plot(test_stats[:, 7, i], '-k', label='Mean')
+                    ax.plot(test_stats[:, 6, i], '-r', label='Max')
+                    ax.set_title(f'QoI {i}')
+                    ax_default(ax, 'Iteration', 'Relative percent difference', legend=True)
+                t_fig.set_size_inches(4*Nqoi, 3.5)
+                t_fig.tight_layout()
                 t_fig.savefig(str(Path(self.root_dir) / 'rpd.png'), dpi=300, format='png')
-                self.build_metrics['err_stats'] = err_stats
+                self.build_metrics['test_stats'] = test_stats
 
-        self.save_to_file(f'sys_final.pkl')
         self.build_metrics['err_record'] = err_record
+        self.save_to_file(f'sys_final.pkl')
         self.logger.info(f'Final system surrogate:\n {self}')
 
-    def get_test_metrics(self, xt, yt):
+    def get_test_metrics(self, xt, yt, qoi_ind=None):
         """Get relative percent difference (RPD) error metric on a test set
         :param xt: (Nt, xdim) random test set of inputs
         :param yt: (Nt, ydim) random test set outputs
-        :returns stats: [refine_level, num_cands, min, 25th, 50th, 75th, max, mean] of RPD on test set
+        :param qoi_ind: list() of indices of QoIs to get metrics for
+        :returns stats: (8, Nqoi) -> [refine_level, num_cands, min, 25th, 50th, 75th, max, mean] of RPD for each QoI
         """
+        if qoi_ind is None:
+            qoi_ind = slice(None)
         ysurr = self(xt)
+        ysurr = ysurr[:, qoi_ind]
+        yt = yt[:, qoi_ind]
         with np.errstate(divide='ignore', invalid='ignore'):
             rpd = 2 * np.abs(ysurr - yt) / (np.abs(ysurr) + np.abs(yt))  # RPD\in [0, 2]
-            rpd = rpd[:, 0]
-            rpd[np.logical_and(ysurr[:, 0] == 0, yt[:, 0] == 0)] = 0
+            rpd[np.logical_and(ysurr == 0, yt == 0)] = 0
         num_cands = 0
         for node, node_obj in self.graph.nodes.items():
             num_cands += len(node_obj['surrogate'].index_set) + len(node_obj['surrogate'].candidate_set)
-        stats = np.array([self.refine_level, num_cands, np.min(rpd), np.percentile(rpd, 25),
-                          np.percentile(rpd, 50), np.percentile(rpd, 75), np.max(rpd), np.mean(rpd)])
-        self.logger.debug(f'{"Iteration":>10} {"len(I_k)":>10} {"Min":>10} {"25th pct":>10} {"50th pct":>10} '
-                          f'{"75th pct":>10} {"Max":>10} {"Mean":>10}')
-        self.logger.debug(f'{self.refine_level: 10d} {num_cands: 10d} {stats[2]: 10.3f} {stats[3]: 10.3f} '
-                          f'{stats[4]: 10.3f} {stats[5]: 10.3f} {stats[6]: 10.3f} {stats[7]: 10.3f}')
+
+        # Get stats for each QoI
+        stats = np.zeros((8, yt.shape[-1]))
+        self.logger.debug(f'{"QoI idx":>10} {"Iteration":>10} {"len(I_k)":>10} {"Min":>10} {"25th pct":>10} '
+                          f'{"50th pct":>10} {"75th pct":>10} {"Max":>10} {"Mean":>10}')
+        for i in range(yt.shape[-1]):
+            stats[:, i] = np.array([self.refine_level, num_cands, np.min(rpd[:, i]), np.percentile(rpd[:, i], 25),
+                                    np.percentile(rpd[:, i], 50), np.percentile(rpd[:, i], 75), np.max(rpd[:, i]),
+                                    np.mean(rpd[:, i])])
+            self.logger.debug(f'{i: 10d} {self.refine_level: 10d} {num_cands: 10d} {stats[2, i]: 10.3f} '
+                              f'{stats[3, i]: 10.3f} {stats[4, i]: 10.3f} {stats[5, i]: 10.3f} {stats[6, i]: 10.3f} '
+                              f'{stats[7, i]: 10.3f}')
         return stats
 
-    def refine(self, qoi_ind=None, N_refine=100, update_bounds=True):
+    def refine(self, qoi_ind=None, N_refine=100, update_bounds=True, prune_tol=1e-20):
         """Find and refine the component surrogate with the largest error on system QoI
         :param qoi_ind: list(), Indices of system QoI to focus surrogate refinement on, use all QoI if not specified
         :param N_refine: number of samples of exogenous inputs to compute error indicators on
         :param update_bounds: whether to continuously update coupling variable bounds
+        :param prune_tol: set this for tolerance in NRMSE below which a candidate is no longer considered; NRMSE is a
+                          normalized value and is independent of scale; prune_tol essentially acts as a numerical
+                          tolerance for indicating when a candidate surrogate multi-index has negligible effect on
+                          improving system QoI prediction
         """
         self.print_title_str(f'Refining system surrogate: iteration {self.refine_level+1}')
         if qoi_ind is None:
@@ -425,8 +448,14 @@ class SystemSurrogate:
                 delta_error = np.nanmax(nrmse)  # Max normalized rmse over all system QoIs
                 delta_work = max(1, node_obj['surrogate'].get_cost(alpha, beta))    # Wall time (s)
                 refine_indicator = delta_error / delta_work
-                self.logger.info(f"Candidate multi-index: {(alpha, beta)}. (Global) error indicator: "
-                                 f"{refine_indicator}")
+                if delta_error > prune_tol:
+                    self.logger.info(f"Candidate multi-index: {(alpha, beta)}. (Global) error indicator: "
+                                     f"{refine_indicator}")
+                else:
+                    node_obj['surrogate'].prune_index(alpha, beta)
+                    self.logger.info(f"PRUNED candidate multi-index: {(alpha, beta)}, since max NRMSE "
+                                     f"{delta_error} < tol {prune_tol}")
+                    continue
 
                 if refine_indicator > error_max:
                     error_max = refine_indicator
@@ -619,8 +648,8 @@ class SystemSurrogate:
         y = self(x, ground_truth=True, verbose=True, anderson_mem=anderson_mem, fpi_tol=fpi_tol,
                  max_fpi_iter=max_fpi_iter)
         for i in range(len(self.coupling_vars)):
-            lb = np.min(y[:, i])
-            ub = np.max(y[:, i])
+            lb = np.nanmin(y[:, i])
+            ub = np.nanmax(y[:, i])
             self.update_coupling_bds(i, (lb, ub), init=True)
 
     def update_coupling_bds(self, global_idx, bds, init=False, buffer=0.05):
@@ -804,6 +833,7 @@ class ComponentSurrogate(ABC):
         assert self.is_downward_closed(multi_index), 'Must be a downward closed set.'
         self.index_set = []         # The active index set for the MISC approximation
         self.candidate_set = []     # Candidate indices for refinement
+        self.pruned_set = []        # Indices removed from candidate set due to low error indicators (<5th percentile)
         self._model = model
         self._model_args = model_args
         self._model_kwargs = model_kwargs if model_kwargs is not None else {}
@@ -855,6 +885,11 @@ class ComponentSurrogate(ABC):
             if np.any(np.array(ind_new) > np.array(self.max_refine)):
                 continue
 
+            # Don't add if this index has been pruned previously
+            new_cand = (tuple(ind_new[:len(alpha)]), tuple(ind_new[len(alpha):]))
+            if new_cand in self.pruned_set:
+                continue
+
             # Add the new index if it maintains downward-closedness
             down_closed = True
             for j in range(len(ind)):
@@ -866,7 +901,6 @@ class ComponentSurrogate(ABC):
                         down_closed = False
                         break
             if down_closed:
-                new_cand = (tuple(ind_new[:len(alpha)]), tuple(ind_new[len(alpha):]))
                 new_candidates.append(new_cand)
 
         # Build an interpolant for each new candidate
@@ -891,6 +925,13 @@ class ComponentSurrogate(ABC):
         new_candidates = [cand for cand in new_candidates if cand not in self.candidate_set]
         self.candidate_set.extend(new_candidates)
 
+    def prune_index(self, alpha, beta):
+        """Remove a multi-index from the candidate set"""
+        ele = (alpha, beta)
+        if ele in self.candidate_set:
+            self.candidate_set.remove(ele)
+            self.pruned_set.append(ele)
+
     def add_surrogate(self, alpha, beta):
         """Build a BaseInterpolator object for a given alpha, beta index
         :param alpha: A multi-index (tuple) specifying model fidelity
@@ -906,8 +947,8 @@ class ComponentSurrogate(ABC):
         if self.surrogates[str(alpha)].get(str(beta), None) is None:
             self.logger.info(f'Building interpolant for index {(alpha, beta)} ...')
             x_new_idx, x_new, interp = self.add_interpolator(alpha, beta)
-            cost = self._add_interpolator(x_new_idx, x_new, interp)  # Awkward, but needed to separate the model evals
             self.surrogates[str(alpha)][str(beta)] = interp
+            cost = self._add_interpolator(x_new_idx, x_new, interp)  # Awkward, but needed to separate the model evals
             self.costs[str(alpha)][str(beta)] = cost
             if self.ydim is None:
                 self.ydim = interp.ydim()
@@ -922,7 +963,7 @@ class ComponentSurrogate(ABC):
         """Iterate candidate indices one by one into the active index set
         :yields alpha, beta: the multi-indices of the current candidate that has been moved to active set
         """
-        for alpha, beta in self.candidate_set:
+        for alpha, beta in list(self.candidate_set):
             # Temporarily add a candidate index to active set
             self.index_set.append((alpha, beta))
             yield alpha, beta

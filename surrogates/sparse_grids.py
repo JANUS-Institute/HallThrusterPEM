@@ -26,6 +26,7 @@ class SparseGridSurrogate(ComponentSurrogate):
         self.x_grids = dict()           # Maps alphas -> list of ndarrays specifying 1d grids corresponding to max_beta
         self.xi_map = dict()            # Maps grid locations/coords to interpolation points
         self.yi_map = dict()            # Maps grid locations/coords to interpolation qois
+        self.yi_nan_map = dict()        # Maps grid locations to interpolated yi values when yi=nan
         self.yi_files = dict()          # Maps grid locations/coords to model output files (optional)
         super().__init__(*args, **kwargs)
 
@@ -65,10 +66,11 @@ class SparseGridSurrogate(ComponentSurrogate):
 
         return y
 
-    def get_tensor_grid(self, alpha, beta):
+    def get_tensor_grid(self, alpha, beta, update_nan=True):
         """Convenience function to construct the xi/yi sub tensor-product grids for a given (alpha, beta) multi-index
         :param alpha: model fidelity multi-index, tuple()
         :param beta: surrogate fidelity multi-index, tuple()
+        :param update_nan: try to fill nan with interpolated values, otherwise just return the nans in place
         :returns xi, yi: with shapes (prod(grid_sizes), xdim) and (prod(grid_sizes), ydim) respectively, the
                          interpolation grid points and corresponding qois for this tensor-product grid
         """
@@ -79,9 +81,61 @@ class SparseGridSurrogate(ComponentSurrogate):
         yi = np.zeros((np.prod(grid_sizes), self.ydim), dtype=np.float32)
         for i, coord in enumerate(itertools.product(*coords)):
             xi[i, :] = self.xi_map[str(alpha)][str(coord)]
-            yi[i, :] = self.yi_map[str(alpha)][str(coord)]
+            yi_curr = self.yi_map[str(alpha)][str(coord)]
+            if update_nan and np.any(np.isnan(yi_curr)):
+                # Try to replace NaN values if they are stored
+                yi_curr = self.yi_nan_map[str(alpha)].get(str(coord), yi_curr)
+            yi[i, :] = yi_curr
 
         return xi, yi
+
+    def update_yi(self, alpha, beta, yi_dict):
+        """Helper method to update yi values, accounting for possible nans"""
+        self.yi_map[str(alpha)].update(yi_dict)
+        lin_interp, nn_interp = None, None
+        for grid_coord, yi in yi_dict.items():
+            if np.any(np.isnan(yi)):
+                lin_interp, nn_interp = self._update_yi_helper(alpha, beta, grid_coord, lin_interp, nn_interp)
+
+        # Go back and try to re-interpolate old nan values as more points get added to the grid
+        for grid_coord in list(self.yi_nan_map[str(alpha)].keys()):
+            if grid_coord not in yi_dict:
+                lin_interp, nn_interp = self._update_yi_helper(alpha, beta, grid_coord, lin_interp, nn_interp)
+
+    def _update_yi_helper(self, alpha, beta, grid_coord, lin_interp, nn_interp):
+        """Small helper function for building interpolants when updating yi"""
+        if lin_interp is None or nn_interp is None:
+            xi_mat, yi_mat = self.get_tensor_grid(alpha, beta, update_nan=False)
+            nan_idx = np.any(np.isnan(yi_mat), axis=-1)
+            xi_mat = xi_mat[~nan_idx, :]
+            yi_mat = yi_mat[~nan_idx, :]
+            try:
+                lin_interp = LinearNDInterpolator(xi_mat, yi_mat, rescale=True)
+            except:
+                pass
+            try:
+                nn_interp = NearestNDInterpolator(xi_mat, yi_mat, rescale=True)
+            except:
+                pass
+
+        x_interp = self.xi_map[str(alpha)][str(grid_coord)]  # (xdim,)
+        yi = np.zeros((self.ydim,)) * np.nan
+        try:
+            yi = lin_interp(x_interp)
+        except:
+            pass  # If linear interpolation didn't work, just default to nearest neighbor
+        if np.any(np.isnan(yi)):
+            try:
+                yi = nn_interp(x_interp)
+            except:
+                pass
+
+        # If any nans are left, then something else is going wrong, and you need to fix this error
+        if np.any(np.isnan(yi)):
+            raise Exception(f'Trying to interpolate with NaNs for beta {beta}, please check model '
+                            f'{self._model} for too many NaN outputs.')
+        self.yi_nan_map[str(alpha)][str(grid_coord)] = np.atleast_1d(np.squeeze(yi))
+        return lin_interp, nn_interp
 
     # Override
     def get_sub_surrogate(self, alpha, beta, include_grid=False):
@@ -107,6 +161,7 @@ class SparseGridSurrogate(ComponentSurrogate):
             self.x_grids[str(alpha)] = copy.deepcopy(interp.x_grids)
             self.xi_map[str(alpha)] = {str(beta): x_pt}
             self.yi_map[str(alpha)] = dict()
+            self.yi_nan_map[str(alpha)] = dict()
             if self.save_enabled():
                 self.yi_files[str(alpha)] = dict()
 
@@ -152,10 +207,10 @@ class SparseGridSurrogate(ComponentSurrogate):
         yi_ret = interp.set_yi(x_new=(x_new_idx, x_new))
         alpha = interp._model_args[0]
         if self.save_enabled():
-            self.yi_map[str(alpha)].update(yi_ret[0])
+            self.update_yi(alpha, interp.beta, yi_ret[0])
             self.yi_files[str(alpha)].update(yi_ret[1])
         else:
-            self.yi_map[str(alpha)].update(yi_ret)
+            self.update_yi(alpha, interp.beta, yi_ret)
         cost = interp.wall_time * len(x_new_idx)
 
         if self.ydim is None:
@@ -166,7 +221,7 @@ class SparseGridSurrogate(ComponentSurrogate):
         return cost
 
     def _parallel_add_candidates(self, candidates, executor):
-        """Work-around to make sure mutable instance variable changes are made during add_interpolator() before
+        """Work-around to make sure mutable instance variable changes are made before/after
         splitting tasks using this method over parallel (potentially MPI) workers. MPI workers cannot save changes to
         'self', so this method should only distribute static tasks to the workers.
         :param candidates: list of [(alpha, beta),...] candidate multi-indices
@@ -179,19 +234,21 @@ class SparseGridSurrogate(ComponentSurrogate):
             task_args.append((alpha, beta, x_new_idx, x_new, interp))
 
         def parallel_task(alpha, beta, x_new_idx, x_new, interp):
+            # Must return anything you want changed in self or interp (mutable changes aren't saved over MPI workers)
+            logger = get_logger(__name__)
+            logger_child = logger.getChild(self.__class__.__name__)
             if self.log_file is not None:
-                logger = get_logger(__name__)
-                add_file_logging(logger, self.log_file)
-                self.logger = logger.getChild(self.__class__.__name__)
-            self.logger.info(f'Building interpolant for index {(alpha, beta)} ...')
+                add_file_logging(logger_child, self.log_file, suppress_stdout=True)
+            logger_child.info(f'Building interpolant for index {(alpha, beta)} ...')
             yi_ret = interp.set_yi(x_new=(x_new_idx, x_new))
-            return yi_ret
+            wall_time = interp.wall_time if interp.wall_time is not None else 1
+            return yi_ret, wall_time
 
         # Wait for all parallel workers to return
         fs = [executor.submit(parallel_task, *args) for args in task_args]
         wait(fs, timeout=None, return_when=ALL_COMPLETED)
 
-        # Update self with the results from all workers (and check for errors)
+        # Update self and interp with the results from all workers (and check for errors)
         for i, future in enumerate(fs):
             try:
                 a = task_args[i][0]
@@ -199,14 +256,15 @@ class SparseGridSurrogate(ComponentSurrogate):
                 x_new_idx = task_args[i][2]
                 interp = task_args[i][4]
                 yi_ret = future.result()
-                if self.save_enabled():
-                    self.yi_map[str(a)].update(yi_ret[0])
-                    self.yi_files[str(a)].update(yi_ret[1])
-                else:
-                    self.yi_map[str(a)].update(yi_ret)
-                cost = interp.wall_time * len(x_new_idx)
+                wall_time = yi_ret[1]
+                interp.wall_time = wall_time
                 self.surrogates[str(a)][str(b)] = interp
-                self.costs[str(a)][str(b)] = cost
+                if self.save_enabled():
+                    self.update_yi(a, b, yi_ret[0][0])
+                    self.yi_files[str(a)].update(yi_ret[0][1])
+                else:
+                    self.update_yi(a, b, yi_ret[0])
+                self.costs[str(a)][str(b)] = interp.wall_time * len(x_new_idx)
 
                 if self.ydim is None:
                     for coord_str, yi in self.yi_map[str(a)].items():
@@ -381,21 +439,20 @@ class TensorProductInterpolator(BaseInterpolator):
         if xi is None:
             xi = self.xi.copy()
         ydim = yi.shape[-1]
-        for i in range(ydim):
-            nan_idx = np.isnan(yi[:, i])
+        nan_idx = np.any(np.isnan(yi), axis=-1)
+        if np.any(nan_idx):
+            try:
+                lin_interp = LinearNDInterpolator(xi[~nan_idx, :], yi[~nan_idx, :], rescale=True)
+                yi[nan_idx, :] = lin_interp(xi[nan_idx, :])
+            except:
+                pass  # If linear interpolation didn't work, just default to nearest neighbor
+            nan_idx = np.any(np.isnan(yi), axis=-1)
             if np.any(nan_idx):
                 try:
-                    yi[nan_idx, i] = LinearNDInterpolator(xi[~nan_idx, :], yi[~nan_idx, i],
-                                                          rescale=True)(xi[nan_idx, :])
+                    nn_interp = NearestNDInterpolator(xi[~nan_idx, :], yi[~nan_idx, :], rescale=True)
+                    yi[nan_idx, :] = nn_interp(xi[nan_idx, :])
                 except:
-                    pass  # If linear interpolation didn't work, just default to nearest neighbor
-                nan_idx = np.isnan(yi[:, i])
-                if np.any(nan_idx):
-                    try:
-                        yi[nan_idx, i] = NearestNDInterpolator(xi[~nan_idx, :], yi[~nan_idx, i],
-                                                               rescale=True)(xi[nan_idx, :])
-                    except:
-                        pass
+                    pass
 
         # If any nans are left, then something else is going wrong, and you need to fix this error
         if np.any(np.isnan(yi)):
@@ -407,38 +464,28 @@ class TensorProductInterpolator(BaseInterpolator):
         y = np.zeros(x.shape[:-1] + (ydim,))    # (..., ydim)
         indices = [np.arange(grid_sizes[n]) for n in range(self.xdim())]
         for i, j in enumerate(itertools.product(*indices)):
-            L_j = np.zeros(x.shape)             # (..., xdim)
+            L_j = np.empty(x.shape)             # (..., xdim)
 
             # Compute univariate Lagrange polynomials in each dimension
             for n in range(self.xdim()):
-                j_n = j[n]
-                x_n = x[..., n, np.newaxis]                       # (..., 1)
-
-                # Expand axes of interpolation points and weights to match x
-                shape = (1,)*len(x_n.shape[:-1]) + (grid_sizes[n],)
-                x_j = self.x_grids[n].reshape(shape)  # (1...,Nx)
-                w_j = self.weights[n].reshape(shape)  # (1...,Nx)
+                x_n = x[..., n, np.newaxis]     # (..., 1)
+                x_j = self.x_grids[n]           # (Nx,)
+                w_j = self.weights[n]           # (Nx,)
 
                 # Compute the jth Lagrange basis polynomial L_j(x_n) for this x dimension (in barycentric form)
-                # Set floating point tolerance to 5 orders of magnitude smaller than smallest value
-                mag = abs(min(np.min(x_j), np.min(x_n)))
-                mag = 1e-5 if mag == 0 else mag
-                atol = 10 ** (np.log10(mag) - 5)
                 c = x_n - x_j
-                div_zero_idx = np.isclose(c, 0, atol=atol)  # Track where x is approx equal to an interpolation pnt x_j
-                c[div_zero_idx] = 1                         # Temporarily set to 1 to avoid divide by zero error
+                div_zero_idx = np.abs(c) <= 1e-4 * x_j + 1e-8   # Track where x is approx at an interpolation pnt x_j
+                c[div_zero_idx] = 1                             # Temporarily set to 1 to avoid divide by zero error
                 c = w_j / c
-                L_j[..., n] = c[..., j_n] / np.sum(c, axis=-1)  # (...) same size as original x
-                j_mask = np.full(div_zero_idx.shape, False)
-                j_mask[..., j_n] = True
-                L_j[np.any(np.logical_and(div_zero_idx, j_mask), axis=-1), n] = 1      # Set L_j(x==x_j)=1 for the current j
-                L_j[np.any(np.logical_and(div_zero_idx, ~j_mask), axis=-1), n] = 0     # Set L_j(x==x_j)=0 for x_j = x_i, i != j
+                L_j[..., n] = c[..., j[n]] / np.sum(c, axis=-1)  # (...) same size as original x
+
+                # Set L_j(x==x_j)=1 for the current j and set L_j(x==x_j)=0 for x_j = x_i, i != j
+                L_j[div_zero_idx[..., j[n]], n] = 1
+                L_j[np.any(div_zero_idx[..., [idx for idx in range(grid_sizes[n]) if idx != j[n]]], axis=-1), n] = 0
 
             # Add multivariate basis polynomial contribution to interpolation output
-            shape = (1,)*len(x.shape[:-1]) + (ydim,)
-            y_i = yi[i, :].reshape(shape)                   # (1..., ydim)
-            L_j = np.prod(L_j, axis=-1)[..., np.newaxis]    # (..., 1)
-            y += L_j * y_i
+            L_j = np.prod(L_j, axis=-1, keepdims=True)      # (..., 1)
+            y += L_j * yi[i, :]
 
         return y
 

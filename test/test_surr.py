@@ -383,10 +383,11 @@ def test_fire_sat(filename=None):
     else:
         N = 1000
         sys = fire_sat_system()
-        xt = sys.sample_exo_inputs((N,))
-        yt = sys(xt, ground_truth=True, training=False)
-        test_set = {'xt': xt, 'yt': yt}
-        sys.build_system(max_iter=15, max_tol=1e-3, max_runtime=3600, test_set=test_set)
+        test_set = None
+        # xt = sys.sample_exo_inputs((N,))
+        # yt = sys(xt, ground_truth=True, training=False)
+        # test_set = {'xt': xt, 'yt': yt}
+        sys.build_system(max_iter=10, max_tol=1e-3, max_runtime=3600, test_set=test_set)
         e = 1
         # with MPICommExecutor(MPI.COMM_WORLD, root=0) as e:
         #     if e is not None:
@@ -403,17 +404,18 @@ def test_fire_sat(filename=None):
 
         # Print test results
         error = 100 * (np.abs(ysurr - yt)) / yt
+        use_idx = ~np.any(np.isnan(yt), axis=-1)
         for i in range(yt.shape[1]):
             logger.info(f'Test set percent error results for QoI {i}')
-            print_stats(error[:, i], logger=logger)
+            print_stats(error[use_idx, i], logger=logger)
 
         # Plot some output histograms
         fig, ax = plt.subplots(1, 3)
-        ax[0].hist(yt[:, 0], color='red', bins=20, edgecolor='black', density=True, linewidth=1.2, label='Truth')
+        ax[0].hist(yt[use_idx, 0], color='red', bins=20, edgecolor='black', density=True, linewidth=1.2, label='Truth')
         ax[0].hist(ysurr[:, 0], color='blue', bins=20, edgecolor='black', density=True, linewidth=1.2, alpha=0.4, label='Surrogate')
-        ax[1].hist(yt[:, 7], color='red', bins=20, edgecolor='black', density=True, linewidth=1.2, label='Truth')
+        ax[1].hist(yt[use_idx, 7], color='red', bins=20, edgecolor='black', density=True, linewidth=1.2, label='Truth')
         ax[1].hist(ysurr[:, 7], color='blue', bins=20, edgecolor='black', density=True, linewidth=1.2, alpha=0.4, label='Surrogate')
-        ax[2].hist(yt[:, 8], color='red', bins=20, edgecolor='black', density=True, linewidth=1.2, label='Truth')
+        ax[2].hist(yt[use_idx, 8], color='red', bins=20, edgecolor='black', density=True, linewidth=1.2, label='Truth')
         ax[2].hist(ysurr[:, 8], color='blue', bins=20, edgecolor='black', density=True, linewidth=1.2, alpha=0.4, label='Surrogate')
         ax_default(ax[0], 'Satellite velocity ($m/s$)', '', legend=True)
         ax_default(ax[1], 'Solar panel area ($m^2$)', '', legend=True)

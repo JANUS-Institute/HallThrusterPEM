@@ -138,6 +138,11 @@ def fire_sat_system():
         dt_orbit = 2*np.pi*(Re + H) / vel       # Orbit period (s)
         dt_eclipse = (dt_orbit/np.pi)*np.arcsin(Re / (Re + H))  # Eclipse period (s)
         theta_slew = np.arctan(np.sin(phi / Re) / (1 - np.cos(phi / Re) + H/Re))    # Max slew angle (rad)
+        if np.random.rand() < kwargs.get('pct_failure', 0):
+            i = tuple([np.random.randint(0, N) for N in x.shape[:-1]])
+            i2 = tuple([np.random.randint(0, N) for N in x.shape[:-1]])
+            vel[i + (0,)] = np.nan
+            theta_slew[i2 + (0,)] = np.nan
         y = np.concatenate((vel, dt_orbit, dt_eclipse, theta_slew), axis=-1)
         return y
 
@@ -167,6 +172,11 @@ def fire_sat_system():
         Itot = np.concatenate((Ix, Iy, Iz), axis=-1)
         Imin = np.min(Itot, axis=-1, keepdims=True)
         Imax = np.max(Itot, axis=-1, keepdims=True)
+        if np.random.rand() < kwargs.get('pct_failure', 0):
+            i = tuple([np.random.randint(0, N) for N in x.shape[:-1]])
+            i2 = tuple([np.random.randint(0, N) for N in x.shape[:-1]])
+            Imin[i2 + (0,)] = np.nan
+            Asa[i + (0,)] = np.nan
         y = np.concatenate((Imin, Imax, Ptot, Asa), axis=-1)
 
         if output_dir is not None:
@@ -215,13 +225,14 @@ def fire_sat_system():
             return y
 
     orbit = {'name': 'Orbit', 'model': orbit_fun, 'truth_alpha': (), 'exo_in': [0, 1], 'local_in': {},
-             'global_out': [0, 1, 2, 3], 'max_alpha': (), 'max_beta': (3, 3), 'type': 'lagrange'}
+             'global_out': [0, 1, 2, 3], 'max_alpha': (), 'max_beta': (3, 3), 'type': 'lagrange',
+             'model_kwargs': {'pct_failure': 0}}
     power = {'name': 'Power', 'model': power_fun, 'truth_alpha': (), 'exo_in': [2, 3], 'max_alpha': (),
              'local_in': {'Orbit': [1, 2], 'Attitude': [0]}, 'global_out': [4, 5, 6, 7], 'type': 'lagrange',
-             'max_beta': (3,)*5, 'save_output': True}
+             'max_beta': (3,)*5, 'save_output': False, 'model_kwargs': {'pct_failure': 0}}
     attitude = {'name': 'Attitude', 'model': attitude_fun, 'truth_alpha': (), 'exo_in': [0, 3, 4, 5, 6, 7],
                 'max_alpha': (), 'local_in': {'Orbit': [0, 3], 'Power': [0, 1]}, 'global_out': [8, 9],
-                'type': 'lagrange', 'max_beta': (3,)*10, 'save_output': True}
+                'type': 'lagrange', 'max_beta': (3,)*10, 'save_output': False}
     exo_vars = [NormalRV(18e6, 1e6, 'H'), NormalRV(235e3, 10e3, '\u03D5'), NormalRV(1000, 50, 'Po'),
                 NormalRV(1400, 20, 'Fs'), NormalRV(2, 0.4, 'Lsp'), NormalRV(0.5, 0.1, 'q'), NormalRV(2, 0.4, 'La'),
                 NormalRV(1, 0.2, 'Cd')]

@@ -171,7 +171,7 @@ def thruster_pem(x, alpha, *args, compress=True, output_dir=None, n_jobs=-1, **k
         files = []  # Return an ordered list of output filenames corresponding to input indices
 
         for i, index in enumerate(curr_batch):
-            x_curr = list(x[index + (slice(None),)])  # (xdim,)
+            x_curr = [float(x[index + (i,)]) for i in range(x.shape[-1])]   # (xdim,)
             thruster_input.update({
                 'background_pressure_Torr': 10 ** x_curr[0],
                 'anode_potential': x_curr[1],

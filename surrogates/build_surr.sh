@@ -4,11 +4,11 @@
 #SBATCH --job-name=build_surr
 #SBATCH --account=goroda0
 #SBATCH --partition=standard
-#SBATCH --time=00-10:00:00
+#SBATCH --time=00-00:02:00
 #SBATCH --nodes=1
-#SBATCH --mem-per-cpu=3g
-#SBATCH --ntasks-per-node=4
-#SBATCH --cpus-per-task=9
+#SBATCH --mem-per-cpu=2g
+#SBATCH --ntasks-per-node=2
+#SBATCH --cpus-per-task=4
 #SBATCH --output=/scratch/goroda_root/goroda0/eckelsjd/HallThrusterPEM/surrogates/%x-%j.log
 #SBATCH --export=ALL
 #SBATCH --mail-type=BEGIN,END,FAIL
