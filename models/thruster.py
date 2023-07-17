@@ -135,9 +135,10 @@ def thruster_pem(x, alpha, *args, compress=True, output_dir=None, n_jobs=-1, **k
     :returns y, files: (..., ydim) Thruster outputs and output files if output_dir is specified, otherwise just y
     """
     # Set model fidelity quantities from alpha
-    Ncells = 50 * (alpha[0] + 1)
+    Ncells = 50 * (alpha[0] + 2)
     Ncharge = alpha[1] + 1
-    dt_map = [25e-9, 12.5e-9, 8.4e-9, 6.3e-9]
+    # dt_map = [25e-9, 12.5e-9, 8.4e-9, 6.3e-9]
+    dt_map = [12.5e-9, 8.4e-9, 6.3e-9]
     dt_s = dt_map[alpha[0]] if Ncharge <= 2 else dt_map[alpha[0]] / math.sqrt(3/2)
 
     # Constant inputs from input file (SPT-100 geometry, propellant, wall material, simulation params, etc.)

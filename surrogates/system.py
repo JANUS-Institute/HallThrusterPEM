@@ -16,6 +16,7 @@ from datetime import timezone
 from pathlib import Path
 import shutil
 import matplotlib.pyplot as plt
+from joblib import Parallel, delayed, cpu_count
 
 sys.path.append('..')
 
@@ -279,12 +280,11 @@ class SystemSurrogate:
             # for alpha, beta in list(node_obj['surrogate'].candidate_set):
             #     # Add one refinement in each input dimension to initialize
             #     node_obj['surrogate'].activate_index(alpha, beta)
-            node_obj['surrogate'].update_misc_coeffs()
             self.logger.info(f"Initialized component '{node}'.")
 
     @save_on_error
     def build_system(self, qoi_ind=None, N_refine=100, max_iter=20, max_tol=0.001, max_runtime=60, save_interval=0,
-                     prune_tol=1e-20, update_bounds=True, test_set=None, continue_plot=True):
+                     prune_tol=1e-10, update_bounds=True, test_set=None, continue_plot=True, n_jobs=-1):
         """Build the system surrogate by iterative refinement until an end condition is met
         :param qoi_ind: list(), Indices of system QoI to focus refinement on, use all QoI if not specified
         :param N_refine: number of samples of exogenous inputs to compute error indicators on
@@ -297,6 +297,7 @@ class SystemSurrogate:
         :param test_set: a dict() of xt=(Nt, xdim), yt=(Nt, ydim) to show convergence of surrogate to the truth model
         :param continue_plot: whether to append previous error metrics for plotting or start fresh (will need to
                               keep qoi_ind consistent between runs if True)
+        :param n_jobs: number of cpu workers for computing error indicators (on master MPI task), 1=sequential
         """
         max_iter = self.refine_level + max_iter
         curr_error = np.inf
@@ -338,7 +339,7 @@ class SystemSurrogate:
 
             # Refine surrogate and save progress
             curr_error = self.refine(qoi_ind=qoi_ind, N_refine=N_refine, update_bounds=update_bounds,
-                                     prune_tol=prune_tol)
+                                     prune_tol=prune_tol, n_jobs=n_jobs)
             if save_interval > 0 and self.refine_level % save_interval == 0:
                 self.save_to_file(f'sys_iter_{self.refine_level}.pkl')
 
@@ -402,7 +403,7 @@ class SystemSurrogate:
                               f'{stats[7, i]: 10.3f}')
         return stats
 
-    def refine(self, qoi_ind=None, N_refine=100, update_bounds=True, prune_tol=1e-20):
+    def refine(self, qoi_ind=None, N_refine=100, update_bounds=True, prune_tol=1e-10, n_jobs=-1):
         """Find and refine the component surrogate with the largest error on system QoI
         :param qoi_ind: list(), Indices of system QoI to focus surrogate refinement on, use all QoI if not specified
         :param N_refine: number of samples of exogenous inputs to compute error indicators on
@@ -411,6 +412,7 @@ class SystemSurrogate:
                           normalized value and is independent of scale; prune_tol essentially acts as a numerical
                           tolerance for indicating when a candidate surrogate multi-index has negligible effect on
                           improving system QoI prediction
+        :param n_jobs: number of cpus for computing error indicators in parallel (use sequential if 1)
         """
         self.print_title_str(f'Refining system surrogate: iteration {self.refine_level+1}')
         if qoi_ind is None:
@@ -419,55 +421,59 @@ class SystemSurrogate:
         # Compute entire integrated-surrogate on a random test set for global system QoI error estimation
         x_exo = self.sample_exo_inputs((N_refine,))
         y_curr = self(x_exo, training=True)
-        y_min = None
-        y_max = None
+        y_min, y_max = None, None
         if update_bounds:
             y_min = np.min(y_curr, axis=0, keepdims=True)  # (1, ydim)
             y_max = np.max(y_curr, axis=0, keepdims=True)  # (1, ydim)
 
         # Find the candidate surrogate with the largest error indicator
-        error_max = -np.inf
-        nrmse_max = -np.inf
-        refine_indicator = -np.inf
-        node_star = None
-        alpha_star = None
-        beta_star = None
+        error_max, nrmse_max, refine_indicator = -np.inf, -np.inf, -np.inf
+        node_star, alpha_star, beta_star = None, None, None
         for node, node_obj in self.graph.nodes.items():
             self.logger.info(f"Estimating error for component '{node}'...")
-            no_cand_flag = True
-            for alpha, beta in node_obj['surrogate'].iterate_candidates():
-                # Compute errors over global system QoI, ignoring NaN samples that may have resulted from bad FPI
-                node_obj['surrogate'].update_misc_coeffs()
-                no_cand_flag = False
-                y_cand = self(x_exo, training=True)
-                if update_bounds:
-                    y_min = np.min(np.concatenate((y_min, y_cand), axis=0), axis=0, keepdims=True)
-                    y_max = np.max(np.concatenate((y_max, y_cand), axis=0), axis=0, keepdims=True)
+            candidates = node_obj['surrogate'].candidate_set.copy()
+
+            def compute_error(alpha, beta):
+                # Helper function for computing error indicators for a given candidate (alpha, beta)
+                index_set = node_obj['surrogate'].index_set.copy()
+                index_set.append((alpha, beta))
+                y_cand = self(x_exo, training=True, index_set={node: index_set})
+                ymin = np.min(y_cand, axis=0, keepdims=True)
+                ymax = np.max(y_cand, axis=0, keepdims=True)
                 error = y_cand[:, qoi_ind] - y_curr[:, qoi_ind]
                 nrmse = np.sqrt(np.nanmean(error ** 2, axis=0)) / np.abs(np.nanmean(y_curr[:, qoi_ind], axis=0))
                 delta_error = np.nanmax(nrmse)  # Max normalized rmse over all system QoIs
-                delta_work = max(1, node_obj['surrogate'].get_cost(alpha, beta))    # Wall time (s)
-                refine_indicator = delta_error / delta_work
-                if delta_error > prune_tol:
-                    self.logger.info(f"Candidate multi-index: {(alpha, beta)}. (Global) error indicator: "
-                                     f"{refine_indicator}")
-                else:
-                    node_obj['surrogate'].prune_index(alpha, beta)
-                    self.logger.info(f"PRUNED candidate multi-index: {(alpha, beta)}, since max NRMSE "
-                                     f"{delta_error} < tol {prune_tol}")
-                    continue
+                delta_work = max(1, node_obj['surrogate'].get_cost(alpha, beta))  # Wall time (s)
 
-                if refine_indicator > error_max:
-                    error_max = refine_indicator
-                    nrmse_max = delta_error
-                    node_star = node
-                    alpha_star = alpha
-                    beta_star = beta
+                return ymin, ymax, delta_error, delta_work
 
-            if no_cand_flag:
-                self.logger.info(f"Component '{node}' has no available candidates left!")
+            if len(candidates) > 0:
+                with Parallel(n_jobs=n_jobs, verbose=0) as ppool:
+                    ret = ppool(delayed(compute_error)(alpha, beta) for alpha, beta in candidates)
+
+                for i, (ymin, ymax, d_error, d_work) in enumerate(ret):
+                    if update_bounds:
+                        y_min = np.min(np.concatenate((y_min, ymin), axis=0), axis=0, keepdims=True)
+                        y_max = np.max(np.concatenate((y_max, ymax), axis=0), axis=0, keepdims=True)
+                    alpha, beta = candidates[i]
+                    refine_indicator = d_error / d_work
+                    if d_error > prune_tol:
+                        self.logger.info(f"Candidate multi-index: {(alpha, beta)}. (Global) error indicator: "
+                                         f"{refine_indicator}")
+                    else:
+                        node_obj['surrogate'].prune_index(alpha, beta)
+                        self.logger.info(f"PRUNED candidate multi-index: {(alpha, beta)}, since max NRMSE "
+                                         f"{d_error} < tol {prune_tol}")
+                        continue
+
+                    if refine_indicator > error_max:
+                        error_max = refine_indicator
+                        nrmse_max = d_error
+                        node_star = node
+                        alpha_star = alpha
+                        beta_star = beta
             else:
-                node_obj['surrogate'].update_misc_coeffs()  # Make sure MISC coeffs get reset for this node
+                self.logger.info(f"Component '{node}' has no available candidates left!")
 
         # Update all coupling variable ranges
         if update_bounds:
@@ -478,7 +484,6 @@ class SystemSurrogate:
         if node_star is not None:
             self.logger.info(f"Candidate multi-index {(alpha_star, beta_star)} chosen for component '{node_star}'")
             self.graph.nodes[node_star]['surrogate'].activate_index(alpha_star, beta_star)
-            self.graph.nodes[node_star]['surrogate'].update_misc_coeffs()
             self.refine_level += 1
         else:
             self.logger.info(f"No candidates left for refinement, iteration: {self.refine_level}")
@@ -486,7 +491,7 @@ class SystemSurrogate:
         return nrmse_max  # Probably a more intuitive metric for setting tolerances
 
     def __call__(self, x, max_fpi_iter=100, anderson_mem=10, fpi_tol=1e-10, ground_truth=False, verbose=False,
-                 training=False):
+                 training=False, index_set=None):
         """Evaluate the system surrogate at exogenous inputs x
         :param x: (..., xdim) the points to be interpolated
         :param max_fpi_iter: the limit on convergence for the fixed-point iteration routine
@@ -495,6 +500,7 @@ class SystemSurrogate:
         :param ground_truth: whether to evaluate with the surrogates or the highest-fidelity 'ground truth' model
         :param verbose: whether to print out iteration progress during execution
         :param training: whether to call the system surrogate in training or evaluation mode
+        :param index_set: dict() of {node:[indices]} to override default index set for a node (only useful for parallel)
         :returns y: (..., ydim) the surrogate approximation of the system QoIs
         """
         # Allocate space for all system outputs (just save all coupling vars)
@@ -524,14 +530,15 @@ class SystemSurrogate:
                 # Gather inputs
                 node_obj = self.graph.nodes[scc[0]]
                 exo_inputs = x[..., node_obj['exo_in']]
-                for comp_name in node_obj['local_in']:
-                    assert self.graph.nodes[comp_name]['is_computed']
+                # for comp_name in node_obj['local_in']:
+                #     assert self.graph.nodes[comp_name]['is_computed']
                 coupling_inputs = y[..., node_obj['global_in']]
                 comp_input = np.concatenate((exo_inputs, coupling_inputs), axis=-1)  # (..., xdim)
 
                 # Compute outputs
+                indices = index_set.get(scc[0], None) if index_set is not None else None
                 comp_output = node_obj['surrogate'](comp_input[valid_idx, :], ground_truth=ground_truth,
-                                                    training=training)
+                                                    training=training, index_set=indices)
                 for local_i, global_i in enumerate(node_obj['global_out']):
                     y[valid_idx, global_i] = comp_output[..., local_i]
                 node_obj['is_computed'] = True
@@ -556,7 +563,7 @@ class SystemSurrogate:
 
                         # Override coupling vars from components outside the scc (should already be computed)
                         if comp_name not in scc and comp_name not in adj_nodes:
-                            assert self.graph.nodes[comp_name]['is_computed']
+                            # assert self.graph.nodes[comp_name]['is_computed']
                             global_idx = self.graph.nodes[comp_name]['global_out']
                             x_couple[..., global_idx] = y[..., global_idx]
                             adj_nodes.append(comp_name)  # Only need to do this once for each adj component
@@ -579,8 +586,9 @@ class SystemSurrogate:
                         comp_input = np.concatenate((exo_inputs, coupling_inputs), axis=-1)     # (..., xdim)
 
                         # Compute component outputs
+                        indices = index_set.get(node, None) if index_set is not None else None
                         comp_output = node_obj['surrogate'](comp_input[valid_idx, :], ground_truth=ground_truth,
-                                                            training=training)
+                                                            training=training, index_set=indices)
                         global_idx = node_obj['global_out']
                         for local_i, global_i in enumerate(global_idx):
                             x_couple_next[valid_idx, global_i] = comp_output[..., local_i]
@@ -844,7 +852,8 @@ class ComponentSurrogate(ABC):
         max_beta = (3,)*len(self.x_vars) if max_beta is None else max_beta
         self.max_refine = list(max_alpha + max_beta)    # Max refinement indices
         self.executor = executor
-        self.training_flag = True       # Keep track of which MISC coeffs are active
+        self.training_flag = None       # Keep track of which MISC coeffs are active
+        # (True=active set, False=active+candidate sets, None=Neither/unknown)
 
         # Initialize important tree-like structures
         self.surrogates = dict()        # Maps alphas -> betas -> surrogates
@@ -860,7 +869,6 @@ class ComponentSurrogate(ABC):
         # Initialize any indices that were passed in
         for alpha, beta in multi_index:
             self.activate_index(alpha, beta)
-        self.update_misc_coeffs()
 
     def activate_index(self, alpha, beta):
         """Add a multi-index to the active set and all neighbors to the candidate set
@@ -924,6 +932,7 @@ class ComponentSurrogate(ABC):
         self.index_set.append(ele)
         new_candidates = [cand for cand in new_candidates if cand not in self.candidate_set]
         self.candidate_set.extend(new_candidates)
+        self.training_flag = None   # Makes sure misc coeffs get recomputed next time
 
     def prune_index(self, alpha, beta):
         """Remove a multi-index from the candidate set"""
@@ -969,11 +978,12 @@ class ComponentSurrogate(ABC):
             yield alpha, beta
             del self.index_set[-1]
 
-    def __call__(self, x, ground_truth=False, training=False):
+    def __call__(self, x, ground_truth=False, training=False, index_set=None):
         """Evaluate the surrogate at points x
         :param x: (..., xdim) the points to be interpolated, must be within domain of x bounds
         :param ground_truth: whether to use the highest fidelity model or the surrogate (default)
         :param training: if True, then only compute with active index set, otherwise use all candidates as well
+        :param index_set: a list() of (alpha, beta) to override self.index_set if given, else ignore
         :returns y: (..., ydim) the surrogate approximation of the qois
         """
         if ground_truth:
@@ -982,21 +992,32 @@ class ComponentSurrogate(ABC):
             y = ret[0] if self.save_enabled() else ret
             return y
 
-        index_set = self.index_set if training else self.index_set + self.candidate_set
+        # Decide which index set and corresponding misc coefficients to use
+        misc_coeff = copy.deepcopy(self.misc_coeff)
+        if index_set is None:
+            # Use active indices + candidate indices depending on training mode
+            index_set = self.index_set if training else self.index_set + self.candidate_set
 
-        # MISC coefficients should be updated only on the logical XOR cases
-        if (not self.training_flag and training) or (self.training_flag and not training):
-            self.update_misc_coeffs(index_set)
+            # Decide when to update misc coefficients
+            if self.training_flag is None:
+                misc_coeff = self.update_misc_coeffs(index_set)  # On initialization or reset
+            else:
+                if (not self.training_flag and training) or (self.training_flag and not training):
+                    misc_coeff = self.update_misc_coeffs(index_set)  # Logical XOR cases for training mode
+
+            # Save an indication of what state the MISC coefficients are in (i.e. training or eval mode)
+            self.training_flag = training
+        else:
+            # If we passed in an index set, always recompute misc coeff and toggle for reset on next call
+            misc_coeff = self.update_misc_coeffs(index_set)
+            self.training_flag = None
 
         y = np.zeros(x.shape[:-1] + (self.ydim,))
         for alpha, beta in index_set:
-            comb_coeff = self.misc_coeff[str(alpha)][str(beta)]
+            comb_coeff = misc_coeff[str(alpha)][str(beta)]
             if np.abs(comb_coeff) > 0:
                 func = self.surrogates[str(alpha)][str(beta)]
                 y += comb_coeff * func(x)
-
-        # Save an indication of what state the MISC coefficients are in (i.e. training or eval mode)
-        self.training_flag = training
 
         return y
 
@@ -1011,6 +1032,7 @@ class ComponentSurrogate(ABC):
             index_mat[i, :] = alpha + beta
         index_mat = np.expand_dims(index_mat, axis=0)                               # (1, Ns, Nij)
 
+        misc_coeff = dict()
         for alpha, beta in index_set:
             # Add permutations of [0, 1] to (alpha, beta)
             alpha_beta = np.array(alpha+beta, dtype=np.uint8)[np.newaxis, :]        # (1, Nij)
@@ -1022,7 +1044,15 @@ class ComponentSurrogate(ABC):
             idx = np.any(idx, axis=-1)                                      # (2**Nij,)
             ij_use = self.ij[idx, :]                                        # (*, Nij)
             l1_norm = np.sum(np.abs(ij_use), axis=-1)                       # (*,)
-            self.misc_coeff[str(alpha)][str(beta)] = np.sum((-1) ** l1_norm)
+            coeff = np.sum((-1) ** l1_norm)                                 # float
+
+            # Save misc coeff to a dict() tree structure
+            if misc_coeff.get(str(alpha)) is None:
+                misc_coeff[str(alpha)] = dict()
+            misc_coeff[str(alpha)][str(beta)] = coeff
+            self.misc_coeff[str(alpha)][str(beta)] = coeff
+
+        return misc_coeff
 
     def get_sub_surrogate(self, alpha, beta):
         """Get the specific sub-surrogate corresponding to the (alpha,beta) fidelity
@@ -1065,6 +1095,10 @@ class ComponentSurrogate(ABC):
 
     def __repr__(self):
         s = f'Inputs \u2014 {self.x_vars}\n'
+        if self.training_flag is None:
+            self.update_misc_coeffs()
+            self.training_flag = True
+
         if self.training_flag:
             s += '(Training mode)\n'
             for alpha, beta in self.index_set:

@@ -80,7 +80,7 @@ def pem_system(root_dir=None, executor=None, init=True):
     cathode = {'name': 'Cathode', 'model': cc_pem, 'truth_alpha': (), 'exo_in': cathode_exo, 'local_in': {},
                'global_out': [0], 'max_alpha': (), 'max_beta': (3,)*len(cathode_exo), 'type': 'analytical',
                'model_args': (), 'model_kwargs': {}}
-    thruster = {'name': 'Thruster', 'model': thruster_pem, 'truth_alpha': (3, 2), 'max_alpha': (3, 2),
+    thruster = {'name': 'Thruster', 'model': thruster_pem, 'truth_alpha': (2, 2), 'max_alpha': (2, 2),
                 'exo_in': thruster_exo, 'local_in': {'Cathode': [0]}, 'global_out': list(np.arange(1, 6+r1+1)),
                 'type': 'lagrange', 'max_beta': (2,) * (len(thruster_exo) + 1), 'save_output': True,
                 'model_args': (), 'model_kwargs': {'n_jobs': -1, 'compress': True}}

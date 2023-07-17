@@ -31,11 +31,12 @@ class SparseGridSurrogate(ComponentSurrogate):
         super().__init__(*args, **kwargs)
 
     # Override super
-    def __call__(self, x, ground_truth=False, training=False):
+    def __call__(self, x, ground_truth=False, training=False, index_set=None):
         """Evaluate the surrogate at points x (use xi,yi interpolation points specific to each sub tensor-product grid)
         :param x: (..., xdim) the points to be interpolated, must be within domain of x bounds
         :param ground_truth: whether to use the highest fidelity model or the surrogate (default)
         :param training: if True, then only compute with active index set, otherwise use all candidates as well
+        :param index_set: a list() of (alpha, beta) to override self.index_set if given, else ignore
         :returns y: (..., ydim) the surrogate approximation of the qois
         """
         if ground_truth:
@@ -44,15 +45,29 @@ class SparseGridSurrogate(ComponentSurrogate):
             y = ret[0] if self.save_enabled() else ret
             return y
 
-        index_set = self.index_set if training else self.index_set + self.candidate_set
+        # Decide which index set and corresponding misc coefficients to use
+        misc_coeff = copy.deepcopy(self.misc_coeff)
+        if index_set is None:
+            # Use active indices + candidate indices depending on training mode
+            index_set = self.index_set if training else self.index_set + self.candidate_set
 
-        # MISC coefficients should be updated only on the logical XOR cases
-        if (not self.training_flag and training) or (self.training_flag and not training):
-            self.update_misc_coeffs(index_set)
+            # Decide when to update misc coefficients
+            if self.training_flag is None:
+                misc_coeff = self.update_misc_coeffs(index_set)  # On initialization or reset
+            else:
+                if (not self.training_flag and training) or (self.training_flag and not training):
+                    misc_coeff = self.update_misc_coeffs(index_set)  # Logical XOR cases for training mode
+
+            # Save an indication of what state the MISC coefficients are in (i.e. training or eval mode)
+            self.training_flag = training
+        else:
+            # If we passed in an index set, always recompute misc coeff and toggle for reset on next call
+            misc_coeff = self.update_misc_coeffs(index_set)
+            self.training_flag = None
 
         y = np.zeros(x.shape[:-1] + (self.ydim,))
         for alpha, beta in index_set:
-            comb_coeff = self.misc_coeff[str(alpha)][str(beta)]
+            comb_coeff = misc_coeff[str(alpha)][str(beta)]
             if np.abs(comb_coeff) > 0:
                 # Gather the xi/yi interpolation points/qois for this sub tensor-product grid
                 interp = self.surrogates[str(alpha)][str(beta)]
@@ -60,9 +75,6 @@ class SparseGridSurrogate(ComponentSurrogate):
 
                 # Add this sub tensor-product grid to the MISC approximation
                 y += comb_coeff * interp(x, xi=xi, yi=yi)
-
-        # Save an indication of what state the MISC coefficients are in (i.e. training or eval mode)
-        self.training_flag = training
 
         return y
 
@@ -490,9 +502,9 @@ class TensorProductInterpolator(BaseInterpolator):
         return y
 
     @staticmethod
-    def get_grid_sizes(beta):
+    def get_grid_sizes(beta, k=4):
         """Compute number of grid points in each dimension"""
-        return [2*beta[i] + 1 for i in range(len(beta))]
+        return [k*beta[i] + 1 for i in range(len(beta))]
 
     @staticmethod
     def leja_1d(N, z_bds, z_pts=None, wt_fcn=None):

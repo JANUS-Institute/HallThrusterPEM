@@ -387,7 +387,7 @@ def test_fire_sat(filename=None):
         # xt = sys.sample_exo_inputs((N,))
         # yt = sys(xt, ground_truth=True, training=False)
         # test_set = {'xt': xt, 'yt': yt}
-        sys.build_system(max_iter=10, max_tol=1e-3, max_runtime=3600, test_set=test_set)
+        sys.build_system(max_iter=20, max_tol=1e-3, max_runtime=3600, test_set=test_set, n_jobs=-1, prune_tol=1e-10)
         e = 1
         # with MPICommExecutor(MPI.COMM_WORLD, root=0) as e:
         #     if e is not None:
