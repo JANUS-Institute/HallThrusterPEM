@@ -11,6 +11,7 @@ import time
 import pickle
 import copy
 from joblib import Parallel, delayed, cpu_count
+from joblib.externals.loky import set_loky_pickler
 from scipy.interpolate import interp1d
 import uuid
 
@@ -260,6 +261,7 @@ def thruster_pem(x, alpha, *args, compress=True, output_dir=None, n_jobs=-1, **k
         flat_idx += 1
 
     # Allocate space for outputs and compute model (in parallel batches)
+    set_loky_pickler('cloudpickle')
     with tempfile.NamedTemporaryFile(suffix='.dat', mode='w+b', delete=False) as y_fd:
         pass
     y = np.memmap(y_fd.name, dtype='float32', mode='r+', shape=x.shape[:-1] + (ydim,))

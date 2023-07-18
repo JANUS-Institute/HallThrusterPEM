@@ -17,6 +17,7 @@ from pathlib import Path
 import shutil
 import matplotlib.pyplot as plt
 from joblib import Parallel, delayed, cpu_count
+from joblib.externals.loky import set_loky_pickler
 
 sys.path.append('..')
 
@@ -415,6 +416,9 @@ class SystemSurrogate:
         :param n_jobs: number of cpus for computing error indicators in parallel (use sequential if 1)
         """
         self.print_title_str(f'Refining system surrogate: iteration {self.refine_level+1}')
+        set_loky_pickler('dill')
+        temp_exc = self.executor
+        self.set_executor(None)
         if qoi_ind is None:
             qoi_ind = slice(None)
 
@@ -448,7 +452,7 @@ class SystemSurrogate:
                 return ymin, ymax, delta_error, delta_work
 
             if len(candidates) > 0:
-                with Parallel(n_jobs=n_jobs, verbose=0) as ppool:
+                with Parallel(n_jobs=n_jobs, verbose=9) as ppool:
                     ret = ppool(delayed(compute_error)(alpha, beta) for alpha, beta in candidates)
 
                 for i, (ymin, ymax, d_error, d_work) in enumerate(ret):
@@ -481,6 +485,7 @@ class SystemSurrogate:
                 self.update_coupling_bds(i, (y_min[0, i], y_max[0, i]))
 
         # Add the chosen multi-index to the chosen component
+        self.set_executor(temp_exc)
         if node_star is not None:
             self.logger.info(f"Candidate multi-index {(alpha_star, beta_star)} chosen for component '{node_star}'")
             self.graph.nodes[node_star]['surrogate'].activate_index(alpha_star, beta_star)
