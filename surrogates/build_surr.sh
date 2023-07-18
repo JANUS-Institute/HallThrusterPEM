@@ -9,7 +9,6 @@
 #SBATCH --mem-per-cpu=2g
 #SBATCH --ntasks-per-node=2
 #SBATCH --cpus-per-task=9
-#SBATCH --output=/scratch/goroda_root/goroda0/eckelsjd/HallThrusterPEM/surrogates/%x-%j.log
 #SBATCH --export=ALL
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --mail-user=eckelsjd@umich.edu

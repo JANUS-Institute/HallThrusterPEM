@@ -321,52 +321,54 @@ class SystemSurrogate:
             Nqoi = test_stats.shape[-1]
             t_fig, t_ax = plt.subplots(1, Nqoi) if Nqoi > 1 else plt.subplots()
 
-        while True:
-            # Check all end conditions
-            if self.refine_level >= max_iter:
-                self.print_title_str(f'Termination criteria reached: Max iteration {self.refine_level}/{max_iter}')
-                break
-            if curr_error == -np.inf:
-                self.print_title_str(f'Termination criteria reached: No candidates left to refine')
-                break
-            if curr_error < max_tol:
-                self.print_title_str(f'Termination criteria reached: error {curr_error} < tol {max_tol}')
-                break
-            if time.time() - t_start >= max_runtime:
-                actual = datetime.timedelta(seconds=time.time()-t_start)
-                target = datetime.timedelta(seconds=max_runtime)
-                self.print_title_str(f'Termination criteria reached: runtime {str(actual)} > {str(target)}')
-                break
+        # Setup a parallel pool of workers, sequential if n_jobs=1
+        with Parallel(n_jobs=n_jobs, verbose=0) as ppool:
+            while True:
+                # Check all end conditions
+                if self.refine_level >= max_iter:
+                    self.print_title_str(f'Termination criteria reached: Max iteration {self.refine_level}/{max_iter}')
+                    break
+                if curr_error == -np.inf:
+                    self.print_title_str(f'Termination criteria reached: No candidates left to refine')
+                    break
+                if curr_error < max_tol:
+                    self.print_title_str(f'Termination criteria reached: error {curr_error} < tol {max_tol}')
+                    break
+                if time.time() - t_start >= max_runtime:
+                    actual = datetime.timedelta(seconds=time.time()-t_start)
+                    target = datetime.timedelta(seconds=max_runtime)
+                    self.print_title_str(f'Termination criteria reached: runtime {str(actual)} > {str(target)}')
+                    break
 
-            # Refine surrogate and save progress
-            curr_error = self.refine(qoi_ind=qoi_ind, N_refine=N_refine, update_bounds=update_bounds,
-                                     prune_tol=prune_tol, n_jobs=n_jobs)
-            if save_interval > 0 and self.refine_level % save_interval == 0:
-                self.save_to_file(f'sys_iter_{self.refine_level}.pkl')
+                # Refine surrogate and save progress
+                curr_error = self.refine(qoi_ind=qoi_ind, N_refine=N_refine, update_bounds=update_bounds,
+                                         prune_tol=prune_tol, ppool=ppool)
+                if save_interval > 0 and self.refine_level % save_interval == 0:
+                    self.save_to_file(f'sys_iter_{self.refine_level}.pkl')
 
-            # Plot progress of maximum error indicator
-            err_record.append(curr_error)
-            err_ax.clear(); err_ax.grid(); err_ax.plot(err_record, '-k')
-            ax_default(err_ax, 'Iteration', 'Max error indicator', legend=False)
-            err_ax.set_yscale('log')
-            err_fig.savefig(str(Path(self.root_dir) / 'error_indicator.png'), dpi=300, format='png')
+                # Plot progress of maximum error indicator
+                err_record.append(curr_error)
+                err_ax.clear(); err_ax.grid(); err_ax.plot(err_record, '-k')
+                ax_default(err_ax, 'Iteration', 'Max error indicator', legend=False)
+                err_ax.set_yscale('log')
+                err_fig.savefig(str(Path(self.root_dir) / 'error_indicator.png'), dpi=300, format='png')
 
-            # Plot progress on test set
-            if test_set is not None:
-                stats = self.get_test_metrics(xt, yt, qoi_ind=qoi_ind)
-                test_stats = np.concatenate((test_stats, stats[np.newaxis, ...]), axis=0)
-                for i in range(Nqoi):
-                    ax = t_ax if Nqoi == 1 else t_ax[i]
-                    ax.clear(); ax.grid(); ax.set_yscale('log')
-                    ax.plot(test_stats[:, 4, i], '-g', label='Median')
-                    ax.plot(test_stats[:, 7, i], '-k', label='Mean')
-                    ax.plot(test_stats[:, 6, i], '-r', label='Max')
-                    ax.set_title(f'QoI {i}')
-                    ax_default(ax, 'Iteration', 'Relative percent difference', legend=True)
-                t_fig.set_size_inches(4*Nqoi, 3.5)
-                t_fig.tight_layout()
-                t_fig.savefig(str(Path(self.root_dir) / 'rpd.png'), dpi=300, format='png')
-                self.build_metrics['test_stats'] = test_stats
+                # Plot progress on test set
+                if test_set is not None:
+                    stats = self.get_test_metrics(xt, yt, qoi_ind=qoi_ind)
+                    test_stats = np.concatenate((test_stats, stats[np.newaxis, ...]), axis=0)
+                    for i in range(Nqoi):
+                        ax = t_ax if Nqoi == 1 else t_ax[i]
+                        ax.clear(); ax.grid(); ax.set_yscale('log')
+                        ax.plot(test_stats[:, 4, i], '-g', label='Median')
+                        ax.plot(test_stats[:, 7, i], '-k', label='Mean')
+                        ax.plot(test_stats[:, 6, i], '-r', label='Max')
+                        ax.set_title(f'QoI {i}')
+                        ax_default(ax, 'Iteration', 'Relative percent difference', legend=True)
+                    t_fig.set_size_inches(4*Nqoi, 3.5)
+                    t_fig.tight_layout()
+                    t_fig.savefig(str(Path(self.root_dir) / 'rpd.png'), dpi=300, format='png')
+                    self.build_metrics['test_stats'] = test_stats
 
         self.build_metrics['err_record'] = err_record
         self.save_to_file(f'sys_final.pkl')
@@ -404,7 +406,7 @@ class SystemSurrogate:
                               f'{stats[7, i]: 10.3f}')
         return stats
 
-    def refine(self, qoi_ind=None, N_refine=100, update_bounds=True, prune_tol=1e-10, n_jobs=-1):
+    def refine(self, qoi_ind=None, N_refine=100, update_bounds=True, prune_tol=1e-10, ppool=None):
         """Find and refine the component surrogate with the largest error on system QoI
         :param qoi_ind: list(), Indices of system QoI to focus surrogate refinement on, use all QoI if not specified
         :param N_refine: number of samples of exogenous inputs to compute error indicators on
@@ -413,11 +415,11 @@ class SystemSurrogate:
                           normalized value and is independent of scale; prune_tol essentially acts as a numerical
                           tolerance for indicating when a candidate surrogate multi-index has negligible effect on
                           improving system QoI prediction
-        :param n_jobs: number of cpus for computing error indicators in parallel (use sequential if 1)
+        :param ppool: a Parallel pool instance from joblib to compute error indicators in parallel, otherwise sequential
         """
         self.print_title_str(f'Refining system surrogate: iteration {self.refine_level+1}')
-        set_loky_pickler('dill')
-        temp_exc = self.executor
+        set_loky_pickler('dill')    # Dill can serialize 'self' for parallel workers
+        temp_exc = self.executor    # It can't serialize an executor though, so must save this temporarily
         self.set_executor(None)
         if qoi_ind is None:
             qoi_ind = slice(None)
@@ -452,8 +454,8 @@ class SystemSurrogate:
                 return ymin, ymax, delta_error, delta_work
 
             if len(candidates) > 0:
-                with Parallel(n_jobs=n_jobs, verbose=9) as ppool:
-                    ret = ppool(delayed(compute_error)(alpha, beta) for alpha, beta in candidates)
+                ret = ppool(delayed(compute_error)(alpha, beta) for alpha, beta in candidates) if ppool is not None \
+                    else [compute_error(alpha, beta) for alpha, beta in candidates]
 
                 for i, (ymin, ymax, d_error, d_work) in enumerate(ret):
                     if update_bounds:
