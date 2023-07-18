@@ -284,14 +284,14 @@ class SystemSurrogate:
             self.logger.info(f"Initialized component '{node}'.")
 
     @save_on_error
-    def build_system(self, qoi_ind=None, N_refine=100, max_iter=20, max_tol=0.001, max_runtime=60, save_interval=0,
+    def build_system(self, qoi_ind=None, N_refine=100, max_iter=20, max_tol=0.001, max_runtime=1, save_interval=0,
                      prune_tol=1e-10, update_bounds=True, test_set=None, continue_plot=True, n_jobs=-1):
         """Build the system surrogate by iterative refinement until an end condition is met
         :param qoi_ind: list(), Indices of system QoI to focus refinement on, use all QoI if not specified
         :param N_refine: number of samples of exogenous inputs to compute error indicators on
         :param max_iter: the maximum number of refinement steps to take
         :param max_tol: the max allowable value in normalized RMSE to achieve (in units of 'pct of QoI mean')
-        :param max_runtime: the maximum wall clock time (s) to run refinement for (will go until all models finish)
+        :param max_runtime: the maximum wall clock time (hr) to run refinement for (will go until all models finish)
         :param save_interval (int) number of refinement steps between each progress save, none if 0
         :param prune_tol: numerical tolerance in NRMSE below which a candidate multi-index is removed from consideration
         :param update_bounds: whether to continuously update coupling variable bounds during refinement
@@ -334,9 +334,9 @@ class SystemSurrogate:
                 if curr_error < max_tol:
                     self.print_title_str(f'Termination criteria reached: error {curr_error} < tol {max_tol}')
                     break
-                if time.time() - t_start >= max_runtime:
+                if ((time.time() - t_start)/3600.0) >= max_runtime:
                     actual = datetime.timedelta(seconds=time.time()-t_start)
-                    target = datetime.timedelta(seconds=max_runtime)
+                    target = datetime.timedelta(seconds=max_runtime*3600)
                     self.print_title_str(f'Termination criteria reached: runtime {str(actual)} > {str(target)}')
                     break
 

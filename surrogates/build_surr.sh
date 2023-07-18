@@ -4,11 +4,11 @@
 #SBATCH --job-name=build_surr
 #SBATCH --account=goroda0
 #SBATCH --partition=standard
-#SBATCH --time=00-01:00:00
-#SBATCH --nodes=1
-#SBATCH --mem-per-cpu=2g
+#SBATCH --time=00-16:00:00
+#SBATCH --nodes=2
+#SBATCH --mem-per-cpu=4g
 #SBATCH --ntasks-per-node=2
-#SBATCH --cpus-per-task=9
+#SBATCH --cpus-per-task=18
 #SBATCH --export=ALL
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --mail-user=eckelsjd@umich.edu
