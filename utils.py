@@ -22,10 +22,13 @@ class ModelRunException(Exception):
 class BaseRV(ABC):
     """Small wrapper class for scipy.stats random variables"""
 
-    def __init__(self):
+    def __init__(self, disp='', long_label=''):
         """Child classes must define bounds and sample/pdf functions"""
-        self.bds = None     # (tuple)
-        self.disp = ''      # Display name for printing
+        self.bds = None                 # (tuple)
+        self.disp = disp                # Display name for printing in console
+        self.long_label = long_label    # Descriptive string/label for plots
+        if self.long_label == '':
+            self.long_label = self.disp
 
     def __repr__(self):
         return self.disp
@@ -54,10 +57,14 @@ class BaseRV(ABC):
 
 class UniformRV(BaseRV):
 
-    def __init__(self, a, b, name=''):
-        super().__init__()
-        self.disp = f'U({a}, {b})' if name == '' else name
+    def __init__(self, a, b, **kwargs):
+        super().__init__(**kwargs)
         self.bds = (a, b)
+        name = f'U({self.bds[0]}, {self.bds[1]})'
+        if self.disp == '':
+            self.disp = name
+        if self.long_label == '':
+            self.long_label = name
 
     def pdf(self, x):
         y = np.broadcast_to(1 / (self.bds[1] - self.bds[0]), x.shape).copy()
@@ -70,16 +77,24 @@ class UniformRV(BaseRV):
 
     def update_bounds(self, lb, ub):
         self.bds = (lb, ub)
-        self.disp = f'U({lb}, {ub})'
+        name = f'U({self.bds[0]}, {self.bds[1]})'
+        if self.disp.startswith('U('):
+            self.disp = name
+        if self.long_label.startswith('U('):
+            self.long_label = name
 
 
 class LogUniformRV(BaseRV):
     """Base 10 loguniform"""
 
-    def __init__(self, log10_a, log10_b, name=''):
-        super().__init__()
+    def __init__(self, log10_a, log10_b, **kwargs):
+        super().__init__(**kwargs)
         self.bds = (10**log10_a, 10**log10_b)
-        self.disp = f'LU({log10_a}, {log10_b})' if name == '' else name
+        name = f'LU({log10_a}, {log10_b})'
+        if self.disp == '':
+            self.disp = name
+        if self.long_label == '':
+            self.long_label = name
 
     def pdf(self, x):
         return np.log10(np.e) / (x * (np.log10(self.bds[1]) - np.log10(self.bds[0])))
@@ -93,13 +108,17 @@ class LogUniformRV(BaseRV):
 class LogNormalRV(BaseRV):
     """Base 10 lognormal"""
 
-    def __init__(self, mu, std, name=''):
+    def __init__(self, mu, std, **kwargs):
         """Init with the mean and standard deviation of the underlying distribution, i.e. log10(x) ~ N(mu, std)"""
-        super().__init__()
+        super().__init__(**kwargs)
         self.std = std
         self.mu = mu
         self.bds = (10**(mu - 4*std), 10**(mu + 4*std))
-        self.disp = f'LN_10({mu}, {std})' if name == '' else name
+        name = f'LN_10({mu}, {std})'
+        if self.disp == '':
+            self.disp = name
+        if self.long_label == '':
+            self.long_label = name
 
     def pdf(self, x):
         return (np.log10(np.e) / (x * self.std * np.sqrt(2 * np.pi))) * \
@@ -113,12 +132,16 @@ class LogNormalRV(BaseRV):
 
 class NormalRV(BaseRV):
 
-    def __init__(self, mean, std, name=''):
-        super().__init__()
-        self.disp = f'N({mean}, {std})' if name == '' else name
+    def __init__(self, mean, std, **kwargs):
+        super().__init__(**kwargs)
         self.mu = mean
         self.std = std
         self.bds = (mean - 4*std, mean + 4*std)
+        name = f'N({mean}, {std})'
+        if self.disp == '':
+            self.disp = name
+        if self.long_label == '':
+            self.long_label = name
 
     def pdf(self, x):
         return (1 / (np.sqrt(2 * np.pi) * self.std)) * np.exp(-0.5 * ((x - self.mu) / self.std) ** 2)

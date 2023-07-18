@@ -20,10 +20,10 @@ def cc_system():
     d = 5
     idx = list(np.arange(d))
     # UniformRV(200, 400, 'Va')
-    exo_vars = [UniformRV(-8, -3, 'PB'), UniformRV(1, 5, 'T_ec'), UniformRV(0, 60, 'V_vac'),
-                UniformRV(1, 10, 'P*'), UniformRV(1, 10, 'PT')]
+    exo_vars = [UniformRV(-8, -3, disp='PB'), UniformRV(1, 5, disp='T_ec'), UniformRV(0, 60, disp='V_vac'),
+                UniformRV(1, 10, disp='P*'), UniformRV(1, 10, disp='PT')]
     vars = [var for i, var in enumerate(exo_vars) if i in idx]
-    coupling_vars = [UniformRV(0, 60, 'V_cc')]
+    coupling_vars = [UniformRV(0, 60, disp='V_cc')]
     cathode = {'name': 'Cathode', 'model': cc_pem, 'truth_alpha': (), 'exo_in': idx, 'local_in': {},
                'global_out': [0], 'max_alpha': (), 'max_beta': (3,)*d, 'type': 'lagrange',
                'model_args': (), 'model_kwargs': {}}
@@ -140,7 +140,7 @@ def plot_cathode():
     z = cc_pem(x)
 
     # Set up interpolant
-    x_vars = [UniformRV(-8, -3, 'PB'), UniformRV(1, 5, 'Tec')]
+    x_vars = [UniformRV(-8, -3, disp='PB'), UniformRV(1, 5, disp='Tec')]
     interp = TensorProductInterpolator((3, 3), x_vars, model=cc_pem)
     interp.set_yi()
 
@@ -199,8 +199,74 @@ def plot_cathode():
     plt.show()
 
 
+def plot_sys():
+    # Load the full SystemSurrogate
+    save_dir = 'build_2023-07-18T01.48.39'
+    root_dir = Path('../surrogates') / save_dir
+    surr = SystemSurrogate.load_from_file(root_dir / 'sys' / 'sys_final.pkl', root_dir=root_dir)
+
+    # 1d slice test set(s) for plotting
+    N = 100
+    qoi_idx = [0, 1, 2]
+    ylabels = [surr.coupling_vars[idx].long_label for idx in qoi_idx]
+    slice_idx = [0, 1, 2]
+    bds = [var.bounds() for var in surr.exo_vars]
+    xs = np.zeros((N, len(slice_idx), len(bds)))
+    for i in range(len(slice_idx)):
+        for j in range(len(bds)):
+            if j == slice_idx[i]:
+                xs[:, i, j] = np.linspace(bds[j][0], bds[j][1], N)  # 1d slice of input parameter of interest
+            else:
+                xs[:, i, j] = (bds[j][0] + bds[j][1]) / 2   # Middle of input domain
+    ys = surr(xs)
+
+    fig, axe = plt.subplots(len(qoi_idx), len(slice_idx), sharex='col')
+    for i in range(len(qoi_idx)):
+        for j in range(len(slice_idx)):
+            ax = axe[i, j]
+            x = xs[:, j, slice_idx[j]]
+            y = ys[:, j, qoi_idx[i]]
+            ax.plot(x, y, '--r')
+            ylabel = ylabels[i] if j == 0 else ''
+            if i == 0:
+                ax.set_title(f'Input: {surr.exo_vars[slice_idx[j]]}')
+            ax_default(ax, '', ylabel, legend=False)
+    fig.set_size_inches(3*len(slice_idx), 3*len(qoi_idx))
+    fig.tight_layout()
+    plt.show()
+
+    # Show error distribution on test set
+    with open(Path('../surrogates') / 'test_set.pkl', 'rb') as fd:
+        test_set = pickle.load(fd)  # Dict('xt': array(Nt, xdim), 'yt': array(Nt, ydim))
+        xt = test_set['xt']
+        yt = test_set['yt']
+    ysurr = surr(xt)
+    ysurr = ysurr[:, qoi_idx]
+    yt = yt[:, qoi_idx]
+    with np.errstate(divide='ignore', invalid='ignore'):
+        rpd = 2 * np.abs(ysurr - yt) / (np.abs(ysurr) + np.abs(yt))  # RPD\in [0, 2]
+        rpd[np.logical_and(ysurr == 0, yt == 0)] = 0
+
+    # Print stats/histogram for each QoI
+    fig, ax = plt.subplots(1, len(qoi_idx))
+    stats = np.zeros((6, yt.shape[-1]))
+    print(f'{"QoI":>20} {"Min":>10} {"25th pct":>10} {"50th pct":>10} {"75th pct":>10} {"Max":>10} {"Mean":>10}')
+    for i in range(yt.shape[-1]):
+        stats[:, i] = np.array([np.min(rpd[:, i]), np.percentile(rpd[:, i], 25),
+                                np.percentile(rpd[:, i], 50), np.percentile(rpd[:, i], 75), np.max(rpd[:, i]),
+                                np.mean(rpd[:, i])])
+        print(f'{ylabels[i]:>20} {stats[0, i]: 10.3f} {stats[1, i]: 10.3f} {stats[2, i]: 10.3f} {stats[3, i]: 10.3f} '
+              f'{stats[4, i]: 10.3f} {stats[5, i]: 10.3f}')
+        ax[i].hist(rpd[:, i], density=True, bins=50, color='r', edgecolor='black', linewidth=1.2)
+        ax_default(ax[i], f'{ylabels[i]}', '', legend=False)
+    fig.set_size_inches(3*len(qoi_idx), 3)
+    fig.tight_layout()
+    plt.show()
+
+
 if __name__ == '__main__':
     # test_convergence(system='Borehole')
     # test_convergence(system='Wing', max_iter=20)
     # test_convergence(system='Cathode', max_iter=30)
-    plot_cathode()
+    # plot_cathode()
+    plot_sys()

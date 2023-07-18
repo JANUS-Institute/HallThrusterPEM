@@ -233,9 +233,9 @@ def fire_sat_system():
     attitude = {'name': 'Attitude', 'model': attitude_fun, 'truth_alpha': (), 'exo_in': [0, 3, 4, 5, 6, 7],
                 'max_alpha': (), 'local_in': {'Orbit': [0, 3], 'Power': [0, 1]}, 'global_out': [8, 9],
                 'type': 'lagrange', 'max_beta': (3,)*10, 'save_output': False}
-    exo_vars = [NormalRV(18e6, 1e6, 'H'), NormalRV(235e3, 10e3, '\u03D5'), NormalRV(1000, 50, 'Po'),
-                NormalRV(1400, 20, 'Fs'), NormalRV(2, 0.4, 'Lsp'), NormalRV(0.5, 0.1, 'q'), NormalRV(2, 0.4, 'La'),
-                NormalRV(1, 0.2, 'Cd')]
+    exo_vars = [NormalRV(18e6, 1e6, disp='H'), NormalRV(235e3, 10e3, disp='\u03D5'), NormalRV(1000, 50, disp='Po'),
+                NormalRV(1400, 20, disp='Fs'), NormalRV(2, 0.4, disp='Lsp'), NormalRV(0.5, 0.1, disp='q'),
+                NormalRV(2, 0.4, disp='La'), NormalRV(1, 0.2, disp='Cd')]
     coupling_vars = [UniformRV(2000, 6000), UniformRV(20000, 60000), UniformRV(1000, 5000), UniformRV(0, 4),
                      UniformRV(0, 12000), UniformRV(0, 12000), UniformRV(0, 10000), UniformRV(0, 50),
                      UniformRV(0, 100), UniformRV(0, 5)]

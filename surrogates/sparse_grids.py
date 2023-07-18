@@ -486,7 +486,7 @@ class TensorProductInterpolator(BaseInterpolator):
 
                 # Compute the jth Lagrange basis polynomial L_j(x_n) for this x dimension (in barycentric form)
                 c = x_n - x_j
-                div_zero_idx = np.abs(c) <= 1e-4 * x_j + 1e-8   # Track where x is approx at an interpolation pnt x_j
+                div_zero_idx = np.abs(c) <= 1e-4 * np.abs(x_j) + 1e-8   # Track where x is at an interpolation pnt x_j
                 c[div_zero_idx] = 1                             # Temporarily set to 1 to avoid divide by zero error
                 c = w_j / c
                 L_j[..., n] = c[..., j[n]] / np.sum(c, axis=-1)  # (...) same size as original x
@@ -502,7 +502,7 @@ class TensorProductInterpolator(BaseInterpolator):
         return y
 
     @staticmethod
-    def get_grid_sizes(beta, k=4):
+    def get_grid_sizes(beta, k=2):
         """Compute number of grid points in each dimension"""
         return [k*beta[i] + 1 for i in range(len(beta))]
 
