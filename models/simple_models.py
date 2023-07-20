@@ -46,6 +46,11 @@ def tanh_func(x, A=2, L=1, frac=4):
     return A*np.tanh(2/(L/frac)*(x-L/2)) + A + 1
 
 
+def ishigami(x, a=7.0, b=0.1):
+    """For testing Sobol indices: https://doi.org/10.1109/ISUMA.1990.151285"""
+    return np.sin(x[..., 0:1]) + a*np.sin(x[..., 1:2])**2 + b*(x[..., 2:3]**4)*np.sin(x[..., 0:1])
+
+
 def borehole_func(x, *args, **kwargs):
     """Model found at https://www.sfu.ca/~ssurjano/borehole.html
     :returns vdot: Water flow rate in m^3/yr

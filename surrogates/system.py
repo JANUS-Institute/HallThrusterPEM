@@ -727,6 +727,14 @@ class SystemSurrogate:
             self.set_executor(exec_temp)
             self.logger.info(f'SystemSurrogate saved to {(Path(save_dir) / filename).resolve()}')
 
+    def set_output_dir(self, set_dict):
+        """Set the output directory for each component in set_dict
+        :param set_dict: a dict() of component names (str) to their new output directories to set
+        """
+        for node, node_obj in self.graph.nodes.items():
+            if node in set_dict:
+                node_obj['surrogate'].set_output_dir(set_dict.get(node))
+
     def set_root_directory(self, dir):
         """Set the root to a new directory, for example if you move to a new system
         :param dir: str() or Path specifying new root directory
@@ -1095,10 +1103,12 @@ class ComponentSurrogate(ABC):
         """Update the component model output directory
         :param output_dir: str() or Path specifying new directory for model output files
         """
-        self._model_kwargs['output_dir'] = str(Path(output_dir).resolve())
+        if output_dir is not None:
+            output_dir = str(Path(output_dir).resolve())
+        self._model_kwargs['output_dir'] = output_dir
         for alpha in self.surrogates:
             for beta in self.surrogates[alpha]:
-                self.surrogates[alpha][beta]._model_kwargs['output_dir'] = str(Path(output_dir).resolve())
+                self.surrogates[alpha][beta]._model_kwargs['output_dir'] = output_dir
 
     def __repr__(self):
         s = f'Inputs \u2014 {self.x_vars}\n'
