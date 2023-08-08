@@ -9,7 +9,7 @@ dependencies:
   - pip:
       - juliacall
       - juliapkg
-      - matplotlib
+      - matplotlib=3.7.0
       - joblib
       - networkx
       - dill

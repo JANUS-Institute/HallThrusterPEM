@@ -1,7 +1,6 @@
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib import ticker
 from matplotlib import cm
 from pathlib import Path
 import pickle
@@ -14,6 +13,7 @@ from models.cc import cc_pem
 from surrogates.sparse_grids import TensorProductInterpolator
 from surrogates.system import SystemSurrogate
 from models.simple_models import borehole_system, wing_weight_system
+from uq.mcmc import ndscatter
 
 
 def cc_system():
@@ -211,37 +211,38 @@ def plot_sys():
     N = 100
     qoi_idx = [2]
     # ylabels = [surr.coupling_vars[idx].long_label for idx in qoi_idx]
+    ylabels = [str(surr.coupling_vars[idx]) for idx in qoi_idx]
     default_val = [-5, 300, 5, 2, 30, 2.87, 1, 200, 0.2, 11, -2.1, 6, 0.08, 1000, 300, 300, 0.5, 0.3, 9.73, 0.26,
                    19.5, 16, 55, 1]
     # default_val = [(bds[j][0] + bds[j][1]) / 2 for j, bds in enumerate(exo_bds)]  # Middle of domain
     slice_idx = [1]
 
-    xs = np.zeros((N, len(slice_idx), len(exo_bds)))
-    for i in range(len(slice_idx)):
-        for j in range(len(exo_bds)):
-            if j == slice_idx[i]:
-                xs[:, i, j] = np.linspace(exo_bds[j][0], exo_bds[j][1], N)  # 1d slice of input parameter of interest
-            else:
-                xs[:, i, j] = default_val[j]
-    ys = surr(xs)
+    # xs = np.zeros((N, len(slice_idx), len(exo_bds)))
+    # for i in range(len(slice_idx)):
+    #     for j in range(len(exo_bds)):
+    #         if j == slice_idx[i]:
+    #             xs[:, i, j] = np.linspace(exo_bds[j][0], exo_bds[j][1], N)  # 1d slice of input parameter of interest
+    #         else:
+    #             xs[:, i, j] = default_val[j]
+    # ys = surr(xs)
 
     # Plot 1d slice of surrogate vs. truth for Thrust
-    ytruth = surr(xs, ground_truth=True, verbose=True)
+    # ytruth = surr(xs, ground_truth=True, verbose=True)
     # ytruth = ys + np.random.randn(*ys.shape)*np.sqrt(0.5e-5)
     # ytruth[np.random.randint(N), 0, 2] = np.nan
-    va = xs[:, 0, 1]
-    thrust_surr = ys[:, 0, 2]
-    thrust_true = ytruth[:, 0, 2]
-    nan_idx = np.isnan(thrust_true)
-    if np.any(nan_idx):
-        thrust_true[nan_idx] = np.interp(va[nan_idx], va[~nan_idx], thrust_true[~nan_idx])
-    fig, ax = plt.subplots()
-    ax.plot(va, 1000*thrust_true, '-k', label='Model')
-    ax.plot(va, 1000*thrust_surr, '--r', label='Surrogate')
-    ax_default(ax, 'Anode voltage [V]', 'Thrust [mN]', legend=True)
-    fig.tight_layout()
-    fig.savefig('surrogate_thrust.png', dpi=300, format='png')
-    plt.show()
+    # va = xs[:, 0, 1]
+    # thrust_surr = ys[:, 0, 2]
+    # thrust_true = ytruth[:, 0, 2]
+    # nan_idx = np.isnan(thrust_true)
+    # if np.any(nan_idx):
+    #     thrust_true[nan_idx] = np.interp(va[nan_idx], va[~nan_idx], thrust_true[~nan_idx])
+    # fig, ax = plt.subplots()
+    # ax.plot(va, 1000*thrust_true, '-k', label='Model')
+    # ax.plot(va, 1000*thrust_surr, '--r', label='Surrogate')
+    # ax_default(ax, 'Anode voltage [V]', 'Thrust [mN]', legend=True)
+    # fig.tight_layout()
+    # fig.savefig('surrogate_thrust.png', dpi=300, format='png')
+    # plt.show()
 
     # fig, axe = plt.subplots(len(qoi_idx), len(slice_idx), sharex='col')
     # for i in range(len(qoi_idx)):
@@ -257,34 +258,41 @@ def plot_sys():
     # fig.set_size_inches(3*len(slice_idx), 3*len(qoi_idx))
     # fig.tight_layout()
     # plt.show()
-    #
-    # # Show error distribution on test set
-    # with open(Path('../surrogates') / 'test_set.pkl', 'rb') as fd:
-    #     test_set = pickle.load(fd)  # Dict('xt': array(Nt, xdim), 'yt': array(Nt, ydim))
-    #     xt = test_set['xt']
-    #     yt = test_set['yt']
-    # ysurr = surr(xt)
-    # ysurr = ysurr[:, qoi_idx]
-    # yt = yt[:, qoi_idx]
-    # with np.errstate(divide='ignore', invalid='ignore'):
-    #     rpd = 2 * np.abs(ysurr - yt) / (np.abs(ysurr) + np.abs(yt))  # RPD\in [0, 2]
-    #     rpd[np.logical_and(ysurr == 0, yt == 0)] = 0
-    #
-    # # Print stats/histogram for each QoI
-    # fig, ax = plt.subplots(1, len(qoi_idx))
-    # stats = np.zeros((6, yt.shape[-1]))
-    # print(f'{"QoI":>20} {"Min":>10} {"25th pct":>10} {"50th pct":>10} {"75th pct":>10} {"Max":>10} {"Mean":>10}')
+
+    # Show error distribution on test set
+    with open(Path('../surrogates') / 'test_set.pkl', 'rb') as fd:
+        test_set = pickle.load(fd)  # Dict('xt': array(Nt, xdim), 'yt': array(Nt, ydim))
+        xt = test_set['xt']
+        yt = test_set['yt']
+    ysurr = surr(xt)
+    ysurr = ysurr[:, qoi_idx]
+    yt = yt[:, qoi_idx]
+    with np.errstate(divide='ignore', invalid='ignore'):
+        rpd = 2 * np.abs(ysurr - yt) / (np.abs(ysurr) + np.abs(yt))  # RPD\in [0, 2]
+        rpd[np.logical_and(ysurr == 0, yt == 0)] = 0
+
+    # Print stats/histogram for each QoI
+    fig, axs = plt.subplots(1, len(qoi_idx))
+    stats = np.zeros((6, yt.shape[-1]))
+    print(f'{"QoI":>20} {"Min":>10} {"25th pct":>10} {"50th pct":>10} {"75th pct":>10} {"Max":>10} {"Mean":>10}')
+    for i in range(yt.shape[-1]):
+        ax = axs[i] if len(qoi_idx) > 1 else axs
+        stats[:, i] = np.array([np.min(rpd[:, i]), np.percentile(rpd[:, i], 25),
+                                np.percentile(rpd[:, i], 50), np.percentile(rpd[:, i], 75), np.max(rpd[:, i]),
+                                np.mean(rpd[:, i])])
+        print(f'{ylabels[i]:>20} {stats[0, i]: 10.3f} {stats[1, i]: 10.3f} {stats[2, i]: 10.3f} {stats[3, i]: 10.3f} '
+              f'{stats[4, i]: 10.3f} {stats[5, i]: 10.3f}')
+        ax.hist(rpd[:, i], density=True, bins=50, color='r', edgecolor='black', linewidth=1.2)
+        ax_default(ax, f'{ylabels[i]}', '', legend=False)
+    fig.set_size_inches(3*len(qoi_idx), 3)
+    fig.tight_layout()
+    plt.show()
+
+    # Make triangle plots of error over input space
+    # labels = [str(var) for var in surr.exo_vars]
     # for i in range(yt.shape[-1]):
-    #     stats[:, i] = np.array([np.min(rpd[:, i]), np.percentile(rpd[:, i], 25),
-    #                             np.percentile(rpd[:, i], 50), np.percentile(rpd[:, i], 75), np.max(rpd[:, i]),
-    #                             np.mean(rpd[:, i])])
-    #     print(f'{ylabels[i]:>20} {stats[0, i]: 10.3f} {stats[1, i]: 10.3f} {stats[2, i]: 10.3f} {stats[3, i]: 10.3f} '
-    #           f'{stats[4, i]: 10.3f} {stats[5, i]: 10.3f}')
-    #     ax[i].hist(rpd[:, i], density=True, bins=50, color='r', edgecolor='black', linewidth=1.2)
-    #     ax_default(ax[i], f'{ylabels[i]}', '', legend=False)
-    # fig.set_size_inches(3*len(qoi_idx), 3)
-    # fig.tight_layout()
-    # plt.show()
+    #     fig, ax, cb_fig, cb_ax = ndscatter(xt, plot='scatter', cmap='viridis', labels=labels, z=rpd[:, i],
+    #                                        cb_label='Relative percent difference', subplot_size=1.5, cb_norm='linear')
 
 
 if __name__ == '__main__':

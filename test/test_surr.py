@@ -39,9 +39,9 @@ def test_tensor_product_1d():
     y_interp = interp(x_grid)
 
     # Refine
-    beta2 = [4]
-    interp2 = interp.refine(beta2)
-    y2_interp = interp2(x_grid)
+    # beta2 = [4]
+    # interp2 = interp.refine(beta2)
+    # y2_interp = interp2(x_grid)
 
     # Compute errors
     N = 1000
@@ -49,23 +49,24 @@ def test_tensor_product_1d():
     ytest = interp(xtest)
     ytruth = tanh_func(xtest)
     yerror = (np.abs(ytest - ytruth) / ytruth) * 100
-    y2test = interp2(xtest)
-    y2error = (np.abs(y2test - ytruth) / ytruth) * 100
+    # y2test = interp2(xtest)
+    # y2error = (np.abs(y2test - ytruth) / ytruth) * 100
 
     # Print results
     print('Interpolation errors:')
     print_stats(yerror)
-    print('\nRefined interpolation errors:')
-    print_stats(y2error)
+    # print('\nRefined interpolation errors:')
+    # print_stats(y2error)
 
     fig, ax = plt.subplots()
-    ax.plot(x_grid, y_grid, '-k', label='Truth')
-    ax.plot(interp.xi, interp.yi, 'or', markersize=8, label=r'$x_{interp}$')
-    ax.plot(x_grid, y_interp, '-r', label=r'Interpolant')
-    ax.plot(interp2.xi, interp2.yi, 'ob', markersize=4, label=r'$x$ refined')
-    ax.plot(x_grid, y2_interp, '-b', label=r'Refined')
-    ax_default(ax, r'$x$', r'$f(x)$', legend=True)
+    ax.plot(x_grid, y_grid, '-k', label='Model')
+    ax.plot(interp.xi, interp.yi, 'or', markersize=6, label=r'Training data')
+    ax.plot(x_grid, y_interp, '-r', label=r'Surrogate')
+    # ax.plot(interp2.xi, interp2.yi, 'ob', markersize=4, label=r'$x$ refined')
+    # ax.plot(x_grid, y2_interp, '-b', label=r'Refined')
+    ax_default(ax, r'Axial distance from anode', r'Ion velocity profile', legend=True)
     fig.tight_layout()
+    fig.savefig('surrogate.png', dpi=300, format='png')
     plt.show()
 
 
@@ -75,7 +76,7 @@ def test_tensor_product_2d():
     #     y = np.cos(2*np.pi*x[..., 0])*np.cos(2*np.pi*x[..., 1])
     #     return y[..., np.newaxis]
     bb_2d_func = lambda x: custom_nonlinear(x, env_var=0.2**2, wave_amp=0.3)
-    beta = [5, 5]
+    beta = [2, 2]
     x_vars = [UniformRV(0, 1), UniformRV(0, 1)]
     N = 50
     x_grid = np.linspace(0, 1, N)
@@ -92,47 +93,64 @@ def test_tensor_product_2d():
     error = np.abs(z_interp - z)
 
     # Refine interpolant
-    beta2 = [5, 9]
-    interp2 = interp.refine(beta2)
-    z2_interp = interp2(x)
-    error2 = np.abs(z2_interp - z)
-    vmin = min(np.min(z_interp), np.min(z), np.min(z2_interp))
-    vmax = max(np.max(z_interp), np.max(z), np.max(z2_interp))
-    emin = min(np.min(error), np.min(error2))
-    emax = max(np.max(error), np.max(error2))
+    # beta2 = [5, 9]
+    # interp2 = interp.refine(beta2)
+    # z2_interp = interp2(x)
+    # error2 = np.abs(z2_interp - z)
+    # vmin = min(np.min(z_interp), np.min(z), np.min(z2_interp))
+    # vmax = max(np.max(z_interp), np.max(z), np.max(z2_interp))
+    # emin = min(np.min(error), np.min(error2))
+    # emax = max(np.max(error), np.max(error2))
+    vmin = min(np.min(z_interp), np.min(z))
+    vmax = max(np.max(z_interp), np.max(z))
 
-    fig, ax = plt.subplots(2, 3)
-    c1 = ax[0, 0].contourf(xg.squeeze(), yg.squeeze(), z.squeeze(), 60, cmap=cm.coolwarm, vmin=vmin, vmax=vmax)
-    plt.colorbar(c1, ax=ax[0, 0])
-    ax[0, 0].set_title('True function')
-    ax_default(ax[0, 0], r'$x_1$', r'$x_2$', legend=False)
-    c2 = ax[0, 1].contourf(xg.squeeze(), yg.squeeze(), z_interp.squeeze(), 60, cmap=cm.coolwarm, vmin=vmin, vmax=vmax)
-    ax[0, 1].plot(interp.xi[:, 0], interp.xi[:, 1], 'o', markersize=6, markerfacecolor='green')
-    plt.colorbar(c2, ax=ax[0, 1])
-    ax[0, 1].set_title('Interpolant')
-    ax_default(ax[0, 1], r'$x_1$', '', legend=False)
-    c3 = ax[0, 2].contourf(xg.squeeze(), yg.squeeze(), error.squeeze(), 60, cmap=cm.viridis, vmin=emin, vmax=emax)
-    ax[0, 2].plot(interp.xi[:, 0], interp.xi[:, 1], 'o', markersize=6, markerfacecolor='green')
-    plt.colorbar(c3, ax=ax[0, 2])
-    ax[0, 2].set_title('Absolute error')
-    ax_default(ax[0, 2], r'$x_1$', '', legend=False)
-    c1 = ax[1, 0].contourf(xg.squeeze(), yg.squeeze(), z.squeeze(), 60, cmap=cm.coolwarm, vmin=vmin, vmax=vmax)
-    plt.colorbar(c1, ax=ax[1, 0])
-    ax[1, 0].set_title('True function')
-    ax_default(ax[1, 0], r'$x_1$', r'$x_2$', legend=False)
-    c2 = ax[1, 1].contourf(xg.squeeze(), yg.squeeze(), z2_interp.squeeze(), 60, cmap=cm.coolwarm, vmin=vmin, vmax=vmax)
-    ax[1, 1].plot(interp2.xi[:, 0], interp2.xi[:, 1], 'o', markersize=6, markerfacecolor='green')
-    plt.colorbar(c2, ax=ax[1, 1])
-    ax[1, 1].set_title('Refined')
-    ax_default(ax[1, 1], r'$x_1$', '', legend=False)
-    c3 = ax[1, 2].contourf(xg.squeeze(), yg.squeeze(), error2.squeeze(), 60, cmap=cm.viridis, vmin=emin, vmax=emax)
-    ax[1, 2].plot(interp2.xi[:, 0], interp2.xi[:, 1], 'o', markersize=6, markerfacecolor='green')
-    plt.colorbar(c3, ax=ax[1, 2])
-    ax[1, 2].set_title('Absolute error')
-    ax_default(ax[1, 2], r'$x_1$', '', legend=False)
-    fig.set_size_inches(15, 11)
+    fig, ax = plt.subplots(1, 2)
+    c1 = ax[0].contourf(xg.squeeze(), yg.squeeze(), z.squeeze(), 60, cmap=cm.coolwarm, vmin=vmin, vmax=vmax)
+    plt.colorbar(c1, ax=ax[0])
+    ax[0].set_title('Model')
+    ax_default(ax[0], r'$x_1$', r'$x_2$', legend=False)
+    c2 = ax[1].contourf(xg.squeeze(), yg.squeeze(), z_interp.squeeze(), 60, cmap=cm.coolwarm, vmin=vmin, vmax=vmax)
+    ax[1].plot(interp.xi[:, 0], interp.xi[:, 1], 'o', markersize=3, markerfacecolor='green')
+    plt.colorbar(c2, ax=ax[1])
+    ax[1].set_title('Surrogate')
+    ax_default(ax[1], r'$x_1$', '', legend=False)
+    fig.set_size_inches(6, 3)
     fig.tight_layout()
+    fig.savefig('surrogate.png', dpi=300, format='png')
     plt.show()
+
+    # fig, ax = plt.subplots(2, 3)
+    # c1 = ax[0, 0].contourf(xg.squeeze(), yg.squeeze(), z.squeeze(), 60, cmap=cm.coolwarm, vmin=vmin, vmax=vmax)
+    # plt.colorbar(c1, ax=ax[0, 0])
+    # ax[0, 0].set_title('True function')
+    # ax_default(ax[0, 0], r'$x_1$', r'$x_2$', legend=False)
+    # c2 = ax[0, 1].contourf(xg.squeeze(), yg.squeeze(), z_interp.squeeze(), 60, cmap=cm.coolwarm, vmin=vmin, vmax=vmax)
+    # ax[0, 1].plot(interp.xi[:, 0], interp.xi[:, 1], 'o', markersize=6, markerfacecolor='green')
+    # plt.colorbar(c2, ax=ax[0, 1])
+    # ax[0, 1].set_title('Interpolant')
+    # ax_default(ax[0, 1], r'$x_1$', '', legend=False)
+    # c3 = ax[0, 2].contourf(xg.squeeze(), yg.squeeze(), error.squeeze(), 60, cmap=cm.viridis, vmin=emin, vmax=emax)
+    # ax[0, 2].plot(interp.xi[:, 0], interp.xi[:, 1], 'o', markersize=6, markerfacecolor='green')
+    # plt.colorbar(c3, ax=ax[0, 2])
+    # ax[0, 2].set_title('Absolute error')
+    # ax_default(ax[0, 2], r'$x_1$', '', legend=False)
+    # c1 = ax[1, 0].contourf(xg.squeeze(), yg.squeeze(), z.squeeze(), 60, cmap=cm.coolwarm, vmin=vmin, vmax=vmax)
+    # plt.colorbar(c1, ax=ax[1, 0])
+    # ax[1, 0].set_title('True function')
+    # ax_default(ax[1, 0], r'$x_1$', r'$x_2$', legend=False)
+    # c2 = ax[1, 1].contourf(xg.squeeze(), yg.squeeze(), z2_interp.squeeze(), 60, cmap=cm.coolwarm, vmin=vmin, vmax=vmax)
+    # ax[1, 1].plot(interp2.xi[:, 0], interp2.xi[:, 1], 'o', markersize=6, markerfacecolor='green')
+    # plt.colorbar(c2, ax=ax[1, 1])
+    # ax[1, 1].set_title('Refined')
+    # ax_default(ax[1, 1], r'$x_1$', '', legend=False)
+    # c3 = ax[1, 2].contourf(xg.squeeze(), yg.squeeze(), error2.squeeze(), 60, cmap=cm.viridis, vmin=emin, vmax=emax)
+    # ax[1, 2].plot(interp2.xi[:, 0], interp2.xi[:, 1], 'o', markersize=6, markerfacecolor='green')
+    # plt.colorbar(c3, ax=ax[1, 2])
+    # ax[1, 2].set_title('Absolute error')
+    # ax_default(ax[1, 2], r'$x_1$', '', legend=False)
+    # fig.set_size_inches(15, 11)
+    # fig.tight_layout()
+    # plt.show()
 
 
 def test_component():
@@ -600,7 +618,7 @@ def test_system_refine():
 
 if __name__ == '__main__':
     """Each one of these tests was used to iteratively build up the SystemSurrogate class for MD, MF interpolation"""
-    # test_tensor_product_1d()
+    test_tensor_product_1d()
     # test_tensor_product_2d()
     # test_component()
     # test_high_dimension()
@@ -608,7 +626,7 @@ if __name__ == '__main__':
     # test_feedforward()
     # test_system_surrogate()
     # test_system_refine()
-    test_fire_sat(filename=None)
+    # test_fire_sat(filename=None)
     # test_fire_sat(filename=Path('save')/'sys_error.pkl')
     # test_fpi()
     # test_fake_pem()
