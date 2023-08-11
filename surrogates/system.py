@@ -488,9 +488,8 @@ class SystemSurrogate:
                 ymin = np.min(y_cand, axis=0, keepdims=True)
                 ymax = np.max(y_cand, axis=0, keepdims=True)
                 error = y_cand[:, qoi_ind] - y_curr[:, qoi_ind]
-                with np.errstate(divide='ignore', invalid='ignore'):
-                    rel_l2 = np.sqrt(np.nanmean(error ** 2, axis=0)) / np.sqrt(np.nanmean(y_curr[:, qoi_ind] ** 2, axis=0))
-                    rel_l2 = np.nan_to_num(rel_l2, nan=np.nan, posinf=np.nan, neginf=np.nan)
+                rel_l2 = np.sqrt(np.nanmean(error ** 2, axis=0)) / np.sqrt(np.nanmean(y_curr[:, qoi_ind] ** 2, axis=0))
+                rel_l2 = np.nan_to_num(rel_l2, nan=np.nan, posinf=np.nan, neginf=np.nan)
                 delta_error = np.nanmax(rel_l2)  # Max relative L2 error over all system QoIs
                 delta_work = max(1, node_obj['surrogate'].get_cost(alpha, beta))  # Wall time (s)
 

@@ -1,12 +1,14 @@
 """Module for sparse-grid surrogates"""
 import numpy as np
 from scipy.optimize import direct
-from scipy.interpolate import LinearNDInterpolator, NearestNDInterpolator
 import itertools
 import ast
 import copy
 import sys
 from concurrent.futures import ALL_COMPLETED, wait
+from sklearn.linear_model import Ridge
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import MaxAbsScaler
 
 sys.path.append('..')
 
@@ -102,52 +104,36 @@ class SparseGridSurrogate(ComponentSurrogate):
         return xi, yi
 
     def update_yi(self, alpha, beta, yi_dict):
-        """Helper method to update yi values, accounting for possible nans"""
         self.yi_map[str(alpha)].update(yi_dict)
-        lin_interp, nn_interp = None, None
+        imputer, xdim = None, len(self.x_vars)
         for grid_coord, yi in yi_dict.items():
             if np.any(np.isnan(yi)):
-                lin_interp, nn_interp = self._update_yi_helper(alpha, beta, grid_coord, lin_interp, nn_interp)
+                if imputer is None:
+                    # Grab all 'good' interpolation points and train a simple linear regression fit
+                    xi_mat, yi_mat = np.zeros((0, xdim)), np.zeros((0, self.ydim))
+                    for coord, xi in self.xi_map[str(alpha)].items():
+                        if coord not in self.yi_nan_map[str(alpha)]:
+                            yi_add = self.yi_map[str(alpha)][str(coord)]
+                            xi_mat = np.concatenate((xi_mat, xi.reshape((1, xdim))), axis=0)
+                            yi_mat = np.concatenate((yi_mat, yi_add.reshape((1, self.ydim))), axis=0)
+                    nan_idx = np.any(np.isnan(yi_mat), axis=-1)
+                    xi_mat = xi_mat[~nan_idx, :]
+                    yi_mat = yi_mat[~nan_idx, :]
+                    imputer = Pipeline([('scaler', MaxAbsScaler()), ('model', Ridge(alpha=1))])
+                    imputer.fit(xi_mat, yi_mat)
+                x_interp = self.xi_map[str(alpha)][str(grid_coord)].reshape((1, xdim))
+                y_interp = np.atleast_1d(np.squeeze(imputer.predict(x_interp)))
+                nan_idx = np.isnan(yi)
+                y_interp[~nan_idx] = yi[~nan_idx]   # Only keep imputed values where yi is nan
+                self.yi_nan_map[str(alpha)][str(grid_coord)] = y_interp
 
         # Go back and try to re-interpolate old nan values as more points get added to the grid
-        for grid_coord in list(self.yi_nan_map[str(alpha)].keys()):
-            if grid_coord not in yi_dict:
-                lin_interp, nn_interp = self._update_yi_helper(alpha, beta, grid_coord, lin_interp, nn_interp)
-
-    def _update_yi_helper(self, alpha, beta, grid_coord, lin_interp, nn_interp):
-        """Small helper function for building interpolants when updating yi"""
-        if lin_interp is None or nn_interp is None:
-            xi_mat, yi_mat = self.get_tensor_grid(alpha, beta, update_nan=False)
-            nan_idx = np.any(np.isnan(yi_mat), axis=-1)
-            xi_mat = xi_mat[~nan_idx, :]
-            yi_mat = yi_mat[~nan_idx, :]
-            try:
-                lin_interp = LinearNDInterpolator(xi_mat, yi_mat, rescale=True)
-            except:
-                pass
-            try:
-                nn_interp = NearestNDInterpolator(xi_mat, yi_mat, rescale=True)
-            except:
-                pass
-
-        x_interp = self.xi_map[str(alpha)][str(grid_coord)]  # (xdim,)
-        yi = np.zeros((self.ydim,)) * np.nan
-        try:
-            yi = lin_interp(x_interp)
-        except:
-            pass  # If linear interpolation didn't work, just default to nearest neighbor
-        if np.any(np.isnan(yi)):
-            try:
-                yi = nn_interp(x_interp)
-            except:
-                pass
-
-        # If any nans are left, then something else is going wrong, and you need to fix this error
-        if np.any(np.isnan(yi)):
-            raise Exception(f'Trying to interpolate with NaNs for beta {beta}, please check model '
-                            f'{self._model} for too many NaN outputs.')
-        self.yi_nan_map[str(alpha)][str(grid_coord)] = np.atleast_1d(np.squeeze(yi))
-        return lin_interp, nn_interp
+        if imputer is not None:
+            for grid_coord in list(self.yi_nan_map[str(alpha)].keys()):
+                if grid_coord not in yi_dict:
+                    x_interp = self.xi_map[str(alpha)][str(grid_coord)].reshape((1, xdim))
+                    y_interp = imputer.predict(x_interp)
+                    self.yi_nan_map[str(alpha)][str(grid_coord)] = np.atleast_1d(np.squeeze(y_interp))
 
     # Override
     def get_sub_surrogate(self, alpha, beta, include_grid=False):
@@ -445,7 +431,6 @@ class TensorProductInterpolator(BaseInterpolator):
         :param yi: (Ni, ydim) optional, interpolation qois at xi to use (e.g. if self.yi is none)
         :returns y: (..., ydim) the interpolated value of the qois
         """
-        # Use linear/NN interpolation for yi=nan values (may have resulted from bad model outputs)
         if yi is None:
             yi = self.yi.copy()
         if xi is None:
@@ -453,23 +438,10 @@ class TensorProductInterpolator(BaseInterpolator):
         ydim = yi.shape[-1]
         nan_idx = np.any(np.isnan(yi), axis=-1)
         if np.any(nan_idx):
-            try:
-                lin_interp = LinearNDInterpolator(xi[~nan_idx, :], yi[~nan_idx, :], rescale=True)
-                yi[nan_idx, :] = lin_interp(xi[nan_idx, :])
-            except:
-                pass  # If linear interpolation didn't work, just default to nearest neighbor
-            nan_idx = np.any(np.isnan(yi), axis=-1)
-            if np.any(nan_idx):
-                try:
-                    nn_interp = NearestNDInterpolator(xi[~nan_idx, :], yi[~nan_idx, :], rescale=True)
-                    yi[nan_idx, :] = nn_interp(xi[nan_idx, :])
-                except:
-                    pass
-
-        # If any nans are left, then something else is going wrong, and you need to fix this error
-        if np.any(np.isnan(yi)):
-            raise Exception(f'Trying to interpolate with NaNs for beta {self.beta}, please check model {self._model} '
-                            f'for too many NaN outputs.')
+            # Use a simple linear regression fit to impute missing values (may have resulted from bad model outputs)
+            imputer = Pipeline([('scaler', MaxAbsScaler()), ('model', Ridge(alpha=1))])
+            imputer.fit(xi[~nan_idx, :], yi[~nan_idx, :])
+            yi[nan_idx, :] = imputer.predict(xi[nan_idx, :])
 
         # Loop over multi-indices and compute tensor-product lagrange polynomials
         grid_sizes = self.get_grid_sizes(self.beta)
