@@ -589,7 +589,7 @@ def test_plume_svd():
         print(f'r={r} with singular values {s[:r]} and cumsum {frac[:r]}')
         vtr = vt[:r, :]  # (r x M)
         save_dict = {'A': A, 'r_pct': r_pct, 'r': r, 'vtr': vtr}
-        with open(Path('../models') / 'plume_svd.pkl', 'wb') as fd:
+        with open(Path('../models/data') / 'plume_svd.pkl', 'wb') as fd:
             pickle.dump(save_dict, fd)
 
         # Plot results for sanity check
@@ -722,7 +722,7 @@ def test_thruster_svd():
         print(f'r={r} with singular values {s[:r]} and cumsum {frac[:r]}')
         vtr = vt[:r, :]  # (r x M)
         save_dict = {'A': A, 'r_pct': r_pct, 'r': r, 'vtr': vtr}
-        with open(Path('../models') / 'thruster_svd.pkl', 'wb') as fd:
+        with open(Path('../models/data') / 'thruster_svd.pkl', 'wb') as fd:
             pickle.dump(save_dict, fd)
 
         # Plot results for sanity check

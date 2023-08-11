@@ -502,7 +502,7 @@ class TensorProductInterpolator(BaseInterpolator):
         return y
 
     @staticmethod
-    def get_grid_sizes(beta, k=4):
+    def get_grid_sizes(beta, k=2):
         """Compute number of grid points in each dimension"""
         return [k*beta[i] + 1 for i in range(len(beta))]
 

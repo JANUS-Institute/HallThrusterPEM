@@ -4,7 +4,7 @@ from pathlib import Path
 import copy
 
 from models.cc import cathode_coupling_model as cc_model
-from models.thruster import hall_thruster_jl_model as thruster_model
+from models.thruster import hallthruster_jl_model as thruster_model
 from models.plume import current_density_model as plume_model
 from utils import ModelRunException, data_write
 import traceback

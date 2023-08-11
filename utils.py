@@ -10,6 +10,7 @@ from numpy.linalg.linalg import LinAlgError
 from abc import ABC, abstractmethod
 import logging
 import sys
+import uuid
 
 INPUT_DIR = Path(__file__).parent / 'input'
 LOG_FORMATTER = logging.Formatter("%(asctime)s \u2014 [%(levelname)s] \u2014 %(name)-36s \u2014 %(message)s")
@@ -20,25 +21,56 @@ class ModelRunException(Exception):
 
 
 class BaseRV(ABC):
-    """Small wrapper class for scipy.stats random variables"""
+    """Small wrapper class similar to scipy.stats random variables"""
 
-    def __init__(self, disp='', long_label=''):
-        """Child classes must define bounds and sample/pdf functions"""
-        self.bds = None                 # (tuple)
-        self.disp = disp                # Display name for printing in console
-        self.long_label = long_label    # Descriptive string/label for plots
-        if self.long_label == '':
-            self.long_label = self.disp
+    def __init__(self, id='', tex='', description='Random variable', units='-',
+                 param_type='calibration', nominal=1, domain=(0, 1)):
+        """Child classes must define sample/pdf functions"""
+        self.bds = tuple(domain)
+        self.nominal = nominal
+        self.id = id if id != '' else str(uuid.uuid4())
+        self.custom_id = id != ''
+        self.tex = tex
+        self.description = description
+        self.units = units
+        self.param_type = param_type    # One of (calibration, operating, design, simulation, coupling, other)
 
     def __repr__(self):
-        return self.disp
+        return r'{}'.format(f"{self.id} - {self.description} ({self.units})")
 
     def __str__(self):
-        return self.__repr__()
+        return self.id
+
+    def __eq__(self, other):
+        """Consider two RVs equal if they share the same string representation (i.e. the same id), also returns true
+        when checking if this RV is equal to a string id by itself"""
+        return str(self) == str(other)
+
+    def __hash__(self):
+        return hash((self.id,))
+
+    def to_tex(self, units=False, symbol=True):
+        """Return a raw string that is well-formatted for plotting (with tex)
+        :param units: whether to include the units in the string
+        :param symbol: just latex symbol if true, otherwise the full description
+        """
+        s = self.tex if symbol else self.description
+        return r'{} [{}]'.format(s, self.units) if units else r'{}'.format(s)
 
     def bounds(self):
-        """Return the bounds of the RV"""
+        """Return a tuple() of the domain of this RV"""
         return self.bds
+
+    def update_bounds(self, lb, ub):
+        self.bds = (lb, ub)
+
+    def sample_domain(self, shape, method='random'):
+        """Draw samples over the domain of this RV (not necessarily from the RV distribution)"""
+        match method:
+            case 'random':
+                return np.random.rand(*shape) * (self.bds[1] - self.bds[0]) + self.bds[0]
+            case other:
+                raise NotImplementedError(f'Sampling method "{method}" is not known.')
 
     @abstractmethod
     def pdf(self, x):
@@ -48,58 +80,79 @@ class BaseRV(ABC):
         pass
 
     @abstractmethod
-    def sample(self, shape):
+    def sample(self, shape, nominal=None):
         """Draw samples from the RV
         :param shape: (...,) the shape of the returned samples
+        :param nominal: an alternative nominal value to use (i.e. a center for relative Uniform or Normal)
         """
         pass
 
 
 class UniformRV(BaseRV):
 
-    def __init__(self, a, b, **kwargs):
-        super().__init__(**kwargs)
-        self.bds = (a, b)
-        name = f'U({self.bds[0]}, {self.bds[1]})'
-        if self.disp == '':
-            self.disp = name
-        if self.long_label == '':
-            self.long_label = name
+    def __init__(self, arg1, arg2, domain=None, **kwargs):
+        """Implements a Uniform RV
+        :param arg1: lower bound if specifying U(lb, ub), otherwise a tol or pct if specifying U(+/- tol/pct)
+        :param arg2: upper bound if specifying U(lb, ub), otherwise a str() of either 'tol' or 'pct'
+        """
+        if isinstance(arg2, str):
+            self.value = arg1   # Either an absolute tolerance or a relative percent
+            self.type = arg2
+        else:
+            self.value = None
+            self.type = 'bds'
+        if self.type == 'bds':
+            domain = (arg1, arg2) if domain is None else tuple(domain)     # This means domain overrides (arg1, arg2)
+        else:
+            domain = (0, 1) if domain is None else tuple(domain)
+        super().__init__(domain=domain, **kwargs)
 
-    def pdf(self, x):
-        y = np.broadcast_to(1 / (self.bds[1] - self.bds[0]), x.shape).copy()
-        y[np.where(x > self.bds[1])] = 0
-        y[np.where(x < self.bds[0])] = 0
+    # Override
+    def __str__(self):
+        return self.id if self.custom_id else f'U({self.bds[0]}, {self.bds[1]})'
+
+    def get_uniform_bounds(self, nominal):
+        """Return the correct set of bounds based on self.type"""
+        match self.type:
+            case 'bds':
+                return self.bds  # Use the full preset domain
+            case 'pct':
+                if nominal is None:
+                    return self.bds     # Default to full domain if nominal is not passed in
+                return nominal * (1 - self.value), nominal * (1 + self.value)
+            case 'tol':
+                if nominal is None:
+                    return self.bds     # Default to full domain if nominal is not passed in
+                return nominal - self.value, nominal + self.value
+            case other:
+                raise NotImplementedError(f'self.type = {self.type} not known. Choose from ["pct, "tol", "bds"]')
+
+    def pdf(self, x, nominal=None):
+        bds = self.get_uniform_bounds(nominal)
+        y = np.broadcast_to(1 / (bds[1] - bds[0]), x.shape).copy()
+        y[np.where(x > bds[1])] = 0
+        y[np.where(x < bds[0])] = 0
         return y
 
-    def sample(self, shape):
-        return np.random.rand(*shape) * (self.bds[1] - self.bds[0]) + self.bds[0]
-
-    def update_bounds(self, lb, ub):
-        self.bds = (lb, ub)
-        name = f'U({self.bds[0]}, {self.bds[1]})'
-        if self.disp.startswith('U('):
-            self.disp = name
-        if self.long_label.startswith('U('):
-            self.long_label = name
+    def sample(self, shape, nominal=None):
+        bds = self.get_uniform_bounds(nominal)
+        return np.random.rand(*shape) * (bds[1] - bds[0]) + bds[0]
 
 
 class LogUniformRV(BaseRV):
-    """Base 10 loguniform"""
+    """Base 10 loguniform, only supports absolute bounds"""
 
     def __init__(self, log10_a, log10_b, **kwargs):
         super().__init__(**kwargs)
-        self.bds = (10**log10_a, 10**log10_b)
-        name = f'LU({log10_a}, {log10_b})'
-        if self.disp == '':
-            self.disp = name
-        if self.long_label == '':
-            self.long_label = name
+        self.bds = (10**log10_a, 10**log10_b)   # Probably the same as kwargs.get('domain')
+
+    def __str__(self):
+        return self.id if self.custom_id else f'LU({np.log10(self.bds[0]):.2f}, {np.log10(self.bds[1]):.2f})'
 
     def pdf(self, x):
         return np.log10(np.e) / (x * (np.log10(self.bds[1]) - np.log10(self.bds[0])))
 
-    def sample(self, shape):
+    def sample(self, shape, nominal=None):
         lb = np.log10(self.bds[0])
         ub = np.log10(self.bds[1])
         return 10 ** (np.random.rand(*shape) * (ub - lb) + lb)
@@ -108,46 +161,92 @@ class LogUniformRV(BaseRV):
 class LogNormalRV(BaseRV):
     """Base 10 lognormal"""
 
-    def __init__(self, mu, std, **kwargs):
+    def __init__(self, mu, std, domain=None, **kwargs):
         """Init with the mean and standard deviation of the underlying distribution, i.e. log10(x) ~ N(mu, std)"""
-        super().__init__(**kwargs)
+        if domain is None:
+            domain = (10 ** (mu - 4*std), 10 ** (mu + 4*std))   # Use a default domain of +- 4std
+        super().__init__(domain=domain, **kwargs)
         self.std = std
         self.mu = mu
-        self.bds = (10**(mu - 4*std), 10**(mu + 4*std))
-        name = f'LN_10({mu}, {std})'
-        if self.disp == '':
-            self.disp = name
-        if self.long_label == '':
-            self.long_label = name
+
+    def recenter(self, mu, std):
+        self.mu = mu
+        self.std = std
+
+    def __str__(self):
+        return self.id if self.custom_id else f'LN_10({self.mu}, {self.std})'
 
     def pdf(self, x):
         return (np.log10(np.e) / (x * self.std * np.sqrt(2 * np.pi))) * \
                np.exp(-0.5 * ((np.log10(x) - self.mu) / self.std) ** 2)
 
-    def sample(self, shape):
+    def sample(self, shape, nominal=None):
         scale = np.log10(np.e)
-        return np.random.lognormal(mean=(1 / scale) * self.mu, sigma=(1 / scale) * self.std, size=shape)
-        # return 10 ** (np.random.randn(*size)*self.std + self.mu)  # Alternatively
+        center = self.mu if nominal is None else nominal
+        return np.random.lognormal(mean=(1 / scale) * center, sigma=(1 / scale) * self.std, size=shape)
+        # return 10 ** (np.random.randn(*size)*self.std + center)  # Alternatively
 
 
 class NormalRV(BaseRV):
 
-    def __init__(self, mean, std, **kwargs):
-        super().__init__(**kwargs)
-        self.mu = mean
+    def __init__(self, mu, std, domain=None, **kwargs):
+        if domain is None:
+            domain = (mu - 4*std, mu + 4*std)   # Use a default domain of +- 4std
+        super().__init__(domain=domain, **kwargs)
+        self.mu = mu
         self.std = std
-        self.bds = (mean - 4*std, mean + 4*std)
-        name = f'N({mean}, {std})'
-        if self.disp == '':
-            self.disp = name
-        if self.long_label == '':
-            self.long_label = name
+
+    def recenter(self, mu, std):
+        self.mu = mu
+        self.std = std
+
+    def __str__(self):
+        return self.id if self.custom_id else f'N({self.mu}, {self.std})'
 
     def pdf(self, x):
         return (1 / (np.sqrt(2 * np.pi) * self.std)) * np.exp(-0.5 * ((x - self.mu) / self.std) ** 2)
 
-    def sample(self, shape):
-        return np.random.randn(*shape) * self.std + self.mu
+    def sample(self, shape, nominal=None):
+        center = self.mu if nominal is None else nominal
+        return np.random.randn(*shape) * self.std + center
+
+
+def load_variables(variables):
+    """Load from variables.json into a list of BaseRV objects
+    :param variables: list() of str() ids to match in variables.json
+    :return vars: list() of corresponding BaseRV objects
+    """
+    with open(Path(__file__).parent / 'models' / 'config' / 'variables.json', 'r') as fd:
+        data = json.load(fd)
+
+    vars = []
+    keys = ['id', 'tex', 'description', 'units', 'param_type', 'nominal', 'domain']
+    for str_id in variables:
+        if str_id in data:
+            var_info = data.get(str_id)
+            kwargs = {key: var_info.get(key) for key in keys if var_info.get(key)}
+            match var_info.get('rv_type', 'none'):
+                case 'uniform_bds':
+                    bds = var_info.get('rv_params')
+                    vars.append(UniformRV(bds[0], bds[1], **kwargs))
+                case 'uniform_pct':
+                    vars.append(UniformRV(var_info.get('rv_params'), 'pct', **kwargs))
+                case 'uniform_tol':
+                    vars.append(UniformRV(var_info.get('rv_params'), 'tol', **kwargs))
+                case 'normal':
+                    mu, std = var_info.get('rv_params')
+                    vars.append(NormalRV(mu, std, **kwargs))
+                case 'none':
+                    # Make a plain stand-in uniform RV over the full domain if RV type is not specified
+                    bds = var_info.get('domain')
+                    vars.append(UniformRV(bds[0], bds[1], **kwargs))
+                case other:
+                    raise NotImplementedError(f'RV type "{var_info.get("rv_type")}" is not known.')
+        else:
+            raise ValueError(f'You have requested the variable {str_id}, but it was not found in variables.json. '
+                             f'Please add a definition of {str_id} to variables.json or construct it on your own.')
+
+    return vars
 
 
 def get_logger(name):

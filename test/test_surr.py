@@ -76,7 +76,7 @@ def test_tensor_product_2d():
     #     y = np.cos(2*np.pi*x[..., 0])*np.cos(2*np.pi*x[..., 1])
     #     return y[..., np.newaxis]
     bb_2d_func = lambda x: custom_nonlinear(x, env_var=0.2**2, wave_amp=0.3)
-    beta = [2, 2]
+    beta = [3, 3]
     x_vars = [UniformRV(0, 1), UniformRV(0, 1)]
     N = 50
     x_grid = np.linspace(0, 1, N)
@@ -93,64 +93,47 @@ def test_tensor_product_2d():
     error = np.abs(z_interp - z)
 
     # Refine interpolant
-    # beta2 = [5, 9]
-    # interp2 = interp.refine(beta2)
-    # z2_interp = interp2(x)
-    # error2 = np.abs(z2_interp - z)
-    # vmin = min(np.min(z_interp), np.min(z), np.min(z2_interp))
-    # vmax = max(np.max(z_interp), np.max(z), np.max(z2_interp))
-    # emin = min(np.min(error), np.min(error2))
-    # emax = max(np.max(error), np.max(error2))
-    vmin = min(np.min(z_interp), np.min(z))
-    vmax = max(np.max(z_interp), np.max(z))
+    beta2 = [3, 4]
+    interp2 = interp.refine(beta2)
+    z2_interp = interp2(x)
+    error2 = np.abs(z2_interp - z)
+    vmin = min(np.min(z_interp), np.min(z), np.min(z2_interp))
+    vmax = max(np.max(z_interp), np.max(z), np.max(z2_interp))
+    emin = min(np.min(error), np.min(error2))
+    emax = max(np.max(error), np.max(error2))
 
-    fig, ax = plt.subplots(1, 2)
-    c1 = ax[0].contourf(xg.squeeze(), yg.squeeze(), z.squeeze(), 60, cmap=cm.coolwarm, vmin=vmin, vmax=vmax)
-    plt.colorbar(c1, ax=ax[0])
-    ax[0].set_title('Model')
-    ax_default(ax[0], r'$x_1$', r'$x_2$', legend=False)
-    c2 = ax[1].contourf(xg.squeeze(), yg.squeeze(), z_interp.squeeze(), 60, cmap=cm.coolwarm, vmin=vmin, vmax=vmax)
-    ax[1].plot(interp.xi[:, 0], interp.xi[:, 1], 'o', markersize=3, markerfacecolor='green')
-    plt.colorbar(c2, ax=ax[1])
-    ax[1].set_title('Surrogate')
-    ax_default(ax[1], r'$x_1$', '', legend=False)
-    fig.set_size_inches(6, 3)
+    fig, ax = plt.subplots(2, 3)
+    c1 = ax[0, 0].contourf(xg.squeeze(), yg.squeeze(), z.squeeze(), 60, cmap=cm.coolwarm, vmin=vmin, vmax=vmax)
+    plt.colorbar(c1, ax=ax[0, 0])
+    ax[0, 0].set_title('True function')
+    ax_default(ax[0, 0], r'$x_1$', r'$x_2$', legend=False)
+    c2 = ax[0, 1].contourf(xg.squeeze(), yg.squeeze(), z_interp.squeeze(), 60, cmap=cm.coolwarm, vmin=vmin, vmax=vmax)
+    ax[0, 1].plot(interp.xi[:, 0], interp.xi[:, 1], 'o', markersize=6, markerfacecolor='green')
+    plt.colorbar(c2, ax=ax[0, 1])
+    ax[0, 1].set_title('Interpolant')
+    ax_default(ax[0, 1], r'$x_1$', '', legend=False)
+    c3 = ax[0, 2].contourf(xg.squeeze(), yg.squeeze(), error.squeeze(), 60, cmap=cm.viridis, vmin=emin, vmax=emax)
+    ax[0, 2].plot(interp.xi[:, 0], interp.xi[:, 1], 'o', markersize=6, markerfacecolor='green')
+    plt.colorbar(c3, ax=ax[0, 2])
+    ax[0, 2].set_title('Absolute error')
+    ax_default(ax[0, 2], r'$x_1$', '', legend=False)
+    c1 = ax[1, 0].contourf(xg.squeeze(), yg.squeeze(), z.squeeze(), 60, cmap=cm.coolwarm, vmin=vmin, vmax=vmax)
+    plt.colorbar(c1, ax=ax[1, 0])
+    ax[1, 0].set_title('True function')
+    ax_default(ax[1, 0], r'$x_1$', r'$x_2$', legend=False)
+    c2 = ax[1, 1].contourf(xg.squeeze(), yg.squeeze(), z2_interp.squeeze(), 60, cmap=cm.coolwarm, vmin=vmin, vmax=vmax)
+    ax[1, 1].plot(interp2.xi[:, 0], interp2.xi[:, 1], 'o', markersize=6, markerfacecolor='green')
+    plt.colorbar(c2, ax=ax[1, 1])
+    ax[1, 1].set_title('Refined')
+    ax_default(ax[1, 1], r'$x_1$', '', legend=False)
+    c3 = ax[1, 2].contourf(xg.squeeze(), yg.squeeze(), error2.squeeze(), 60, cmap=cm.viridis, vmin=emin, vmax=emax)
+    ax[1, 2].plot(interp2.xi[:, 0], interp2.xi[:, 1], 'o', markersize=6, markerfacecolor='green')
+    plt.colorbar(c3, ax=ax[1, 2])
+    ax[1, 2].set_title('Absolute error')
+    ax_default(ax[1, 2], r'$x_1$', '', legend=False)
+    fig.set_size_inches(15, 11)
     fig.tight_layout()
-    fig.savefig('surrogate.png', dpi=300, format='png')
     plt.show()
-
-    # fig, ax = plt.subplots(2, 3)
-    # c1 = ax[0, 0].contourf(xg.squeeze(), yg.squeeze(), z.squeeze(), 60, cmap=cm.coolwarm, vmin=vmin, vmax=vmax)
-    # plt.colorbar(c1, ax=ax[0, 0])
-    # ax[0, 0].set_title('True function')
-    # ax_default(ax[0, 0], r'$x_1$', r'$x_2$', legend=False)
-    # c2 = ax[0, 1].contourf(xg.squeeze(), yg.squeeze(), z_interp.squeeze(), 60, cmap=cm.coolwarm, vmin=vmin, vmax=vmax)
-    # ax[0, 1].plot(interp.xi[:, 0], interp.xi[:, 1], 'o', markersize=6, markerfacecolor='green')
-    # plt.colorbar(c2, ax=ax[0, 1])
-    # ax[0, 1].set_title('Interpolant')
-    # ax_default(ax[0, 1], r'$x_1$', '', legend=False)
-    # c3 = ax[0, 2].contourf(xg.squeeze(), yg.squeeze(), error.squeeze(), 60, cmap=cm.viridis, vmin=emin, vmax=emax)
-    # ax[0, 2].plot(interp.xi[:, 0], interp.xi[:, 1], 'o', markersize=6, markerfacecolor='green')
-    # plt.colorbar(c3, ax=ax[0, 2])
-    # ax[0, 2].set_title('Absolute error')
-    # ax_default(ax[0, 2], r'$x_1$', '', legend=False)
-    # c1 = ax[1, 0].contourf(xg.squeeze(), yg.squeeze(), z.squeeze(), 60, cmap=cm.coolwarm, vmin=vmin, vmax=vmax)
-    # plt.colorbar(c1, ax=ax[1, 0])
-    # ax[1, 0].set_title('True function')
-    # ax_default(ax[1, 0], r'$x_1$', r'$x_2$', legend=False)
-    # c2 = ax[1, 1].contourf(xg.squeeze(), yg.squeeze(), z2_interp.squeeze(), 60, cmap=cm.coolwarm, vmin=vmin, vmax=vmax)
-    # ax[1, 1].plot(interp2.xi[:, 0], interp2.xi[:, 1], 'o', markersize=6, markerfacecolor='green')
-    # plt.colorbar(c2, ax=ax[1, 1])
-    # ax[1, 1].set_title('Refined')
-    # ax_default(ax[1, 1], r'$x_1$', '', legend=False)
-    # c3 = ax[1, 2].contourf(xg.squeeze(), yg.squeeze(), error2.squeeze(), 60, cmap=cm.viridis, vmin=emin, vmax=emax)
-    # ax[1, 2].plot(interp2.xi[:, 0], interp2.xi[:, 1], 'o', markersize=6, markerfacecolor='green')
-    # plt.colorbar(c3, ax=ax[1, 2])
-    # ax[1, 2].set_title('Absolute error')
-    # ax_default(ax[1, 2], r'$x_1$', '', legend=False)
-    # fig.set_size_inches(15, 11)
-    # fig.tight_layout()
-    # plt.show()
 
 
 def test_component():
@@ -278,12 +261,12 @@ def test_system_surrogate():
     alpha = (15,)
     f1, f2, f3, f = coupled_system(D1, D2, Q1, Q2)
     comp1 = {'name': 'Cathode', 'model': f1, 'truth_alpha': alpha, 'exo_in': list(np.arange(0, D1)),
-             'local_in': {}, 'global_out': list(np.arange(0, Q1)), 'max_alpha': (5,), 'max_beta': (3,)*D1}
+             'coupling_in': {}, 'coupling_out': list(np.arange(0, Q1)), 'max_alpha': (5,), 'max_beta': (3,)*D1}
     comp2 = {'name': 'Thruster', 'model': f2, 'truth_alpha': alpha, 'exo_in': list(np.arange(D1, D1+D2)),
-             'max_alpha': (5,), 'max_beta': (3,)*(D2+Q1), 'local_in': {'Cathode': list(np.arange(0, Q1))},
-             'global_out': list(np.arange(Q1, Q1+Q2))}
+             'max_alpha': (5,), 'max_beta': (3,)*(D2+Q1), 'coupling_in': {'Cathode': list(np.arange(0, Q1))},
+             'coupling_out': list(np.arange(Q1, Q1+Q2))}
     comp3 = {'name': 'Plume', 'model': f3, 'truth_alpha': alpha, 'exo_in': list(np.arange(0, D1)), 'max_alpha': (5,),
-             'local_in': {'Thruster': list(np.arange(0, Q2))}, 'global_out': [Q1+Q2], 'max_beta': (3,)*(D1+Q2)}
+             'coupling_in': {'Thruster': list(np.arange(0, Q2))}, 'coupling_out': [Q1+Q2], 'max_beta': (3,)*(D1+Q2)}
     components = [comp1, comp2, comp3]
     exo_vars = [UniformRV(0, 1) for i in range(D1+D2)]
     coupling_bds = [UniformRV(0, 1) for i in range(Q1+Q2+1)]
@@ -328,9 +311,9 @@ def test_feedforward():
 
     f1, f2, f = coupled_system()
     comp1 = {'name': 'Model1', 'model': f1, 'truth_alpha': (), 'max_alpha': (), 'max_beta': (3,),
-             'exo_in': [0], 'local_in': {}, 'global_out': [0], 'type': 'lagrange'}
+             'exo_in': [0], 'coupling_in': {}, 'coupling_out': [0], 'type': 'lagrange'}
     comp2 = {'name': 'Model2', 'model': f2, 'truth_alpha': (), 'max_alpha': (), 'max_beta': (3,),
-             'exo_in': [], 'local_in': {'Model1': [0]}, 'global_out': [1], 'type': 'lagrange'}
+             'exo_in': [], 'coupling_in': {'Model1': [0]}, 'coupling_out': [1], 'type': 'lagrange'}
     exo_vars = [UniformRV(0, 1)]
     coupling_bds = [UniformRV(0, 1), UniformRV(0, 1)]
     sys = SystemSurrogate([comp1, comp2], exo_vars, coupling_bds)
@@ -402,7 +385,7 @@ def test_fire_sat(filename=None):
         N = 1000
         sys = fire_sat_system()
         test_set = None
-        # xt = sys.sample_exo_inputs((N,))
+        # xt = sys.sample_inputs((N,))
         # yt = sys(xt, ground_truth=True, training=False)
         # test_set = {'xt': xt, 'yt': yt}
         sys.build_system(max_iter=20, max_tol=1e-3, max_runtime=3600, test_set=test_set, n_jobs=-1, prune_tol=1e-10)
@@ -414,7 +397,7 @@ def test_fire_sat(filename=None):
         #         sys.build_system(max_iter=10, max_tol=1e-3, max_runtime=3600)
 
     if e is not None:
-        x = sys.sample_exo_inputs((1000,))
+        x = sys.sample_inputs((1000,), use_pdf=True)
         logger.info('---Evaluating ground truth system on test set---')
         yt = sys(x, ground_truth=True, verbose=True)
         logger.info('---Evaluating system surrogate on test set---')
@@ -441,17 +424,17 @@ def test_fire_sat(filename=None):
         fig.set_size_inches(9, 3)
         fig.tight_layout()
         plt.show()
-        fig.savefig('test_surr.png', dpi=300, format='png')
+        # fig.savefig('test_surr.png', dpi=300, format='png')
 
 
 def test_fpi():
     # Test fixed point iteration implementation against scipy fsolve
     f1 = lambda x, alpha: -x[..., 0:1]**3 + 2 * x[..., 1:2]**2
     f2 = lambda x, alpha: 3*x[..., 0:1]**2 + 4 * x[..., 1:2]**(-2)
-    comp1 = {'name': 'm1', 'model': f1, 'truth_alpha': (), 'exo_in': [0], 'local_in': {'m2': [0]}, 'global_out': [0],
-             'max_alpha': (), 'max_beta': 5}
-    comp2 = {'name': 'm2', 'model': f2, 'truth_alpha': (), 'exo_in': [0], 'local_in': {'m1': [0]}, 'global_out': [1],
-             'max_alpha': (), 'max_beta': 5}
+    comp1 = {'name': 'm1', 'model': f1, 'truth_alpha': (), 'exo_in': [0], 'coupling_in': {'m2': [0]},
+             'coupling_out': [0], 'max_alpha': (), 'max_beta': 5}
+    comp2 = {'name': 'm2', 'model': f2, 'truth_alpha': (), 'exo_in': [0], 'coupling_in': {'m1': [0]},
+             'coupling_out': [1], 'max_alpha': (), 'max_beta': 5}
     exo_vars = [UniformRV(0, 4)]
     coupling_bds = [UniformRV(1, 10), UniformRV(1, 10)]
     sys = SystemSurrogate([comp1, comp2], exo_vars, coupling_bds)
@@ -460,7 +443,7 @@ def test_fpi():
     N = 100
     tol = 1e-12
     x0 = np.array([5.5, 5.5])
-    exo = sys.sample_exo_inputs((N,))
+    exo = sys.sample_inputs((N,))
     y_surr = sys(exo, ground_truth=True, anderson_mem=10, max_fpi_iter=200, fpi_tol=tol)  # (N, 2)
     nan_idx = list(np.any(np.isnan(y_surr), axis=-1).nonzero()[0])
     y_true = np.zeros((N, 2))
@@ -495,18 +478,18 @@ def test_fpi():
 
 def test_fake_pem():
     models = fake_pem()
-    cathode = {'name': 'Cathode', 'model': models[0], 'truth_alpha': (), 'exo_in': [0], 'local_in': {},
-               'global_out': [0]}
+    cathode = {'name': 'Cathode', 'model': models[0], 'truth_alpha': (), 'exo_in': [0], 'coupling_in': {},
+               'coupling_out': [0]}
     thruster = {'name': 'Thruster', 'model': models[1], 'truth_alpha': (), 'exo_in': [0, 1],
-                'local_in': {'Cathode': [0], 'Plume': [0], 'Dump': [0]}, 'global_out': [1, 2]}
-    plume = {'name': 'Plume', 'model': models[2], 'truth_alpha': (), 'exo_in': [0], 'local_in': {'Thruster': [0]},
-             'global_out': [3, 4]}
-    dump = {'name': 'Dump', 'model': models[3], 'truth_alpha': (), 'exo_in': [2], 'local_in': {'Plume': [1]},
-            'global_out': [5]}
+                'coupling_in': {'Cathode': [0], 'Plume': [0], 'Dump': [0]}, 'coupling_out': [1, 2]}
+    plume = {'name': 'Plume', 'model': models[2], 'truth_alpha': (), 'exo_in': [0], 'coupling_in': {'Thruster': [0]},
+             'coupling_out': [3, 4]}
+    dump = {'name': 'Dump', 'model': models[3], 'truth_alpha': (), 'exo_in': [2], 'coupling_in': {'Plume': [1]},
+            'coupling_out': [5]}
     chamber = {'name': 'Chamber', 'model': models[4], 'truth_alpha': (), 'exo_in': [2, 3],
-               'local_in': {'Plume': [1], 'Spacecraft': [0]}, 'global_out': [6]}
+               'coupling_in': {'Plume': [1], 'Spacecraft': [0]}, 'coupling_out': [6]}
     spacecraft = {'name': 'Spacecraft', 'model': models[5], 'truth_alpha': (), 'exo_in': [],
-                  'local_in': {'Thruster': [1], 'Chamber': [0]}, 'global_out': [7, 8]}
+                  'coupling_in': {'Thruster': [1], 'Chamber': [0]}, 'coupling_out': [7, 8]}
     components = [cathode, thruster, plume, dump, chamber, spacecraft]
     exo_vars = [UniformRV(1e-4, 1e-2), UniformRV(200, 400), UniformRV(0, 100), UniformRV(0, 1)]  # (Pa, V, V, -)
     coupling_bds = [(0, 60), (0, 10), (0.05, 0.15), (1, 10), (1, 20), (1, 10), (-1000, 5000), (0, 100), (15, 20)]
@@ -517,7 +500,7 @@ def test_fake_pem():
 
     N = 1000
     sys.estimate_coupling_bds(N, max_fpi_iter=100, anderson_mem=10)
-    x = sys.sample_exo_inputs((N,))
+    x = sys.sample_inputs((N,))
     y = sys(x, ground_truth=True)
 
     # Plot some output histograms
@@ -545,10 +528,10 @@ def test_system_refine():
         return f1, f2
 
     f1, f2 = coupled_system()
-    comp1 = {'name': 'Model1', 'model': f1, 'truth_alpha': (), 'exo_in': [0], 'local_in': {}, 'global_out': [0],
+    comp1 = {'name': 'Model1', 'model': f1, 'truth_alpha': (), 'exo_in': [0], 'coupling_in': {}, 'coupling_out': [0],
              'max_beta': (3,)}
-    comp2 = {'name': 'Model2', 'model': f2, 'truth_alpha': (), 'exo_in': [], 'local_in': {'Model1': [0]},
-             'global_out': [1], 'max_beta': (3,)}
+    comp2 = {'name': 'Model2', 'model': f2, 'truth_alpha': (), 'exo_in': [], 'coupling_in': {'Model1': [0]},
+             'coupling_out': [1], 'max_beta': (3,)}
     exo_vars = [UniformRV(0, 1)]
     coupling_bds = [UniformRV(0, 1), UniformRV(0, 1)]
     sys = SystemSurrogate([comp1, comp2], exo_vars, coupling_bds)
@@ -618,7 +601,7 @@ def test_system_refine():
 
 if __name__ == '__main__':
     """Each one of these tests was used to iteratively build up the SystemSurrogate class for MD, MF interpolation"""
-    test_tensor_product_1d()
+    # test_tensor_product_1d()
     # test_tensor_product_2d()
     # test_component()
     # test_high_dimension()
@@ -626,7 +609,7 @@ if __name__ == '__main__':
     # test_feedforward()
     # test_system_surrogate()
     # test_system_refine()
-    # test_fire_sat(filename=None)
+    test_fire_sat(filename=None)
     # test_fire_sat(filename=Path('save')/'sys_error.pkl')
     # test_fpi()
     # test_fake_pem()

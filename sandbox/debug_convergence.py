@@ -49,7 +49,7 @@ def test_convergence(system='Borehole', max_iter=30, N=1000):
 
     # Random test set for percent error
     comp = sys.get_component(system)
-    xt = sys.sample_exo_inputs((N,))
+    xt = sys.sample_inputs((N,))
     yt = sys(xt, ground_truth=True)
 
     # 1d slice test set(s) for plotting

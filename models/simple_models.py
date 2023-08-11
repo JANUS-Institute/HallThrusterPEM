@@ -229,21 +229,22 @@ def fire_sat_system():
         else:
             return y
 
-    orbit = {'name': 'Orbit', 'model': orbit_fun, 'truth_alpha': (), 'exo_in': [0, 1], 'local_in': {},
-             'global_out': [0, 1, 2, 3], 'max_alpha': (), 'max_beta': (3, 3), 'type': 'lagrange',
+    orbit = {'name': 'Orbit', 'model': orbit_fun, 'truth_alpha': (), 'exo_in': [0, 1], 'coupling_in': {},
+             'coupling_out': [0, 1, 2, 3], 'max_alpha': (), 'max_beta': (3, 3), 'type': 'lagrange',
              'model_kwargs': {'pct_failure': 0}}
     power = {'name': 'Power', 'model': power_fun, 'truth_alpha': (), 'exo_in': [2, 3], 'max_alpha': (),
-             'local_in': {'Orbit': [1, 2], 'Attitude': [0]}, 'global_out': [4, 5, 6, 7], 'type': 'lagrange',
+             'coupling_in': {'Orbit': [1, 2], 'Attitude': [0]}, 'coupling_out': [4, 5, 6, 7], 'type': 'lagrange',
              'max_beta': (3,)*5, 'save_output': False, 'model_kwargs': {'pct_failure': 0}}
     attitude = {'name': 'Attitude', 'model': attitude_fun, 'truth_alpha': (), 'exo_in': [0, 3, 4, 5, 6, 7],
-                'max_alpha': (), 'local_in': {'Orbit': [0, 3], 'Power': [0, 1]}, 'global_out': [8, 9],
+                'max_alpha': (), 'coupling_in': {'Orbit': [0, 3], 'Power': [0, 1]}, 'coupling_out': [8, 9],
                 'type': 'lagrange', 'max_beta': (3,)*10, 'save_output': False}
-    exo_vars = [NormalRV(18e6, 1e6, disp='H'), NormalRV(235e3, 10e3, disp='\u03D5'), NormalRV(1000, 50, disp='Po'),
-                NormalRV(1400, 20, disp='Fs'), NormalRV(2, 0.4, disp='Lsp'), NormalRV(0.5, 0.1, disp='q'),
-                NormalRV(2, 0.4, disp='La'), NormalRV(1, 0.2, disp='Cd')]
-    coupling_vars = [UniformRV(2000, 6000), UniformRV(20000, 60000), UniformRV(1000, 5000), UniformRV(0, 4),
-                     UniformRV(0, 12000), UniformRV(0, 12000), UniformRV(0, 10000), UniformRV(0, 50),
-                     UniformRV(0, 100), UniformRV(0, 5)]
+    exo_vars = [NormalRV(18e6, 1e6, id='H'), NormalRV(235e3, 10e3, id='\u03D5'), NormalRV(1000, 50, id='Po'),
+                NormalRV(1400, 20, id='Fs'), NormalRV(2, 0.4, id='Lsp'), NormalRV(0.5, 0.1, id='q'),
+                NormalRV(2, 0.4, id='La'), NormalRV(1, 0.2, id='Cd')]
+    coupling_vars = [UniformRV(2000, 6000, id='Vsat'), UniformRV(20000, 60000, id='To'), UniformRV(1000, 5000, id='Te'),
+                     UniformRV(0, 4, id='Slew'), UniformRV(0, 12000, id='Imin'), UniformRV(0, 12000, id='Imax'),
+                     UniformRV(0, 10000, id='Ptot'), UniformRV(0, 50, id='Asa'), UniformRV(0, 100, id='Pat'),
+                     UniformRV(0, 5, id='tau_tot')]
     sys = SystemSurrogate([orbit, power, attitude], exo_vars, coupling_vars, est_bds=500)
     return sys
 

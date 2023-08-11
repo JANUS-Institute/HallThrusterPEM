@@ -36,12 +36,12 @@ class SystemSurrogate:
         :param components: list(Nk,) of dicts specifying component name (str), a callable function model(x, alpha), a
                            string specifying surrogate class type, the highest 'truth' set of model fidelity indices,
                            the maximum level of model fidelity indices, the maximum surrogate refinement level, the
-                           global indices of required system exogenous inputs, a dict specifying the indices of local
+                           global indices of required system exogenous inputs, a dict or list specifying the indices of
                            coupling variable inputs from other models, a list() that maps local component outputs
                            to global coupling indices, whether to save all model outputs to file, and model args/kwargs
                            Ex: [{'name': 'Thruster', 'model': callable(x, alpha), 'truth_alpha': (3,), 'max_alpha': (3),
-                                         'max_beta': (5,), 'exo_in': [0, 2, 6...], 'local_in': {'model1': [1,2,3],
-                                         'model2': [0]}, 'global_out': [0, 1, 2, 3], 'type': 'lagrange',
+                                         'max_beta': (5,), 'exo_in': [0, 2, 6...], 'coupling_in': {'model1': [1,2,3],
+                                         'model2': [0]}, 'coupling_out': [0, 1, 2, 3], 'type': 'lagrange',
                                          'save_output': True, 'model_args': (), 'model_kwargs': {}},
                                 {'name': 'Plume', ...}, ...]
         :param exo_vars: list() of BaseRVs specifying the bounds/distributions for all system-level exogenous inputs
@@ -94,9 +94,9 @@ class SystemSurrogate:
         for k in range(Nk):
             # Add the component as a str() node, with attributes specifying details of the surrogate
             comp_dict = components[k]
-            global_idx, surr = self.build_component(comp_dict, nodes=nodes)
-            self.graph.add_node(comp_dict['name'], exo_in=comp_dict['exo_in'], local_in=comp_dict['local_in'],
-                                global_in=global_idx, global_out=comp_dict['global_out'], surrogate=surr,
+            indices, surr = self.build_component(comp_dict, nodes=nodes)
+            self.graph.add_node(comp_dict['name'], exo_in=indices['exo_in'], local_in=indices['local_in'],
+                                global_in=indices['global_in'], global_out=indices['global_out'], surrogate=surr,
                                 is_computed=False)
 
         # Connect all neighbor nodes
@@ -117,19 +117,57 @@ class SystemSurrogate:
         """Build and return a ComponentSurrogate object from a dict that describes the component model/connections
         :param component: dict() specifying details of a component (see docs of __init__)
         :param nodes: dict() of {node: node_attributes}, defaults to self.graph.nodes
-        :returns global_idx, surr: the global coupling input indices and the ComponentSurrogate object
+        :returns connections, surr: a dict() of all connection indices and the ComponentSurrogate object
         """
         nodes = self.graph.nodes if nodes is None else nodes
         args = component.get('model_args', ())
         kwargs = component.get('model_kwargs', {})
 
-        # Get global indices of coupling inputs
-        global_idx = []
-        for comp_name, local_idx in component['local_in'].items():
+        # Get exogenous input indices (might already be a list of ints, otherwise convert list of vars to indices)
+        exo_in = component.get('exo_in') if component.get('exo_in') and isinstance(component['exo_in'][0], int) else \
+            [self.exo_vars.index(var) for var in component.get('exo_in')]
+
+        # Get global coupling output indices for all nodes (convert list of vars to list of indices if necessary)
+        global_out = {}
+        for node, node_obj in nodes.items():
+            global_out[node] = node_obj.get('coupling_out') if (node_obj.get('coupling_out') and
+                                                                isinstance(node_obj['coupling_out'][0], int)) else \
+                [self.coupling_vars.index(var) for var in node_obj.get('coupling_out')]
+
+        # Refactor coupling inputs into both local and global index formats
+        local_in = dict()   # e.g. {'Cathode': [0, 1, 2], 'Thruster': [0,], etc...}
+        global_in = list()  # e.g. [0, 2, 4, 5, 6]
+        if isinstance(component.get('coupling_in'), dict):
+            # If already a dict, get local connection indices from each neighbor
+            for node, connections in component['coupling_in'].items():
+                if isinstance(connections[0], int):
+                    local_in[node] = sorted(connections)
+                else:
+                    global_ind = [self.coupling_vars.index(var) for var in connections]
+                    local_in[node] = sorted([global_out[node].index(i) for i in global_ind])
+
+            # Convert to global coupling indices
+            for node, local_idx in local_in.items():
+                global_in.extend([global_out[node][i] for i in local_idx])
+            global_in = sorted(global_in)
+        else:
+            # Otherwise, convert a list of global indices or vars into a dict of local indices
+            global_in = sorted(component.get('coupling_in')) if (component.get('coupling_in') and
+                                                                 isinstance(component['coupling_in'][0], int)) else \
+                sorted([self.coupling_vars.index(var) for var in component.get('coupling_in')])
             for node, node_obj in nodes.items():
-                if node == comp_name:
-                    global_idx.extend([node_obj['global_out'][i] for i in local_idx])
-        global_idx = sorted(global_idx)
+                l = list()
+                for i in global_in:
+                    try:
+                        l.append(global_out[node].index(i))
+                    except ValueError:
+                        pass
+                if l:
+                    local_in[node] = sorted(l)
+
+        # Store all connection indices for this component
+        connections = dict(exo_in=exo_in, local_in=local_in, global_in=global_in,
+                           global_out=global_out.get(component.get('name')))
 
         # Set up a component output save directory
         if component.get('save_output', False):
@@ -149,11 +187,13 @@ class SystemSurrogate:
                 surr_class = AnalyticalSurrogate
             case other:
                 raise NotImplementedError(f"Surrogate type '{surr_type}' is not known at this time.")
-        x_vars = [self.exo_vars[i] for i in component['exo_in']] + [self.coupling_vars[i] for i in global_idx]
+
+        # Assumes input ordering is exogenous vars + sorted coupling vars
+        x_vars = [self.exo_vars[i] for i in exo_in] + [self.coupling_vars[i] for i in global_in]
         surr = surr_class([], x_vars, component['model'], component['truth_alpha'],
                           max_alpha=component.get('max_alpha', None), max_beta=component.get('max_beta', None),
                           executor=self.executor, log_file=self.log_file, model_args=args, model_kwargs=kwargs)
-        return global_idx, surr
+        return connections, surr
 
     def swap_component(self, component, exo_add=None, exo_remove=None, qoi_add=None, qoi_remove=None):
         """Swap a new component into the system, updating all connections/inputs
@@ -164,7 +204,11 @@ class SystemSurrogate:
         :param qoi_remove: list() of indices of system qois to delete (can't be shared by other components)
         """
         # Delete system exogenous inputs
-        exo_remove = [] if exo_remove is not None else sorted(exo_remove)
+        if exo_remove is None:
+            exo_remove = []
+        exo_remove = exo_remove if exo_remove and isinstance(exo_remove[0], int) else \
+            [self.exo_vars.index(str(var)) for var in exo_remove]
+        exo_remove = sorted(exo_remove)
         for j, exo_var_idx in enumerate(exo_remove):
             # Adjust exogenous indices for all components to account for deleted system inputs
             for node, node_obj in self.graph.nodes.items():
@@ -188,7 +232,11 @@ class SystemSurrogate:
             self.exo_vars.extend(exo_add)
 
         # Delete system qoi outputs (if not shared by other components)
-        qoi_remove = [] if qoi_remove is not None else sorted(qoi_remove)
+        if qoi_remove is None:
+            qoi_remove = []
+        qoi_remove = qoi_remove if qoi_remove and isinstance(qoi_remove[0], int) else \
+            [self.coupling_vars.index(str(var)) for var in qoi_remove]
+        qoi_remove = sorted(qoi_remove)
         for j, qoi_idx in enumerate(qoi_remove):
             # Adjust coupling indices for all components to account for deleted system outputs
             for node, node_obj in self.graph.nodes.items():
@@ -227,12 +275,12 @@ class SystemSurrogate:
             self.graph.remove_edge(neighbor, component['name'])
 
         # Build and initialize the new component surrogate
-        global_idx, surr = self.build_component(component)
+        indices, surr = self.build_component(component)
         surr.init_coarse()
         self.logger.info(f"Swapped component '{component['name']}'.")
-        nx.set_node_attributes(self.graph, {component['name']: {'exo_in': component['exo_in'], 'local_in':
-                                                                component['local_in'], 'global_in': global_idx,
-                                                                'global_out': component['global_out'],
+        nx.set_node_attributes(self.graph, {component['name']: {'exo_in': indices['exo_in'], 'local_in':
+                                                                indices['local_in'], 'global_in': indices['global_in'],
+                                                                'global_out': indices['global_out'],
                                                                 'surrogate': surr, 'is_computed': False}})
 
     def insert_component(self, component, exo_add=None, qoi_add=None):
@@ -246,10 +294,10 @@ class SystemSurrogate:
         if qoi_add is not None:
             self.coupling_vars.extend(qoi_add)
 
-        global_idx, surr = self.build_component(component)
+        indices, surr = self.build_component(component)
         surr.init_coarse()
-        self.graph.add_node(component['name'], exo_in=component['exo_in'], local_in=component['local_in'],
-                            global_in=global_idx, global_out=component['global_out'], surrogate=surr,
+        self.graph.add_node(component['name'], exo_in=indices['exo_in'], local_in=indices['local_in'],
+                            global_in=indices['global_in'], global_out=indices['global_out'], surrogate=surr,
                             is_computed=False)
         # Add graph edges
         neighbors = list(component['local_in'].keys())
@@ -284,16 +332,16 @@ class SystemSurrogate:
             self.logger.info(f"Initialized component '{node}'.")
 
     @save_on_error
-    def build_system(self, qoi_ind=None, N_refine=100, max_iter=20, max_tol=0.001, max_runtime=1, save_interval=0,
+    def build_system(self, qoi_ind=None, N_refine=100, max_iter=20, max_tol=1e-3, max_runtime=1, save_interval=0,
                      prune_tol=1e-10, update_bounds=True, test_set=None, continue_plot=True, n_jobs=-1):
         """Build the system surrogate by iterative refinement until an end condition is met
         :param qoi_ind: list(), Indices of system QoI to focus refinement on, use all QoI if not specified
         :param N_refine: number of samples of exogenous inputs to compute error indicators on
         :param max_iter: the maximum number of refinement steps to take
-        :param max_tol: the max allowable value in normalized RMSE to achieve (in units of 'pct of QoI mean')
+        :param max_tol: the max allowable value in relative L2 error to achieve
         :param max_runtime: the maximum wall clock time (hr) to run refinement for (will go until all models finish)
         :param save_interval (int) number of refinement steps between each progress save, none if 0
-        :param prune_tol: numerical tolerance in NRMSE below which a candidate multi-index is removed from consideration
+        :param prune_tol: numerical tol in rel L2 error below which a cand multi-index is removed from consideration
         :param update_bounds: whether to continuously update coupling variable bounds during refinement
         :param test_set: a dict() of xt=(Nt, xdim), yt=(Nt, ydim) to show convergence of surrogate to the truth model
         :param continue_plot: whether to append previous error metrics for plotting or start fresh (will need to
@@ -316,7 +364,7 @@ class SystemSurrogate:
             if continue_plot and self.build_metrics.get('test_stats') is not None:
                 test_stats = self.build_metrics.get('test_stats')
             else:
-                # Get initial perf metrics, (8, Nqoi)
+                # Get initial perf metrics, (3, Nqoi)
                 test_stats = np.expand_dims(self.get_test_metrics(xt, yt, qoi_ind=qoi_ind), axis=0)
             Nqoi = test_stats.shape[-1]
             t_fig, t_ax = plt.subplots(1, Nqoi) if Nqoi > 1 else plt.subplots()
@@ -360,14 +408,12 @@ class SystemSurrogate:
                     for i in range(Nqoi):
                         ax = t_ax if Nqoi == 1 else t_ax[i]
                         ax.clear(); ax.grid(); ax.set_yscale('log')
-                        ax.plot(test_stats[:, 4, i], '-g', label='Median')
-                        ax.plot(test_stats[:, 7, i], '-k', label='Mean')
-                        ax.plot(test_stats[:, 6, i], '-r', label='Max')
+                        ax.plot(test_stats[:, 2, i], '-k')
                         ax.set_title(f'QoI {i}')
-                        ax_default(ax, 'Iteration', 'Relative percent difference', legend=True)
+                        ax_default(ax, 'Iteration', r'Relative $L_2$ error', legend=False)
                     t_fig.set_size_inches(4*Nqoi, 3.5)
                     t_fig.tight_layout()
-                    t_fig.savefig(str(Path(self.root_dir) / 'rpd.png'), dpi=300, format='png')
+                    t_fig.savefig(str(Path(self.root_dir) / 'test_set.png'), dpi=300, format='png')
                     self.build_metrics['test_stats'] = test_stats
 
         self.build_metrics['err_record'] = err_record
@@ -375,11 +421,11 @@ class SystemSurrogate:
         self.logger.info(f'Final system surrogate:\n {self}')
 
     def get_test_metrics(self, xt, yt, qoi_ind=None):
-        """Get relative percent difference (RPD) error metric on a test set
+        """Get relative L2 error metric over a test set
         :param xt: (Nt, xdim) random test set of inputs
         :param yt: (Nt, ydim) random test set outputs
         :param qoi_ind: list() of indices of QoIs to get metrics for
-        :returns stats: (8, Nqoi) -> [refine_level, num_cands, min, 25th, 50th, 75th, max, mean] of RPD for each QoI
+        :returns stats: (3, Nqoi) -> [refine_level, num_cands, Relative L2] for each QoI
         """
         if qoi_ind is None:
             qoi_ind = slice(None)
@@ -387,23 +433,18 @@ class SystemSurrogate:
         ysurr = ysurr[:, qoi_ind]
         yt = yt[:, qoi_ind]
         with np.errstate(divide='ignore', invalid='ignore'):
-            rpd = 2 * np.abs(ysurr - yt) / (np.abs(ysurr) + np.abs(yt))  # RPD\in [0, 2]
-            rpd[np.logical_and(ysurr == 0, yt == 0)] = 0
+            rel_l2_err = np.sqrt(np.mean((yt - ysurr) ** 2, axis=0)) / np.sqrt(np.mean(yt ** 2, axis=0))
+            rel_l2_err = np.nan_to_num(rel_l2_err, posinf=np.nan, neginf=np.nan, nan=np.nan)
         num_cands = 0
         for node, node_obj in self.graph.nodes.items():
             num_cands += len(node_obj['surrogate'].index_set) + len(node_obj['surrogate'].candidate_set)
 
         # Get stats for each QoI
-        stats = np.zeros((8, yt.shape[-1]))
-        self.logger.debug(f'{"QoI idx":>10} {"Iteration":>10} {"len(I_k)":>10} {"Min":>10} {"25th pct":>10} '
-                          f'{"50th pct":>10} {"75th pct":>10} {"Max":>10} {"Mean":>10}')
+        stats = np.zeros((3, yt.shape[-1]))
+        self.logger.debug(f'{"QoI idx":>10} {"Iteration":>10} {"len(I_k)":>10} {"Relative L2":>15}')
         for i in range(yt.shape[-1]):
-            stats[:, i] = np.array([self.refine_level, num_cands, np.min(rpd[:, i]), np.percentile(rpd[:, i], 25),
-                                    np.percentile(rpd[:, i], 50), np.percentile(rpd[:, i], 75), np.max(rpd[:, i]),
-                                    np.mean(rpd[:, i])])
-            self.logger.debug(f'{i: 10d} {self.refine_level: 10d} {num_cands: 10d} {stats[2, i]: 10.3f} '
-                              f'{stats[3, i]: 10.3f} {stats[4, i]: 10.3f} {stats[5, i]: 10.3f} {stats[6, i]: 10.3f} '
-                              f'{stats[7, i]: 10.3f}')
+            stats[:, i] = np.array([self.refine_level, num_cands, rel_l2_err[i]])
+            self.logger.debug(f'{i: 10d} {self.refine_level: 10d} {num_cands: 10d} {rel_l2_err[i]: 15.5f}')
         return stats
 
     def refine(self, qoi_ind=None, N_refine=100, update_bounds=True, prune_tol=1e-10, ppool=None):
@@ -425,7 +466,7 @@ class SystemSurrogate:
             qoi_ind = slice(None)
 
         # Compute entire integrated-surrogate on a random test set for global system QoI error estimation
-        x_exo = self.sample_exo_inputs((N_refine,))
+        x_exo = self.sample_inputs((N_refine,))
         y_curr = self(x_exo, training=True)
         y_min, y_max = None, None
         if update_bounds:
@@ -433,7 +474,7 @@ class SystemSurrogate:
             y_max = np.max(y_curr, axis=0, keepdims=True)  # (1, ydim)
 
         # Find the candidate surrogate with the largest error indicator
-        error_max, nrmse_max, refine_indicator = -np.inf, -np.inf, -np.inf
+        error_max, l2_max, refine_indicator = -np.inf, -np.inf, -np.inf
         node_star, alpha_star, beta_star = None, None, None
         for node, node_obj in self.graph.nodes.items():
             self.logger.info(f"Estimating error for component '{node}'...")
@@ -447,8 +488,10 @@ class SystemSurrogate:
                 ymin = np.min(y_cand, axis=0, keepdims=True)
                 ymax = np.max(y_cand, axis=0, keepdims=True)
                 error = y_cand[:, qoi_ind] - y_curr[:, qoi_ind]
-                nrmse = np.sqrt(np.nanmean(error ** 2, axis=0)) / np.abs(np.nanmean(y_curr[:, qoi_ind], axis=0))
-                delta_error = np.nanmax(nrmse)  # Max normalized rmse over all system QoIs
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    rel_l2 = np.sqrt(np.nanmean(error ** 2, axis=0)) / np.sqrt(np.nanmean(y_curr[:, qoi_ind] ** 2, axis=0))
+                    rel_l2 = np.nan_to_num(rel_l2, nan=np.nan, posinf=np.nan, neginf=np.nan)
+                delta_error = np.nanmax(rel_l2)  # Max relative L2 error over all system QoIs
                 delta_work = max(1, node_obj['surrogate'].get_cost(alpha, beta))  # Wall time (s)
 
                 return ymin, ymax, delta_error, delta_work
@@ -468,13 +511,13 @@ class SystemSurrogate:
                                          f"{refine_indicator}")
                     else:
                         node_obj['surrogate'].prune_index(alpha, beta)
-                        self.logger.info(f"PRUNED candidate multi-index: {(alpha, beta)}, since max NRMSE "
+                        self.logger.info(f"PRUNED candidate multi-index: {(alpha, beta)}, since max relative L2 error "
                                          f"{d_error} < tol {prune_tol}")
                         continue
 
                     if refine_indicator > error_max:
                         error_max = refine_indicator
-                        nrmse_max = d_error
+                        l2_max = d_error
                         node_star = node
                         alpha_star = alpha
                         beta_star = beta
@@ -495,7 +538,7 @@ class SystemSurrogate:
         else:
             self.logger.info(f"No candidates left for refinement, iteration: {self.refine_level}")
 
-        return nrmse_max  # Probably a more intuitive metric for setting tolerances
+        return l2_max  # Probably a more intuitive metric for setting tolerances
 
     def __call__(self, x, max_fpi_iter=100, anderson_mem=10, fpi_tol=1e-10, ground_truth=False, verbose=False,
                  training=False, index_set=None):
@@ -659,7 +702,7 @@ class SystemSurrogate:
         :param N_est: The number of samples of exogenous inputs to use
         """
         self.print_title_str('Estimating coupling variable bounds')
-        x = self.sample_exo_inputs((N_est,))
+        x = self.sample_inputs((N_est,))
         y = self(x, ground_truth=True, verbose=True, anderson_mem=anderson_mem, fpi_tol=fpi_tol,
                  max_fpi_iter=max_fpi_iter)
         for i in range(len(self.coupling_vars)):
@@ -688,15 +731,33 @@ class SystemSurrogate:
                 local_idx = len(node_obj['exo_in']) + node_obj['global_in'].index(global_idx)
                 node_obj['surrogate'].update_input_bds(local_idx, new_bds)
 
-    def sample_exo_inputs(self, shape):
-        """Return samples of the exogenous inputs
+    def sample_inputs(self, shape, comp='System', use_pdf=False, nominal=None, constants=None):
+        """Return samples of the inputs according to provided options
         :param shape: tuple() specifying shape of the samples
-        :returns x: (*shape, xdim) samples of the exogenous inputs
+        :param comp: str() which component to sample inputs for (defaults to full system exogenous inputs)
+        :param use_pdf: whether to sample from each variable's pdf, defaults to random samples over input domain instead
+        :param nominal: dict() of {var_id: value} of nominal values for params with relative uncertainty, also can use
+                        to specify constant values for a variable in constants
+        :param constants: set() of param types to hold constant while sampling (i.e. calibration, design, etc.),
+                          can also put a var_id string in here to specify a single variable to hold constant
+        :returns x: (*shape, xdim) samples of the inputs
         """
-        xdim = len(self.exo_vars)
-        x = np.zeros((*shape, xdim))
-        for i in range(xdim):
-            x[..., i] = self.exo_vars[i].sample(shape)
+        if nominal is None:
+            nominal = dict()
+        if constants is None:
+            constants = set()
+        vars = self.exo_vars if comp == 'System' else self[comp].x_vars
+        xdim = len(vars)
+        x = np.empty((*shape, xdim))
+        for i, var in enumerate(vars):
+            # Set a constant value for this variable
+            if var.param_type in constants or str(var) in constants:
+                x[..., i] = nominal.get(str(var), var.nominal)  # Defaults to variable's nominal value if not specified
+
+            # Sample from this variable's pdf or randomly within its domain bounds
+            else:
+                x[..., i] = var.sample(shape, nominal=nominal.get(str(var), None)) if use_pdf \
+                    else var.sample_domain(shape)
 
         return x
 
@@ -773,11 +834,11 @@ class SystemSurrogate:
         """Convenience method to get the ComponentSurrogate object from the system
         :param component: (str) name of the component to get
         """
-        return self.graph.nodes[component]['surrogate']
+        return self.get_component(component)
 
     def __repr__(self):
         s = f'----SystemSurrogate----\nAdjacency: \n{nx.to_numpy_array(self.graph, dtype=int)}\n' \
-            f'Exogenous inputs: {self.exo_vars}\n'
+            f'Exogenous inputs: {[str(var) for var in self.exo_vars]}\n'
         for node, node_obj in self.graph.nodes.items():
             s += f'Component: {node}\n{node_obj["surrogate"]}'
         return s
@@ -1111,7 +1172,7 @@ class ComponentSurrogate(ABC):
                 self.surrogates[alpha][beta]._model_kwargs['output_dir'] = output_dir
 
     def __repr__(self):
-        s = f'Inputs \u2014 {self.x_vars}\n'
+        s = f'Inputs \u2014 {[str(var) for var in self.x_vars]}\n'
         if self.training_flag is None:
             self.update_misc_coeffs()
             self.training_flag = True

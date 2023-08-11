@@ -203,7 +203,7 @@ def plume_pem(x, *args, compress=True, **kwargs):
 
     # Load svd params for dimension reduction
     if compress:
-        with open(Path(__file__).parent / 'plume_svd.pkl', 'rb') as fd:
+        with open(Path(__file__).parent / 'data' / 'plume_svd.pkl', 'rb') as fd:
             svd_data = pickle.load(fd)
             vtr = svd_data['vtr']       # (r x M)
             r, M = vtr.shape
@@ -269,7 +269,7 @@ def jion_reconstruct(xr, alpha=None):
     :returns alpha, jion_interp: (..., Nx or M) The reconstructed (and potentially interpolated) jion profile(s),
                     corresponds to alpha=(0, 90) deg with M=100 points by default
     """
-    with open(Path(__file__).parent / 'plume_svd.pkl', 'rb') as fd:
+    with open(Path(__file__).parent / 'data' / 'plume_svd.pkl', 'rb') as fd:
         svd_data = pickle.load(fd)
         vtr = svd_data['vtr']       # (r x M)
         r, M = vtr.shape

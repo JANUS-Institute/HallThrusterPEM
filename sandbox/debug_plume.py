@@ -71,7 +71,7 @@ def test_interp():
 
 def test_refine():
     coupling_vars = [UniformRV(0, np.pi / 2, 'theta_d')]  # Div angle
-    with open(Path('../models') / 'plume_svd.pkl', 'rb') as fd:
+    with open(Path('../models/data') / 'plume_svd.pkl', 'rb') as fd:
         d = pickle.load(fd)
         r1 = d['vtr'].shape[0]
         coupling_vars.extend([UniformRV(-10, 10, f'jion{i}') for i in range(r1)])

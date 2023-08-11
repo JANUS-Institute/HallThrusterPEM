@@ -18,17 +18,15 @@ import uuid
 Q_E = 1.602176634e-19   # Fundamental charge (C)
 sys.path.append('..')
 
-from utils import ModelRunException, data_write, parse_input_file, get_logger
+from utils import ModelRunException, data_write, get_logger
 logger = get_logger(__name__)
 
 
 def hallthruster_jl_input(thruster_input):
-    # Format inputs for Hallthruster.jl
+    """Format inputs for Hallthruster.jl"""
     json_data = dict()
-    data_dir = Path('../data/spt100')
-    mag_offset = thruster_input['anom_coeff_2_mag_offset']
-    # vAN2 = thruster_input['anom_coeff_1'] * max(1, 10 ** mag_offset)
-    vAN2 = thruster_input['anom_coeff_1'] * mag_offset
+    data_dir = Path(__file__).parent / 'data'
+    vAN2 = thruster_input['anom_coeff_1'] * thruster_input['anom_coeff_2']
     json_data['parameters'] = {'neutral_temp_K': thruster_input['neutral_temp_K'],
                                'neutral_velocity_m_s': thruster_input['neutral_velocity_m_s'],
                                'ion_temp_K': thruster_input['ion_temp_K'],
@@ -70,7 +68,8 @@ def hallthruster_jl_input(thruster_input):
     return json_data
 
 
-def hall_thruster_jl_model(thruster_input, jl=None):
+def hallthruster_jl_model(thruster_input, jl=None):
+    """Run a single simulation specified by inputs in the thruster_input dict()"""
     # Import Julia
     if jl is None:
         from juliacall import Main as jl
@@ -84,15 +83,8 @@ def hall_thruster_jl_model(thruster_input, jl=None):
         fd = tempfile.NamedTemporaryFile(suffix='.json', encoding='utf-8', mode='w', delete=False)
         json.dump(json_data, fd, ensure_ascii=False, indent=4)
         fd.close()
-
-        # Throw a warning if transition length is too high
-        l_z = json_data['parameters']['inner_outer_transition_length_m']
-        if l_z < 0.001 or l_z > 0.02:
-            logger.warning(f'Transition length l_z = {l_z} m is out of bounds [1mm, 20mm]')
-
         t1 = time.time()
         sol = jl.HallThruster.run_simulation(fd.name, verbose=False)
-        # logger.info(f'Hallthruster.jl runtime: {time.time() - t1:.2f} s')
         os.unlink(fd.name)   # delete the tempfile
     except juliacall.JuliaError as e:
         raise ModelRunException(f"Julicall error in Hallthruster.jl: {e}")
@@ -123,16 +115,22 @@ def hall_thruster_jl_model(thruster_input, jl=None):
 
     thruster_output[0].update({'avg_ion_velocity': ui_avg, 'I_B0': I_B0})
 
+    # Raise an exception if thrust or beam current are negative (non-physical cases)
+    thrust = thruster_output[0]['thrust']
+    if thrust < 0 or I_B0 < 0:
+        raise ModelRunException(f'Exception due to non-physical case: thrust={thrust} N, beam current={I_B0} A')
+
     return thruster_output[0]
 
 
-def thruster_pem(x, alpha, *args, compress=True, output_dir=None, n_jobs=-1, **kwargs):
-    """Run Hallthruster.jl in PEM format
-    :param x: (..., xdim) Thruster inputs
+def thruster_pem(x, alpha, *args, compress=True, output_dir=None, n_jobs=-1, config='hallthruster_jl.json', **kwargs):
+    """Run Hallthruster.jl in PEM format on the SPT-100
+    :param x: (..., xdim) Inputs: ['PB', 'Va', 'mdot_a', 'T_ec', 'u_n', 'c_w', 'l_t', 'vAN1', 'vAN2', 'l_c', 'V_cc']
     :param alpha: tuple(alpha_1, alpha_2) Model fidelity indices = (N_cells, N_charge)
     :param compress: Whether to compress the ion velocity profile
     :param output_dir: str or Path specifying where to save Hallthruster.jl results
     :param n_jobs: (int) number of jobs to run in parallel, use all cpus if -1
+    :param config: (str) of config file to load static thruster simulation configs from models/config
     :returns y, files: (..., ydim) Thruster outputs and output files if output_dir is specified, otherwise just y
     """
     # Set model fidelity quantities from alpha
@@ -142,13 +140,14 @@ def thruster_pem(x, alpha, *args, compress=True, output_dir=None, n_jobs=-1, **k
     dt_map = [12.5e-9, 8.4e-9, 6.3e-9]
     dt_s = dt_map[alpha[0]] if Ncharge <= 2 else dt_map[alpha[0]] / math.sqrt(3/2)
 
-    # Constant inputs from input file (SPT-100 geometry, propellant, wall material, simulation params, etc.)
-    base_input, _ = parse_input_file('thruster_input.json')
+    # Constant inputs from config file (SPT-100 geometry, propellant, wall material, simulation params, etc.)
+    with open(Path(__file__).parent / 'config' / config, 'r') as fd:
+        base_input = json.load(fd)['SPT-100']
     base_input.update({'num_cells': Ncells, 'dt_s': dt_s, 'max_charge': Ncharge})
 
     # Load svd params for dimension reduction
     if compress:
-        with open(Path(__file__).parent / 'thruster_svd.pkl', 'rb') as fd:
+        with open(Path(__file__).parent / 'data' / 'thruster_svd.pkl', 'rb') as fd:
             svd_data = pickle.load(fd)
             vtr = svd_data['vtr']  # (r x M)
             r, M = vtr.shape
@@ -183,17 +182,14 @@ def thruster_pem(x, alpha, *args, compress=True, output_dir=None, n_jobs=-1, **k
                 'sheath_loss_coefficient': x_curr[5],
                 'inner_outer_transition_length_m': x_curr[6] * 1e-3,
                 'anom_coeff_1': 10 ** x_curr[7],
-                'anom_coeff_2_mag_offset': x_curr[8],
+                'anom_coeff_2': x_curr[8],
                 'cathode_location_m': x_curr[9],
-                'ion_temp_K': x_curr[10],
-                'neutral_temp_K': x_curr[11],
-                'background_temperature_K': x_curr[12],
-                'cathode_potential': x_curr[13]
+                'cathode_potential': x_curr[10]
             })
 
             # Run hallthruster.jl
             try:
-                res = hall_thruster_jl_model(thruster_input, jl=jl)
+                res = hallthruster_jl_model(thruster_input, jl=jl)
             except ModelRunException as e:
                 logger.warning(f'Skipping index {index} due to caught exception: {e}')
                 y[index + (slice(None),)] = np.nan
@@ -297,7 +293,7 @@ def uion_reconstruct(xr, z=None, L=0.08):
     :returns z, uion_interp: (..., Nz or M) The reconstructed (and potentially interpolated) uion profile(s),
                 corresponds to z=(0, 0.08) m with M=202 points by default
     """
-    with open(Path(__file__).parent / 'thruster_svd.pkl', 'rb') as fd:
+    with open(Path(__file__).parent / 'data' / 'thruster_svd.pkl', 'rb') as fd:
         svd_data = pickle.load(fd)
         vtr = svd_data['vtr']       # (r x M)
         r, M = vtr.shape
