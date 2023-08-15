@@ -7,8 +7,11 @@ import time
 import warnings
 import sys
 import logging
+import os
 import dill
 from pathlib import Path
+import datetime
+from datetime import timezone
 # from concurrent.futures import ThreadPoolExecutor, wait, ALL_COMPLETED
 # from mpi4py import MPI
 # MPI.pickle.__init__(dill.dumps, dill.loads)
@@ -20,6 +23,7 @@ from utils import ax_default, print_stats, UniformRV
 from surrogates.system import SystemSurrogate
 from surrogates.sparse_grids import SparseGridSurrogate, TensorProductInterpolator
 from models.simple_models import tanh_func, custom_nonlinear, fire_sat_system, fake_pem
+from models.pem import pem_system
 
 FORMATTER = logging.Formatter("%(asctime)s — [%(levelname)s] — %(name)s — %(message)s")
 handler = logging.StreamHandler(sys.stdout)
@@ -599,6 +603,55 @@ def test_system_refine():
     plt.show()
 
 
+def test_1d_sweep():
+    # Load a stand-in system for evaluating ground truth model
+    timestamp = datetime.datetime.now(tz=timezone.utc).isoformat().split('.')[0].replace(':', '.')
+    root_dir = Path('../results/surrogates') / f'sweep_{timestamp}'
+    os.mkdir(root_dir)
+    pem = pem_system(init=False, root_dir=root_dir)
+
+    # Load the trained system surrogate
+    surr_dir = Path('../results/surrogates') / 'build_2023-08-11T23.09.43'
+    surr = SystemSurrogate.load_from_file(surr_dir / 'sys' / 'sys_final.pkl', root_dir=surr_dir)
+    surr.set_output_dir({'Thruster': None})  # Don't save outputs for testing
+
+    # 1d slice test set(s) for plotting
+    N = 50
+    slice_idx = [0, 1, 2, 10]
+    qoi_idx = [1, 2, 3, 8]
+    exo_bds = [var.bounds() for var in pem.exo_vars]
+    xlabels = [pem.exo_vars[idx].to_tex(units=True) for idx in slice_idx]
+    ylabels = [pem.coupling_vars[idx].to_tex(units=True) for idx in qoi_idx]
+
+    xs = np.zeros((N, len(slice_idx), len(pem.exo_vars)))
+    for i in range(len(slice_idx)):
+        for j in range(len(pem.exo_vars)):
+            if j == slice_idx[i]:
+                xs[:, i, j] = np.linspace(exo_bds[j][0], exo_bds[j][1], N)  # 1d slice of input parameter of interest
+            else:
+                xs[:, i, j] = pem.exo_vars[j].nominal
+    ys_model = pem(xs, ground_truth=True)
+    ys_surr = surr(xs)
+
+    fig, axs = plt.subplots(len(qoi_idx), len(slice_idx), sharex='col', sharey='row')
+    for i in range(len(qoi_idx)):
+        for j in range(len(slice_idx)):
+            ax = axs[i, j]
+            x = xs[:, j, slice_idx[j]]
+            y_model = ys_model[:, j, qoi_idx[i]]
+            y_surr = ys_surr[:, j, qoi_idx[i]]
+            ax.plot(x, y_model, '-k', label='Model')
+            ax.plot(x, y_surr, '--r', label='Surrogate')
+            ylabel = ylabels[i] if j == 0 else ''
+            xlabel = xlabels[j] if i == len(qoi_idx) - 1 else ''
+            legend = i == 0 and j == len(slice_idx) - 1
+            ax_default(ax, xlabel, ylabel, legend=legend)
+    fig.set_size_inches(3 * len(slice_idx), 3 * len(qoi_idx))
+    fig.tight_layout()
+    fig.savefig(root_dir / 'sweep.png', dpi=300, format='png')
+    plt.show()
+
+
 if __name__ == '__main__':
     """Each one of these tests was used to iteratively build up the SystemSurrogate class for MD, MF interpolation"""
     # test_tensor_product_1d()
@@ -609,7 +662,8 @@ if __name__ == '__main__':
     # test_feedforward()
     # test_system_surrogate()
     # test_system_refine()
-    test_fire_sat(filename=None)
+    # test_fire_sat(filename=None)
     # test_fire_sat(filename=Path('save')/'sys_error.pkl')
     # test_fpi()
     # test_fake_pem()
+    test_1d_sweep()

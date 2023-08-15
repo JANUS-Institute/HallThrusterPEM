@@ -206,7 +206,7 @@ def thruster_pem(x, alpha, *args, compress=True, output_dir=None, n_jobs=-1, con
             y[index + (2,)] = res['voltage_eff']
             y[index + (3,)] = res['current_eff']
             y[index + (4,)] = res['mass_eff']
-            y[index + (5,)] = res['avg_ion_velocity']
+            y[index + (5,)] = res['avg_ion_velocity'] / 1000.0
 
             if compress:
                 # Interpolate ion velocity to the full reconstruction grid (of dim M)

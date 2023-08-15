@@ -104,6 +104,7 @@ class SparseGridSurrogate(ComponentSurrogate):
         return xi, yi
 
     def update_yi(self, alpha, beta, yi_dict):
+        """Helper method to update yi values, accounting for possible nans by regression imputation"""
         self.yi_map[str(alpha)].update(yi_dict)
         imputer, xdim = None, len(self.x_vars)
         for grid_coord, yi in yi_dict.items():

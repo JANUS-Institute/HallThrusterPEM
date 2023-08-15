@@ -10,6 +10,7 @@ dependencies:
       - juliacall
       - juliapkg
       - matplotlib=3.7.0
+      - scikit-learn
       - joblib
       - networkx
       - dill

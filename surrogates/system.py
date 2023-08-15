@@ -859,7 +859,7 @@ class SystemSurrogate:
         :param executor: a concurrent.futures.Executor object to set, clears if None
         """
         if root_dir is None:
-            root_dir = Path(filename).parent
+            root_dir = Path(filename).parent.parent     # Assume root/sys/filename.pkl
 
         with open(filename, 'rb') as dill_file:
             sys_surr = dill.load(dill_file)
