@@ -149,7 +149,7 @@ def fire_sat_system():
             vel[i + (0,)] = np.nan
             theta_slew[i2 + (0,)] = np.nan
         y = np.concatenate((vel, dt_orbit, dt_eclipse, theta_slew), axis=-1)
-        return y
+        return {'y': y}
 
     def power_fun(x, *args, output_dir=None, **kwargs):
         Po = x[..., 0:1]            # Other power sources (W)
@@ -192,9 +192,9 @@ def fire_sat_system():
                 with open(Path(output_dir) / fname, 'wb') as fd:
                     pickle.dump({'y': y[index + (slice(None),)]}, fd)
                 files.append(fname)
-            return y, files
+            return {'y': y, 'files': files}
         else:
-            return y
+            return {'y': y}
 
     def attitude_fun(x, *args, output_dir=None, **kwargs):
         H = x[..., 0:1]             # Altitude (m)
@@ -225,9 +225,9 @@ def fire_sat_system():
                 with open(Path(output_dir) / fname, 'wb') as fd:
                     pickle.dump({'y': y[index + (slice(None),)]}, fd)
                 files.append(fname)
-            return y, files
+            return {'y': y, 'files': files}
         else:
-            return y
+            return {'y': y}
 
     orbit = {'name': 'Orbit', 'model': orbit_fun, 'truth_alpha': (), 'exo_in': [0, 1], 'coupling_in': {},
              'coupling_out': [0, 1, 2, 3], 'max_alpha': (), 'max_beta': (3, 3), 'type': 'lagrange',

@@ -69,4 +69,4 @@ def cc_pem(x, *args, **kwargs):
     y[y < 0] = 0
     ind = np.where(y > Va)
     y[ind] = Va[ind]
-    return y
+    return {'y': y, 'cost': 1}

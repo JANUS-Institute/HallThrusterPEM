@@ -44,8 +44,7 @@ class SparseGridSurrogate(ComponentSurrogate):
         if ground_truth:
             # Bypass surrogate evaluation
             ret = self._model(x, self.truth_alpha, *self._model_args, **self._model_kwargs)
-            y = ret[0] if self.save_enabled() else ret
-            return y
+            return ret['y']
 
         # Decide which index set and corresponding misc coefficients to use
         misc_coeff = copy.deepcopy(self.misc_coeff)
@@ -205,12 +204,10 @@ class SparseGridSurrogate(ComponentSurrogate):
         # Compute and store model output at new refinement points in a hash structure
         yi_ret = interp.set_yi(x_new=(x_new_idx, x_new))
         alpha = interp._model_args[0]
+        self.update_yi(alpha, interp.beta, yi_ret['y'])
         if self.save_enabled():
-            self.update_yi(alpha, interp.beta, yi_ret[0])
-            self.yi_files[str(alpha)].update(yi_ret[1])
-        else:
-            self.update_yi(alpha, interp.beta, yi_ret)
-        cost = interp.wall_time * len(x_new_idx)
+            self.yi_files[str(alpha)].update(yi_ret['files'])
+        cost = interp.model_cost * len(x_new_idx)
 
         if self.ydim is None:
             for coord_str, yi in self.yi_map[str(alpha)].items():
@@ -240,8 +237,8 @@ class SparseGridSurrogate(ComponentSurrogate):
                 add_file_logging(logger_child, self.log_file, suppress_stdout=True)
             logger_child.info(f'Building interpolant for index {(alpha, beta)} ...')
             yi_ret = interp.set_yi(x_new=(x_new_idx, x_new))
-            wall_time = interp.wall_time if interp.wall_time is not None else 1
-            return yi_ret, wall_time
+            model_cost = interp.model_cost if interp.model_cost is not None else 1
+            return yi_ret, model_cost
 
         # Wait for all parallel workers to return
         fs = [executor.submit(parallel_task, *args) for args in task_args]
@@ -254,16 +251,13 @@ class SparseGridSurrogate(ComponentSurrogate):
                 b = task_args[i][1]
                 x_new_idx = task_args[i][2]
                 interp = task_args[i][4]
-                yi_ret = future.result()
-                wall_time = yi_ret[1]
-                interp.wall_time = wall_time
+                yi_ret, model_cost = future.result()
+                interp.model_cost = model_cost
                 self.surrogates[str(a)][str(b)] = interp
+                self.update_yi(a, b, yi_ret['y'])
                 if self.save_enabled():
-                    self.update_yi(a, b, yi_ret[0][0])
-                    self.yi_files[str(a)].update(yi_ret[0][1])
-                else:
-                    self.update_yi(a, b, yi_ret[0])
-                self.costs[str(a)][str(b)] = interp.wall_time * len(x_new_idx)
+                    self.yi_files[str(a)].update(yi_ret['files'])
+                self.costs[str(a)][str(b)] = interp.model_cost * len(x_new_idx)
 
                 if self.ydim is None:
                     for coord_str, yi in self.yi_map[str(a)].items():
@@ -408,7 +402,7 @@ class TensorProductInterpolator(BaseInterpolator):
                         x_new_idx.append(new_x_idx)     # Add a tuple() multi-index if not saving xi/yi
 
             # Evaluate the model at new interpolation points
-            interp.wall_time = self.wall_time
+            interp.model_cost = self.model_cost
             if self._model is None:
                 self.logger.warning(f'No model available to evaluate new interpolation points, returning the points '
                                     f'to you instead...')

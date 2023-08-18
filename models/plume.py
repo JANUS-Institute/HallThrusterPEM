@@ -256,7 +256,7 @@ def plume_pem(x, *args, compress=True, **kwargs):
 
         # Ion current density (A/m^2), in compressed dimension (r) or default dimension (M)
         y[..., 1:] = np.squeeze(vtr @ np.log10(j[..., np.newaxis].real), axis=-1) if compress else j.real
-        return y
+        return {'y': y, 'cost': 1}
 
     except Exception as e:
         raise ModelRunException(f"Exception in plume model: {e}")

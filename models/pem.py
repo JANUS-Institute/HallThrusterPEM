@@ -47,7 +47,7 @@ def feedforward_pem(model_inputs, jl=None):
     return pem_result
 
 
-def pem_system(root_dir=None, executor=None, init=True):
+def pem_system(root_dir=None, executor=None, init=True, hf_override=False):
     """Return a SystemSurrogate object for the feedforward PEM system"""
     exo_vars = load_variables(['PB', 'Va', 'mdot_a', 'T_ec', 'V_vac', 'P*', 'PT', 'u_n', 'c_w', 'l_t', 'vAN1', 'vAN2',
                                'l_c', 'c0', 'c1', 'c2', 'c3', 'c4', 'c5', 'sigma_cex', 'r_m'])
@@ -78,7 +78,7 @@ def pem_system(root_dir=None, executor=None, init=True):
                 'exo_in': thruster_exo, 'coupling_in': ['V_cc'], 'coupling_out':
                     ['I_B0', 'T', 'eta_v', 'eta_c', 'eta_m', 'ui_avg'] + [f'uion{i}' for i in range(r1)],
                 'type': 'lagrange', 'max_beta': (2,) * (len(thruster_exo) + 1), 'save_output': True,
-                'model_args': (), 'model_kwargs': {'n_jobs': -1, 'compress': True}}
+                'model_args': (), 'model_kwargs': {'n_jobs': -1, 'compress': True, 'hf_override': hf_override}}
     plume = {'name': 'Plume', 'model': plume_pem, 'truth_alpha': (), 'exo_in': plume_exo, 'max_alpha': (),
              'coupling_in': ['I_B0'], 'coupling_out': ['theta_d'] + [f'jion{i}' for i in range(r2)],
              'type': 'analytical', 'max_beta': (3,)*(len(plume_exo)+1), 'model_args': (),

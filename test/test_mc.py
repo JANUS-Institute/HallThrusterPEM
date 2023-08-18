@@ -25,9 +25,10 @@ from models.plume import plume_pem, jion_reconstruct
 from models.thruster import thruster_pem, uion_reconstruct
 from utils import parse_input_file, data_write, ModelRunException, data_load, ax_default, spt100_data
 from utils import batch_normal_sample, is_positive_definite, nearest_positive_definite
+from surrogates.system import SystemSurrogate
 
 
-def plot_qoi(ax, x, qoi, xlabel, ylabel, logx=False, legend=False, linestyle='-ko'):
+def plot_qoi(ax, x, qoi, xlabel, ylabel, legend=False):
     """ Plot QOI with 5%, 50%, 95% percentiles against x
     x: (Nx)
     qoi: (Nx, Ns)
@@ -35,141 +36,126 @@ def plot_qoi(ax, x, qoi, xlabel, ylabel, logx=False, legend=False, linestyle='-k
     p5 = np.percentile(qoi, 5, axis=1)
     med = np.percentile(qoi, 50, axis=1)
     p95 = np.percentile(qoi, 95, axis=1)
-    ax.plot(x, med, linestyle, fillstyle='none', label='Model')
-    ax.fill_between(x, p5, p95, alpha=0.5, edgecolor=(0.4, 0.4, 0.4), facecolor=(0.8, 0.8, 0.8))
+    ax.plot(x, med, '-k', label='Model')
+    ax.fill_between(x, p5, p95, alpha=0.4, edgecolor=(0.4, 0.4, 0.4), facecolor=(0.8, 0.8, 0.8))
     ax_default(ax, xlabel, ylabel, legend=legend)
-    if logx:
-        ax.set_xscale('log')
 
 
-def plot_mc_experimental(base_path):
+def plot_mc_experimental(Ns=1000):
     """Plot thrust, ion velocity, and ion current density against experimental data with UQ bounds"""
+    exp_data = spt100_data()
+    model = SystemSurrogate.load_from_file(Path('../results/surrogates/build_2023-08-11T23.09.43')
+                                           / 'sys' / 'sys_final_edit.pkl')
     # Thrust
-    folders = os.listdir(base_path / 'thrust')
-    Nx = len(folders)  # Number of pressure locations
-    Ns = len(os.listdir(base_path / 'thrust' / folders[0]))  # Number of MC samples
-    folders = sorted(folders, key=lambda ele: float(ele.split('_')[0]))
-    pb = np.zeros(Nx)
-    pred = np.zeros((Nx, Ns))
-
-    # Load experimental data
-    data = spt100_data(exclude=['vcc', 'ion_velocity', 'ion_current_density'])
-    exp = np.zeros((Nx, 3))
-    for i, data_tuple in enumerate(data):
-        exp[i, 0] = data_tuple[1]['background_pressure_Torr']
-        exp[i, 1] = data_tuple[2]
-        exp[i, 2] = ((data_tuple[2] * data_tuple[3]['value']/100) / 2) ** 2
-
-    # Load predictions
-    for i, folder in enumerate(folders):
-        pb[i] = float(folder.split('_')[0])
-        for j, filename in enumerate(os.listdir(base_path / 'thrust' / folder)):
-            if 'exc' not in str(filename):
-                with open(base_path / 'thrust' / folder / filename, 'r') as fd:
-                    data = json.load(fd)
-                    pred[i, j] = data['thruster']['output']['thrust'][0]
-
-    # Plot thrust
+    data = exp_data['T']
+    pb = data['x'][:, 0]
+    idx = np.argsort(pb)
+    Nx = data['x'].shape[0]
+    xs = np.empty((Nx, Ns, len(model.exo_vars)))
+    for i in range(Nx):
+        nominal = {'PB': np.log10(data['x'][i, 0]), 'Va': data['x'][i, 1], 'mdot_a': data['x'][i, 2]}
+        xs[i, :, :] = model.sample_inputs((Ns,), use_pdf=True, nominal=nominal)
+    ys = np.squeeze(model(xs, qois=['T']), axis=-1)
     fig, ax = plt.subplots()
-    yerr = 2 * np.sqrt(exp[:, 2])
-    ax.errorbar(exp[:, 0], exp[:, 1]*1000, yerr=yerr*1000, fmt='or', capsize=3, markerfacecolor='none',
+    yerr = 2 * np.sqrt(data['noise_var'])
+    ax.errorbar(pb, data['y']*1000, yerr=yerr*1000, fmt='or', capsize=3, markerfacecolor='none',
                 label='Experimental', markersize=5)
-    plot_qoi(ax, pb, pred*1000, 'Background pressure [torr]', 'Thrust [mN]', legend=True)
+    plot_qoi(ax, pb[idx], ys[idx, ...]*1000, 'Background pressure (Torr)', 'Thrust (mN)', legend=True)
     fig.tight_layout()
     plt.show()
 
     # Ion velocity
-    folders = os.listdir(base_path / 'ion_velocity')
-    Nx = len(folders)  # Number of pressure locations
-    Ns = len(os.listdir(base_path / 'ion_velocity' / folders[0]))  # Number of MC samples
-    folders = sorted(folders, key=lambda ele: float(ele.split('_')[0]))
-    pb = np.zeros(Nx)
-    n_grid = 152
-    z_m = np.zeros(n_grid)
-    pred = np.zeros((Nx, n_grid, Ns))
-
-    # Load experimental data
-    data = spt100_data(exclude=['vcc', 'thrust', 'ion_current_density'])
-    data = sorted(data, key=lambda ele: ele[1]['background_pressure_Torr'])
-    ndata = len(data[0][1]['z_m'])
-    exp = np.zeros((Nx, ndata, 3))
-    for i, data_tuple in enumerate(data):
-        exp[i, :, 0] = np.atleast_1d(data_tuple[1]['z_m'])
-        exp[i, :, 1] = np.atleast_1d(data_tuple[2])
-        exp[i, :, 2] = data_tuple[3]['value']
-
-    # Load predictions
-    for i, folder in enumerate(folders):
-        pb[i] = float(folder.split('_')[0])
-        for j, filename in enumerate(os.listdir(base_path / 'ion_velocity' / folder)):
-            if 'exc' not in str(filename):
-                with open(base_path / 'ion_velocity' / folder / filename, 'r') as fd:
-                    data = json.load(fd)
-                    z_m[:] = np.atleast_1d(data['thruster']['output']['z'])
-                    pred[i, :, j] = np.atleast_1d(data['thruster']['output']['ui_1'])
-
-    # Plot ion velocity
-    fig, ax = plt.subplots(1, Nx, sharey='row')
-    for i in range(Nx):
-        yerr = 2 * np.sqrt(exp[i, :, 2])
-        ax[i].errorbar(exp[i, :, 0]*1000, exp[i, :, 1], yerr=yerr, fmt='or', capsize=3, markerfacecolor='none',
-                       label='Experimental', markersize=5)
-        ylabel = 'Axial ion velocity [m/s]' if i == 0 else ''
-        legend = i == 2
-        plot_qoi(ax[i], z_m*1000, pred[i, :, :], 'Axial distance from anode [mm]', ylabel,
-                 legend=legend, linestyle='-k')
-        ax[i].set_title(f'{pb[i]} torr')
-    fig.set_size_inches(9, 3)
-    fig.tight_layout()
-    plt.show()
-
-    # Ion current density
-    folders = os.listdir(base_path / 'ion_current_density')
-    Nx = len(folders)  # Number of pressure locations
-    Ns = len(os.listdir(base_path / 'ion_current_density' / folders[0]))  # Number of MC samples
-    folders = sorted(folders, key=lambda ele: float(ele.split('_')[0]))
-    pb = np.zeros(Nx)
-
-    # Load experimental data
-    data = spt100_data(exclude=['vcc', 'thrust', 'ion_velocity'])
-    data = sorted(data, key=lambda ele: ele[1]['background_pressure_Torr'])
-    ndata = len(data[0][1]['alpha_deg'])
-    exp = np.zeros((Nx, ndata, 3))
-    alpha_deg = np.zeros(ndata)
-    pred = np.zeros((Nx, ndata, Ns))
-    for i, data_tuple in enumerate(data):
-        exp[i, :, 0] = np.atleast_1d(data_tuple[1]['alpha_deg'])
-        exp[i, :, 1] = np.atleast_1d(data_tuple[2])
-        exp[i, :, 2] = ((np.atleast_1d(data_tuple[2]) * data_tuple[3]['value']/100) / 2) ** 2
-
-    # Load predictions
-    for i, folder in enumerate(folders):
-        pb[i] = float(folder.split('_')[0])
-        for j, filename in enumerate(os.listdir(base_path / 'ion_current_density' / folder)):
-            if 'exc' not in str(filename):
-                with open(base_path / 'ion_current_density' / folder / filename, 'r') as fd:
-                    data = json.load(fd)
-                    alpha_deg[:] = np.atleast_1d(data['plume']['input']['alpha_deg'])
-                    pred[i, :, j] = np.atleast_1d(data['plume']['output']['ion_current_density'])
-
-    # Plot ion velocity
-    fig, ax = plt.subplots(2, int(Nx/2), sharey='row', sharex='col')
-    idx = 0
-    for i in range(2):
-        for j in range(int(Nx/2)):
-            yerr = 2 * np.sqrt(exp[idx, :, 2])
-            ax[i, j].errorbar(exp[idx, :, 0], exp[idx, :, 1]*0.1, yerr=yerr*0.1, fmt='or', capsize=3,
-                              markerfacecolor='none', label='Experimental', markersize=5)
-            xlabel = 'Angle from thruster centerline [deg]' if i == 1 else ''
-            ylabel = 'Ion current density [$mA/cm^2$]' if j == 0 else ''
-            legend = i == 0 and j == int(Nx/2) - 1
-            plot_qoi(ax[i, j], alpha_deg, pred[idx, :, :]*0.1, xlabel, ylabel, legend=legend, linestyle='-k')
-            ax[i, j].set_title(f'{pb[idx]} torr')
-            ax[i, j].set_yscale('log')
-            idx += 1
-    fig.set_size_inches(12, 6)
-    fig.tight_layout()
-    plt.show()
+    # folders = os.listdir(base_path / 'ion_velocity')
+    # Nx = len(folders)  # Number of pressure locations
+    # Ns = len(os.listdir(base_path / 'ion_velocity' / folders[0]))  # Number of MC samples
+    # folders = sorted(folders, key=lambda ele: float(ele.split('_')[0]))
+    # pb = np.zeros(Nx)
+    # n_grid = 152
+    # z_m = np.zeros(n_grid)
+    # pred = np.zeros((Nx, n_grid, Ns))
+    #
+    # # Load experimental data
+    # data = spt100_data(exclude=['vcc', 'thrust', 'ion_current_density'])
+    # data = sorted(data, key=lambda ele: ele[1]['background_pressure_Torr'])
+    # ndata = len(data[0][1]['z_m'])
+    # exp = np.zeros((Nx, ndata, 3))
+    # for i, data_tuple in enumerate(data):
+    #     exp[i, :, 0] = np.atleast_1d(data_tuple[1]['z_m'])
+    #     exp[i, :, 1] = np.atleast_1d(data_tuple[2])
+    #     exp[i, :, 2] = data_tuple[3]['value']
+    #
+    # # Load predictions
+    # for i, folder in enumerate(folders):
+    #     pb[i] = float(folder.split('_')[0])
+    #     for j, filename in enumerate(os.listdir(base_path / 'ion_velocity' / folder)):
+    #         if 'exc' not in str(filename):
+    #             with open(base_path / 'ion_velocity' / folder / filename, 'r') as fd:
+    #                 data = json.load(fd)
+    #                 z_m[:] = np.atleast_1d(data['thruster']['output']['z'])
+    #                 pred[i, :, j] = np.atleast_1d(data['thruster']['output']['ui_1'])
+    #
+    # # Plot ion velocity
+    # fig, ax = plt.subplots(1, Nx, sharey='row')
+    # for i in range(Nx):
+    #     yerr = 2 * np.sqrt(exp[i, :, 2])
+    #     ax[i].errorbar(exp[i, :, 0]*1000, exp[i, :, 1], yerr=yerr, fmt='or', capsize=3, markerfacecolor='none',
+    #                    label='Experimental', markersize=5)
+    #     ylabel = 'Axial ion velocity [m/s]' if i == 0 else ''
+    #     legend = i == 2
+    #     plot_qoi(ax[i], z_m*1000, pred[i, :, :], 'Axial distance from anode [mm]', ylabel,
+    #              legend=legend, linestyle='-k')
+    #     ax[i].set_title(f'{pb[i]} torr')
+    # fig.set_size_inches(9, 3)
+    # fig.tight_layout()
+    # plt.show()
+    #
+    # # Ion current density
+    # folders = os.listdir(base_path / 'ion_current_density')
+    # Nx = len(folders)  # Number of pressure locations
+    # Ns = len(os.listdir(base_path / 'ion_current_density' / folders[0]))  # Number of MC samples
+    # folders = sorted(folders, key=lambda ele: float(ele.split('_')[0]))
+    # pb = np.zeros(Nx)
+    #
+    # # Load experimental data
+    # data = spt100_data(exclude=['vcc', 'thrust', 'ion_velocity'])
+    # data = sorted(data, key=lambda ele: ele[1]['background_pressure_Torr'])
+    # ndata = len(data[0][1]['alpha_deg'])
+    # exp = np.zeros((Nx, ndata, 3))
+    # alpha_deg = np.zeros(ndata)
+    # pred = np.zeros((Nx, ndata, Ns))
+    # for i, data_tuple in enumerate(data):
+    #     exp[i, :, 0] = np.atleast_1d(data_tuple[1]['alpha_deg'])
+    #     exp[i, :, 1] = np.atleast_1d(data_tuple[2])
+    #     exp[i, :, 2] = ((np.atleast_1d(data_tuple[2]) * data_tuple[3]['value']/100) / 2) ** 2
+    #
+    # # Load predictions
+    # for i, folder in enumerate(folders):
+    #     pb[i] = float(folder.split('_')[0])
+    #     for j, filename in enumerate(os.listdir(base_path / 'ion_current_density' / folder)):
+    #         if 'exc' not in str(filename):
+    #             with open(base_path / 'ion_current_density' / folder / filename, 'r') as fd:
+    #                 data = json.load(fd)
+    #                 alpha_deg[:] = np.atleast_1d(data['plume']['input']['alpha_deg'])
+    #                 pred[i, :, j] = np.atleast_1d(data['plume']['output']['ion_current_density'])
+    #
+    # # Plot ion velocity
+    # fig, ax = plt.subplots(2, int(Nx/2), sharey='row', sharex='col')
+    # idx = 0
+    # for i in range(2):
+    #     for j in range(int(Nx/2)):
+    #         yerr = 2 * np.sqrt(exp[idx, :, 2])
+    #         ax[i, j].errorbar(exp[idx, :, 0], exp[idx, :, 1]*0.1, yerr=yerr*0.1, fmt='or', capsize=3,
+    #                           markerfacecolor='none', label='Experimental', markersize=5)
+    #         xlabel = 'Angle from thruster centerline [deg]' if i == 1 else ''
+    #         ylabel = 'Ion current density [$mA/cm^2$]' if j == 0 else ''
+    #         legend = i == 0 and j == int(Nx/2) - 1
+    #         plot_qoi(ax[i, j], alpha_deg, pred[idx, :, :]*0.1, xlabel, ylabel, legend=legend, linestyle='-k')
+    #         ax[i, j].set_title(f'{pb[idx]} torr')
+    #         ax[i, j].set_yscale('log')
+    #         idx += 1
+    # fig.set_size_inches(12, 6)
+    # fig.tight_layout()
+    # plt.show()
 
 
 def plot_mc(base_path):
@@ -570,7 +556,7 @@ def test_plume_svd():
     def save_svd():
         """Save svd results for a test set of N=1000"""
         x = sampler(6000)
-        y = plume_pem(x, compress=False)
+        y = plume_pem(x, compress=False)['y']
         idx = ~np.isnan(y[:, 0]) & (np.nanmax(y, axis=-1) <= 1000)
         div_eff = y[idx, 0]
         div_angle = y[idx, 1] * (180 / np.pi)
@@ -644,7 +630,7 @@ def test_plume_svd():
         x[:, 7] = 55e-20
         x[:, 8] = r_m[:, 0]     # m
         x[:, 9] = 3.6           # A
-        pem_res = plume_pem(x, compress=True)   # (Np, 2+r)
+        pem_res = plume_pem(x, compress=True)['y']   # (Np, 2+r)
         _, pem_interp = jion_reconstruct(pem_res[:, 2:], alpha=alpha_rad)  # (Np, M)
         pem_interp = pem_interp * (1000) * (1 / 100 ** 2)  # mA/cm^2
 
@@ -700,7 +686,8 @@ def test_thruster_svd():
         timestamp = datetime.datetime.now(tz=timezone.utc).isoformat().replace(':', '.')
         save_dir = Path('../results/svd') / timestamp
         os.mkdir(save_dir)
-        y, _ = thruster_pem(x, alpha, output_dir=save_dir, compress=False, n_jobs=-1)
+        ret = thruster_pem(x, alpha, output_dir=save_dir, compress=False, n_jobs=-1)
+        y = ret.get('y')
         idx = ~np.isnan(y[:, 0])
         IB0 = y[idx, 0]
         T = y[idx, 1]
@@ -781,7 +768,8 @@ def test_thruster_svd():
         x[:, 11] = 300      # K
         x[:, 12] = 300      # K
         x[:, 13] = 30       # V
-        pem_res, files = thruster_pem(x, (3, 1), output_dir='.', compress=True, n_jobs=3)  # (Np, 6+r)
+        ret = thruster_pem(x, (3, 1), output_dir='.', compress=True, n_jobs=3)  # (Np, 6+r)
+        pem_res, files = ret['y'], ret['files']
         # with open('eval.pkl', 'rb') as fd:
         #     d = pickle.load(fd)
         #     pem_res = d['y']
@@ -818,7 +806,7 @@ if __name__ == '__main__':
     N = 200
     # test_cc_forward(N, n_jobs=-1)
     # test_feedforward_mc(N, n_jobs=-1)
-    test_plume_svd()
+    # test_plume_svd()
     # test_thruster_svd()
 
     # Plot results (most recent run)
@@ -829,5 +817,5 @@ if __name__ == '__main__':
     #     if f > most_recent:
     #         most_recent = f
     # base_path = dir / most_recent
-    # plot_mc_experimental(base_path)
+    plot_mc_experimental()
     # plot_mc(base_path)

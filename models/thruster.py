@@ -133,6 +133,10 @@ def thruster_pem(x, alpha, *args, compress=True, output_dir=None, n_jobs=-1, con
     :param config: (str) of config file to load static thruster simulation configs from models/config
     :returns y, files: (..., ydim) Thruster outputs and output files if output_dir is specified, otherwise just y
     """
+    # Check for a single-fidelity override of alpha in kwargs
+    if kwargs.get('hf_override'):
+        alpha = kwargs.get('hf_override')
+
     # Set model fidelity quantities from alpha
     Ncells = 50 * (alpha[0] + 2)
     Ncharge = alpha[1] + 1
@@ -170,6 +174,7 @@ def thruster_pem(x, alpha, *args, compress=True, output_dir=None, n_jobs=-1, con
         thruster_input = copy.deepcopy(base_input)
         curr_batch = index_batches[job_num]
         files = []  # Return an ordered list of output filenames corresponding to input indices
+        costs = []  # Time to evaluate hallthruster.jl for a single input
 
         for i, index in enumerate(curr_batch):
             x_curr = [float(x[index + (i,)]) for i in range(x.shape[-1])]   # (xdim,)
@@ -188,6 +193,7 @@ def thruster_pem(x, alpha, *args, compress=True, output_dir=None, n_jobs=-1, con
             })
 
             # Run hallthruster.jl
+            t1 = time.time()
             try:
                 res = hallthruster_jl_model(thruster_input, jl=jl)
             except ModelRunException as e:
@@ -197,6 +203,7 @@ def thruster_pem(x, alpha, *args, compress=True, output_dir=None, n_jobs=-1, con
                     save_dict = {'input': thruster_input, 'Exception': str(e), 'index': index}
                     fname = f'{eval_id}_{index}_exc.json'
                     files.append(fname)
+                    costs.append(0)
                     data_write(save_dict, fname, output_dir)
                 continue
 
@@ -225,6 +232,7 @@ def thruster_pem(x, alpha, *args, compress=True, output_dir=None, n_jobs=-1, con
             else:
                 # Otherwise, save entire ion velocity grid
                 y[index + (slice(6, None),)] = res['ui_1']
+            costs.append(time.time() - t1)  # Save single model wall clock runtime in seconds (on one cpu)
 
             # Save to output file (delete redundant results to save space)
             if output_dir is not None:
@@ -245,7 +253,7 @@ def thruster_pem(x, alpha, *args, compress=True, output_dir=None, n_jobs=-1, con
                 files.append(fname)
                 data_write(save_dict, fname, output_dir)
 
-        return files
+        return files, costs
 
     # Evenly distribute input indices across batches
     num_batches = cpu_count() if n_jobs < 0 else min(n_jobs, cpu_count())
@@ -269,20 +277,25 @@ def thruster_pem(x, alpha, *args, compress=True, output_dir=None, n_jobs=-1, con
     os.unlink(y_fd.name)
 
     # Save model eval summary to file
-    files = []
+    files, costs = [], []
     if output_dir is not None:
         # Re-order the resulting list of file names
         flat_idx = 0
         for input_index in np.ndindex(*x.shape[:-1]):
             # Iterate in same circular fashion as the inputs were passed to parallel
-            files.append(res[flat_idx % num_batches].pop(0))
+            batch_files, batch_costs = res[flat_idx % num_batches]
+            files.append(batch_files.pop(0))
+            costs.append(batch_costs.pop(0))
             flat_idx += 1
 
-        save_dict = {'alpha': alpha, 'x': x, 'y': y_ret, 'is_compressed': compress, 'files': files}
+        save_dict = {'alpha': alpha, 'x': x, 'y': y_ret, 'is_compressed': compress, 'files': files, 'costs': costs}
         with open(Path(output_dir) / f'{eval_id}_eval.pkl', 'wb') as fd:
             pickle.dump(save_dict, fd)
+    costs = np.atleast_1d(costs)
+    costs[costs == 0] = np.nan
+    avg_model_cpu_time = np.nanmean(costs)
 
-    return (y_ret, files) if output_dir is not None else y_ret
+    return {'y': y_ret, 'files': files, 'cost': avg_model_cpu_time}
 
 
 def uion_reconstruct(xr, z=None, L=0.08):

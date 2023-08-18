@@ -42,7 +42,7 @@ def test_interp():
 
     N = 10000
     xt = sample((N,))
-    yt = plume_pem(xt)
+    yt = plume_pem(xt)['y']
     yinterp = interp(xt)
     pct_error = 100*(np.abs(yinterp - yt)) / yt
 
@@ -93,7 +93,7 @@ def test_refine():
     r_m = np.ones((100, 1)) * 1
     I_B0 = np.ones((100, 1)) * 3.6
     xp = np.concatenate((p, c0, c1, c2, c3, c4, c5, sigma_cex, r_m, I_B0), axis=-1)
-    y_truth = plume_pem(xp)
+    y_truth = plume_pem(xp)['y']
     y_surr = sys(xp)
 
     def plot_p(index):
@@ -108,7 +108,7 @@ def test_refine():
 
     N = 10000
     xt = sample((N,))
-    yt = plume_pem(xt)
+    yt = plume_pem(xt)['y']
     ysurr = sys(xt)
     pct_error = 100 * (np.abs(ysurr - yt)) / np.abs(yt)
 

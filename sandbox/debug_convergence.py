@@ -137,7 +137,7 @@ def plot_cathode():
     xg = xg.reshape((N, N, 1))
     yg = yg.reshape((N, N, 1))
     x = np.concatenate((xg, yg), axis=-1)
-    z = cc_pem(x)
+    z = cc_pem(x)['y']
 
     # Set up interpolant
     x_vars = [UniformRV(-8, -3, disp='PB'), UniformRV(1, 5, disp='Tec')]
@@ -148,7 +148,7 @@ def plot_cathode():
     pert = np.random.rand(interp.xi.shape[0], 1)*(1.01-0.99) + 0.99
     xi_pert = interp.xi * pert
     yi_pert = interp(xi_pert)
-    yi_truth = cc_pem(xi_pert)
+    yi_truth = cc_pem(xi_pert)['y']
     error = 2 * np.abs(yi_pert - yi_truth) / (np.abs(yi_pert) + np.abs(yi_truth))
     idx = np.logical_and(yi_pert == 0, yi_truth == 0)
     error[idx] = 0
@@ -187,7 +187,7 @@ def plot_cathode():
     Tec = np.ones((N, 1)) * 3
     x = np.concatenate((pb[..., np.newaxis], Tec), axis=-1)
     ysurr = interp(x)
-    ytruth = cc_pem(x)
+    ytruth = cc_pem(x)['y']
     fig, ax = plt.subplots()
     ax.plot(pb, ytruth[:, 0], '-k', label='Model')
     ax.plot(pb, ysurr[:, 0], '--r', label='Surrogate')

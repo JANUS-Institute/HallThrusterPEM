@@ -51,8 +51,8 @@
         "param_type": "operating",
         "nominal": -5,
         "domain": [-8, -4],
-        "rv_type": "uniform_pct",
-        "rv_params": 0.1
+        "rv_type": "uniform_tol",
+        "rv_params": 0.043575
     },
     "Va": {
         "id": "Va",
@@ -140,7 +140,7 @@
         "nominal": 5,
         "domain": [2, 7],
         "rv_type": "uniform_pct",
-        "rv_params": 0.2
+        "rv_params": 0.01
     },
     "V_cc": {
         "id": "V_cc",

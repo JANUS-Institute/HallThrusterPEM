@@ -1,6 +1,5 @@
 """Module for system-level adaptive multidisciplinary, multi-fidelity surrogate implementation"""
 import logging
-
 import numpy as np
 import networkx as nx
 import itertools
@@ -188,11 +187,18 @@ class SystemSurrogate:
             case other:
                 raise NotImplementedError(f"Surrogate type '{surr_type}' is not known at this time.")
 
+        # Check for an override of model fidelity indices (to enable just single-fidelity evaluation)
+        if kwargs.get('hf_override', False):
+            truth_alpha, max_alpha = (), ()
+            kwargs['hf_override'] = component['truth_alpha']    # Pass in the truth alpha indices as a kwarg to model
+        else:
+            truth_alpha, max_alpha = component['truth_alpha'], component.get('max_alpha', None)
+
         # Assumes input ordering is exogenous vars + sorted coupling vars
         x_vars = [self.exo_vars[i] for i in exo_in] + [self.coupling_vars[i] for i in global_in]
-        surr = surr_class([], x_vars, component['model'], component['truth_alpha'],
-                          max_alpha=component.get('max_alpha', None), max_beta=component.get('max_beta', None),
-                          executor=self.executor, log_file=self.log_file, model_args=args, model_kwargs=kwargs)
+        surr = surr_class([], x_vars, component['model'], truth_alpha, max_alpha=max_alpha,
+                          max_beta=component.get('max_beta', None), executor=self.executor, log_file=self.log_file,
+                          model_args=args, model_kwargs=kwargs)
         return connections, surr
 
     def swap_component(self, component, exo_add=None, exo_remove=None, qoi_add=None, qoi_remove=None):
@@ -333,7 +339,7 @@ class SystemSurrogate:
 
     @save_on_error
     def build_system(self, qoi_ind=None, N_refine=100, max_iter=20, max_tol=1e-3, max_runtime=1, save_interval=0,
-                     prune_tol=1e-10, update_bounds=True, test_set=None, continue_plot=True, n_jobs=-1):
+                     prune_tol=1e-10, update_bounds=True, test_set=None, n_jobs=-1):
         """Build the system surrogate by iterative refinement until an end condition is met
         :param qoi_ind: list(), Indices of system QoI to focus refinement on, use all QoI if not specified
         :param N_refine: number of samples of exogenous inputs to compute error indicators on
@@ -344,16 +350,17 @@ class SystemSurrogate:
         :param prune_tol: numerical tol in rel L2 error below which a cand multi-index is removed from consideration
         :param update_bounds: whether to continuously update coupling variable bounds during refinement
         :param test_set: a dict() of xt=(Nt, xdim), yt=(Nt, ydim) to show convergence of surrogate to the truth model
-        :param continue_plot: whether to append previous error metrics for plotting or start fresh (will need to
-                              keep qoi_ind consistent between runs if True)
         :param n_jobs: number of cpu workers for computing error indicators (on master MPI task), 1=sequential
         """
         max_iter = self.refine_level + max_iter
         curr_error = np.inf
         t_start = time.time()
 
+        # Record of (component, alpha, beta, num_evals, total added cost (s)) for each iteration of training
+        train_record = self.build_metrics.get('train_record', [])
+
         # Track convergence progress on a test set and on the max error indicator
-        err_record = self.build_metrics.get('err_record', []) if continue_plot else []
+        err_record = self.build_metrics.get('err_record', [])
         err_fig, err_ax = plt.subplots()
         test_stats, xt, yt, t_fig, t_ax, Nqoi = None, None, None, None, None, 0
         if test_set is not None:
@@ -361,15 +368,15 @@ class SystemSurrogate:
             yt = test_set['yt']
             self.build_metrics['xt'] = xt
             self.build_metrics['yt'] = yt
-            if continue_plot and self.build_metrics.get('test_stats') is not None:
+            if self.build_metrics.get('test_stats') is not None:
                 test_stats = self.build_metrics.get('test_stats')
             else:
-                # Get initial perf metrics, (3, Nqoi)
+                # Get initial perf metrics, (2, Nqoi)
                 test_stats = np.expand_dims(self.get_test_metrics(xt, yt, qoi_ind=qoi_ind), axis=0)
             Nqoi = test_stats.shape[-1]
             t_fig, t_ax = plt.subplots(1, Nqoi) if Nqoi > 1 else plt.subplots()
 
-        # Setup a parallel pool of workers, sequential if n_jobs=1
+        # Set up a parallel pool of workers, sequential if n_jobs=1
         with Parallel(n_jobs=n_jobs, verbose=0) as ppool:
             while True:
                 # Check all end conditions
@@ -389,13 +396,16 @@ class SystemSurrogate:
                     break
 
                 # Refine surrogate and save progress
-                curr_error = self.refine(qoi_ind=qoi_ind, N_refine=N_refine, update_bounds=update_bounds,
-                                         prune_tol=prune_tol, ppool=ppool)
+                curr_error, refine_res = self.refine(qoi_ind=qoi_ind, N_refine=N_refine, update_bounds=update_bounds,
+                                                     prune_tol=prune_tol, ppool=ppool)
                 if save_interval > 0 and self.refine_level % save_interval == 0:
                     self.save_to_file(f'sys_iter_{self.refine_level}.pkl')
 
                 # Plot progress of maximum error indicator
                 err_record.append(curr_error)
+                train_record.append(refine_res)
+                self.build_metrics['err_record'] = err_record
+                self.build_metrics['train_record'] = train_record
                 err_ax.clear(); err_ax.grid(); err_ax.plot(err_record, '-k')
                 ax_default(err_ax, 'Iteration', 'Max error indicator', legend=False)
                 err_ax.set_yscale('log')
@@ -408,28 +418,51 @@ class SystemSurrogate:
                     for i in range(Nqoi):
                         ax = t_ax if Nqoi == 1 else t_ax[i]
                         ax.clear(); ax.grid(); ax.set_yscale('log')
-                        ax.plot(test_stats[:, 2, i], '-k')
+                        ax.plot(test_stats[:, 1, i], '-k')
                         ax.set_title(f'QoI {i}')
                         ax_default(ax, 'Iteration', r'Relative $L_2$ error', legend=False)
-                    t_fig.set_size_inches(4*Nqoi, 3.5)
+                    t_fig.set_size_inches(3.5*Nqoi, 3.5)
                     t_fig.tight_layout()
                     t_fig.savefig(str(Path(self.root_dir) / 'test_set.png'), dpi=300, format='png')
                     self.build_metrics['test_stats'] = test_stats
 
-        self.build_metrics['err_record'] = err_record
         self.save_to_file(f'sys_final.pkl')
         self.logger.info(f'Final system surrogate:\n {self}')
 
-    def get_test_metrics(self, xt, yt, qoi_ind=None):
+    def get_allocation(self, idx=None):
+        """Get a breakdown of cost allocation up to a certain iteration number during training (starting at 1)
+        :param idx: the iteration number to get allocation results for (defaults to last refinement step)
+        :returns cost_alloc, cost_cum: the cost allocation per node/fidelity and cumulative cost over training
+        """
+        if idx is None:
+            idx = self.refine_level
+        if idx > self.refine_level:
+            raise ValueError(f'Specified index: {idx} is greater than the max training level of {self.refine_level}')
+
+        cost_alloc = dict()     # Cost allocation per node and model fidelity
+        cost_cum = list()       # Cumulative cost allocation
+        for i in range(idx):
+            node, alpha, beta, num_evals, cost = self.build_metrics['train_record'][i]
+            if cost_alloc.get(node, None) is None:
+                cost_alloc[node] = dict()
+            if cost_alloc[node].get(str(alpha), None) is None:
+                cost_alloc[node][str(alpha)] = np.zeros(2)  # (num model evals, total cpu_time cost)
+            cost_alloc[node][str(alpha)] += [num_evals, cost]
+            cost_cum.append(cost)
+
+        return cost_alloc, np.cumsum(cost_cum)
+
+    def get_test_metrics(self, xt, yt, qoi_ind=None, training=True):
         """Get relative L2 error metric over a test set
         :param xt: (Nt, xdim) random test set of inputs
         :param yt: (Nt, ydim) random test set outputs
         :param qoi_ind: list() of indices of QoIs to get metrics for
+        :param training: whether to evaluate the surrogate in training or evaluation mode
         :returns stats: (3, Nqoi) -> [refine_level, num_cands, Relative L2] for each QoI
         """
         if qoi_ind is None:
             qoi_ind = slice(None)
-        ysurr = self(xt)
+        ysurr = self(xt, training=training)
         ysurr = ysurr[:, qoi_ind]
         yt = yt[:, qoi_ind]
         with np.errstate(divide='ignore', invalid='ignore'):
@@ -440,10 +473,10 @@ class SystemSurrogate:
             num_cands += len(node_obj['surrogate'].index_set) + len(node_obj['surrogate'].candidate_set)
 
         # Get stats for each QoI
-        stats = np.zeros((3, yt.shape[-1]))
+        stats = np.zeros((2, yt.shape[-1]))
         self.logger.debug(f'{"QoI idx":>10} {"Iteration":>10} {"len(I_k)":>10} {"Relative L2":>15}')
         for i in range(yt.shape[-1]):
-            stats[:, i] = np.array([self.refine_level, num_cands, rel_l2_err[i]])
+            stats[:, i] = np.array([num_cands, rel_l2_err[i]])
             self.logger.debug(f'{i: 10d} {self.refine_level: 10d} {num_cands: 10d} {rel_l2_err[i]: 15.5f}')
         return stats
 
@@ -457,6 +490,8 @@ class SystemSurrogate:
                           tolerance for indicating when a candidate surrogate multi-index has negligible effect on
                           improving system QoI prediction
         :param ppool: a Parallel pool instance from joblib to compute error indicators in parallel, otherwise sequential
+        :returns curr_error, refine_res: the current maximum L2 error and a tuple() of (node_star, alpha_star,
+                                         beta_star, N, cost) indicating the chosen cand index and incurred cost
         """
         self.print_title_str(f'Refining system surrogate: iteration {self.refine_level+1}')
         set_loky_pickler('dill')    # Dill can serialize 'self' for parallel workers
@@ -474,8 +509,8 @@ class SystemSurrogate:
             y_max = np.max(y_curr, axis=0, keepdims=True)  # (1, ydim)
 
         # Find the candidate surrogate with the largest error indicator
-        error_max, l2_max, refine_indicator = -np.inf, -np.inf, -np.inf
-        node_star, alpha_star, beta_star = None, None, None
+        error_max, error_indicator = -np.inf, -np.inf
+        node_star, alpha_star, beta_star, l2_star, cost_star = None, None, None, None, None
         for node, node_obj in self.graph.nodes.items():
             self.logger.info(f"Estimating error for component '{node}'...")
             candidates = node_obj['surrogate'].candidate_set.copy()
@@ -491,7 +526,7 @@ class SystemSurrogate:
                 rel_l2 = np.sqrt(np.nanmean(error ** 2, axis=0)) / np.sqrt(np.nanmean(y_curr[:, qoi_ind] ** 2, axis=0))
                 rel_l2 = np.nan_to_num(rel_l2, nan=np.nan, posinf=np.nan, neginf=np.nan)
                 delta_error = np.nanmax(rel_l2)  # Max relative L2 error over all system QoIs
-                delta_work = max(1, node_obj['surrogate'].get_cost(alpha, beta))  # Wall time (s)
+                delta_work = max(1, node_obj['surrogate'].get_cost(alpha, beta))  # Cpu time (s)
 
                 return ymin, ymax, delta_error, delta_work
 
@@ -504,22 +539,19 @@ class SystemSurrogate:
                         y_min = np.min(np.concatenate((y_min, ymin), axis=0), axis=0, keepdims=True)
                         y_max = np.max(np.concatenate((y_max, ymax), axis=0), axis=0, keepdims=True)
                     alpha, beta = candidates[i]
-                    refine_indicator = d_error / d_work
+                    error_indicator = d_error  # Or d_error / d_work
                     if d_error > prune_tol:
                         self.logger.info(f"Candidate multi-index: {(alpha, beta)}. (Global) error indicator: "
-                                         f"{refine_indicator}")
+                                         f"{error_indicator}")
                     else:
                         node_obj['surrogate'].prune_index(alpha, beta)
                         self.logger.info(f"PRUNED candidate multi-index: {(alpha, beta)}, since max relative L2 error "
                                          f"{d_error} < tol {prune_tol}")
                         continue
 
-                    if refine_indicator > error_max:
-                        error_max = refine_indicator
-                        l2_max = d_error
-                        node_star = node
-                        alpha_star = alpha
-                        beta_star = beta
+                    if error_indicator > error_max:
+                        error_max = error_indicator
+                        node_star, alpha_star, beta_star, l2_star, cost_star = node, alpha, beta, d_error, d_work
             else:
                 self.logger.info(f"Component '{node}' has no available candidates left!")
 
@@ -537,10 +569,11 @@ class SystemSurrogate:
         else:
             self.logger.info(f"No candidates left for refinement, iteration: {self.refine_level}")
 
-        return l2_max  # Probably a more intuitive metric for setting tolerances
+        num_evals = round(cost_star / self[node_star].get_sub_surrogate(alpha_star, beta_star).model_cost)
+        return l2_star, (node_star, alpha_star, beta_star, num_evals, cost_star)
 
     def __call__(self, x, max_fpi_iter=100, anderson_mem=10, fpi_tol=1e-10, ground_truth=False, verbose=False,
-                 training=False, index_set=None):
+                 training=False, index_set=None, qois=None):
         """Evaluate the system surrogate at exogenous inputs x
         :param x: (..., xdim) the points to be interpolated
         :param max_fpi_iter: the limit on convergence for the fixed-point iteration routine
@@ -550,6 +583,7 @@ class SystemSurrogate:
         :param verbose: whether to print out iteration progress during execution
         :param training: whether to call the system surrogate in training or evaluation mode
         :param index_set: dict() of {node:[indices]} to override default index set for a node (only useful for parallel)
+        :param qois: list of qoi str ids or indices to return, defaults to returning all system qois
         :returns y: (..., ydim) the surrogate approximation of the system QoIs
         """
         # Allocate space for all system outputs (just save all coupling vars)
@@ -693,8 +727,15 @@ class SystemSurrogate:
                         y[valid_idx, global_i] = x_couple_next[valid_idx, global_i]
                     self.graph.nodes[node]['is_computed'] = True
 
+        # Choose which qois to return, defaults to all
+        if qois is None:
+            qois = slice(None)
+        else:
+            if isinstance(qois[0], str):
+                qois = [self.coupling_vars.index(str_id) for str_id in qois]
+
         # Return all component outputs (..., ydim), samples that didn't converge during FPI are left as np.nan
-        return y
+        return y[..., qois]
 
     def estimate_coupling_bds(self, N_est, anderson_mem=10, fpi_tol=1e-10, max_fpi_iter=100):
         """Estimate and set the coupling variable bounds
@@ -759,6 +800,59 @@ class SystemSurrogate:
                     else var.sample_domain(shape)
 
         return x
+
+    def plot_slice(self, slice_idx, qoi_idx, compare_truth=False, N=50, nominal=None):
+        """Helper function to plot 1d slices over the inputs (all other inputs set to nominal)
+        :param slice_idx: list of exogenous input variables or indices to take 1d slices of
+        :param qoi_idx: list of model output variables or indices to plot 1d slices of
+        :param compare_truth: whether to also plot the ground truth model against the surrogate
+        :param N: the number of points to take the 1d slice
+        :param nominal: dict() of str(var)->nominal value to use as constant value for all non-sliced variables
+        :returns fig, ax with num_slice by num_qoi subplots
+        """
+        if nominal is None:
+            nominal = dict()
+        if isinstance(slice_idx[0], str):
+            slice_idx = [self.exo_vars.index(str(var)) for var in slice_idx]
+        if isinstance(qoi_idx[0], str):
+            qoi_idx = [self.coupling_vars.index(str(var)) for var in qoi_idx]
+
+        exo_bds = [var.bounds() for var in self.exo_vars]
+        xlabels = [self.exo_vars[idx].to_tex(units=True) for idx in slice_idx]
+        ylabels = [self.coupling_vars[idx].to_tex(units=True) for idx in qoi_idx]
+
+        xs = np.zeros((N, len(slice_idx), len(self.exo_vars)))
+        for i in range(len(slice_idx)):
+            for j in range(len(self.exo_vars)):
+                if j == slice_idx[i]:
+                    xs[:, i, j] = np.linspace(exo_bds[j][0], exo_bds[j][1], N)  # 1d slice of input param of interest
+                else:
+                    xs[:, i, j] = nominal.get(str(self.exo_vars[j]), self.exo_vars[j].nominal)
+
+        if compare_truth:
+            ys_model = self(xs, ground_truth=True)
+        ys_surr = self(xs)
+
+        # Make len(qoi) by len(inputs) grid of subplots
+        fig, axs = plt.subplots(len(qoi_idx), len(slice_idx), sharex='col', sharey='row')
+        for i in range(len(qoi_idx)):
+            for j in range(len(slice_idx)):
+                ax = axs[i, j]
+                x = xs[:, j, slice_idx[j]]
+                y_surr = ys_surr[:, j, qoi_idx[i]]
+                if compare_truth:
+                    y_model = ys_model[:, j, qoi_idx[i]]
+                    ax.plot(x, y_model, '-k', label='Model')
+                ax.plot(x, y_surr, '--r', label='Surrogate')
+                ylabel = ylabels[i] if j == 0 else ''
+                xlabel = xlabels[j] if i == len(qoi_idx) - 1 else ''
+                legend = (i == 0 and j == len(slice_idx) - 1) and compare_truth
+                ax_default(ax, xlabel, ylabel, legend=legend)
+        fig.set_size_inches(3 * len(slice_idx), 3 * len(qoi_idx))
+        fig.tight_layout()
+        fig.savefig(Path(self.root_dir) / 'sweep.png', dpi=300, format='png')
+        plt.show()
+        return fig, axs
 
     def get_component(self, comp_name):
         """Return the ComponentSurrogate object for this component
@@ -1064,8 +1158,7 @@ class ComponentSurrogate(ABC):
         if ground_truth:
             # Bypass surrogate evaluation
             ret = self._model(x, self.truth_alpha, *self._model_args, **self._model_kwargs)
-            y = ret[0] if self.save_enabled() else ret
-            return y
+            return ret['y']
 
         # Decide which index set and corresponding misc coefficients to use
         misc_coeff = copy.deepcopy(self.misc_coeff)
@@ -1267,7 +1360,7 @@ class BaseInterpolator(ABC):
         self.yi = yi                                        # Function values at interpolation points
         self.beta = beta                                    # Refinement level indices
         self.x_vars = x_vars                                # BaseRV() objects for each input
-        self.wall_time = None                               # Wall time to evaluate model (s)
+        self.model_cost = None                              # Total cpu time to evaluate model once (s)
 
     def update_input_bds(self, idx, bds):
         """Update the input bounds at the given index (assume a uniform RV)"""
@@ -1307,33 +1400,27 @@ class BaseInterpolator(ABC):
             new_idx = x_new[0]
             new_x = x_new[1]
             return_y = isinstance(new_idx[0], tuple)  # Return y rather than storing it if tuple indices are passed in
-            ret = None
-            if return_y:
-                ret = (dict(), dict()) if self.save_enabled() else dict()
+            ret = dict(y=dict(), files=dict())
+            model_ret = self._model(new_x, *self._model_args, **self._model_kwargs)
+            y_new, files_new, cpu_time = model_ret['y'], model_ret.get('files', None), model_ret.get('cost', 1)
 
             if self.save_enabled():
-                t1 = time.time()
-                y_new, files_new = self._model(new_x, *self._model_args, **self._model_kwargs)
-                wall_time = (time.time() - t1) / new_x.shape[0]
                 for j in range(y_new.shape[0]):
                     if return_y:
-                        ret[0][str(new_idx[j])] = y_new[j, :].astype(np.float32)
-                        ret[1][str(new_idx[j])] = files_new[j]
+                        ret['y'][str(new_idx[j])] = y_new[j, :].astype(np.float32)
+                        ret['files'][str(new_idx[j])] = files_new[j]
                     else:
                         self.yi[new_idx[j], :] = y_new[j, :].astype(np.float32)
                         self.output_files[new_idx[j]] = files_new[j]
             else:
-                t1 = time.time()
-                y_new = self._model(new_x, *self._model_args, **self._model_kwargs)  # (N_new, ydim)
-                wall_time = (time.time() - t1) / new_x.shape[0]
                 for j in range(y_new.shape[0]):
                     if return_y:
-                        ret[str(new_idx[j])] = y_new[j, :].astype(np.float32)
+                        ret['y'][str(new_idx[j])] = y_new[j, :].astype(np.float32)
                     else:
                         self.yi[new_idx[j], :] = y_new[j, :].astype(np.float32)
 
-            if self.wall_time is None:
-                self.wall_time = max(1, wall_time)
+            if self.model_cost is None:
+                self.model_cost = max(1, cpu_time)
 
             return ret
 
@@ -1343,14 +1430,11 @@ class BaseInterpolator(ABC):
             return
 
         # Compute yi
-        t1 = time.time()
-        if self.save_enabled():
-            self.yi, self.output_files = self._model(self.xi, *self._model_args, **self._model_kwargs)
-        else:
-            self.yi = self._model(self.xi, *self._model_args, **self._model_kwargs)
+        model_ret = self._model(self.xi, *self._model_args, **self._model_kwargs)
+        self.yi, self.output_files, cpu_time = model_ret['y'], model_ret.get('files', list()), model_ret.get('cost', 1)
 
-        if self.wall_time is None:
-            self.wall_time = max(1, (time.time() - t1) / self.xi.shape[0])
+        if self.model_cost is None:
+            self.model_cost = max(1, cpu_time)
 
     @abstractmethod
     def refine(self, beta, manual=False):
@@ -1393,8 +1477,7 @@ class AnalyticalSurrogate(ComponentSurrogate):
         :returns y: (..., ydim) the exact model output at the input points
         """
         ret = self._model(x, *self._model_args, **self._model_kwargs)
-        y = ret[0] if self.save_enabled() else ret
-        return y
+        return ret['y']
 
     # Override
     def activate_index(self, *args):

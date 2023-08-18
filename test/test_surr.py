@@ -34,11 +34,11 @@ logger.addHandler(handler)
 
 
 def test_tensor_product_1d():
-    beta = [2]
+    beta = [3]
     x_var = [UniformRV(0, 1)]
     x_grid = np.linspace(0, 1, 100).reshape((100, 1))
     y_grid = tanh_func(x_grid)
-    interp = TensorProductInterpolator(beta, x_var, model=tanh_func)
+    interp = TensorProductInterpolator(beta, x_var, model=lambda x: {'y': tanh_func(x)})
     interp.set_yi()
     y_interp = interp(x_grid)
 
@@ -79,7 +79,7 @@ def test_tensor_product_2d():
     # def bb_2d_func(x):
     #     y = np.cos(2*np.pi*x[..., 0])*np.cos(2*np.pi*x[..., 1])
     #     return y[..., np.newaxis]
-    bb_2d_func = lambda x: custom_nonlinear(x, env_var=0.2**2, wave_amp=0.3)
+    bb_2d_func = lambda x: {'y': custom_nonlinear(x, env_var=0.2**2, wave_amp=0.3)}
     beta = [3, 3]
     x_vars = [UniformRV(0, 1), UniformRV(0, 1)]
     N = 50
@@ -88,7 +88,7 @@ def test_tensor_product_2d():
     xg = xg.reshape((N, N, 1))
     yg = yg.reshape((N, N, 1))
     x = np.concatenate((xg, yg), axis=-1)
-    z = bb_2d_func(x)
+    z = bb_2d_func(x)['y']
 
     # Set up interpolant
     interp = TensorProductInterpolator(beta, x_vars, model=bb_2d_func)
@@ -146,7 +146,7 @@ def test_component():
         alpha = np.atleast_1d(alpha)  # (1,)
         eps = (1/5) * 2.0**(-alpha[0])
         y = np.cos(np.pi/2 * (x + 4/5 + eps))
-        return y
+        return {'y': y}
 
     def model_truth(x):
         return np.cos(np.pi/2 * (x + 4/5))
@@ -172,7 +172,7 @@ def test_component():
             s = f'$\hat{{f}}_{{{alpha}, {beta}}}$'
             ax.plot(xg, surr(xg), '--k', label=r'{}'.format(s), linewidth=1.5)
             s = f'$\hat{{f}}_{alpha}$'
-            ax.plot(xg, model(xg, alpha), '--b', label=r'{}'.format(s), linewidth=2)
+            ax.plot(xg, model(xg, alpha)['y'], '--b', label=r'{}'.format(s), linewidth=2)
             ax.plot(xg, yt, '-r', label=r'$f$', linewidth=2)
             ax.plot(surr.xi, surr.yi, 'or')
             xlabel = r'$x$' if alpha == 0 else ''
@@ -229,20 +229,20 @@ def test_system_surrogate():
         def f1(x, alpha, *args, **kwargs):
             eps = 10 ** (-float(alpha[0]))
             q = np.arange(1, Q1+1).reshape((1,)*len(x.shape[:-1]) + (Q1,))
-            return (x[..., 0, np.newaxis] ** (q-1)) * np.sin(np.sum(x, axis=-1, keepdims=True) + eps)
+            return {'y': (x[..., 0, np.newaxis] ** (q-1)) * np.sin(np.sum(x, axis=-1, keepdims=True) + eps)}
 
         def f2(x, alpha, *args, **kwargs):
             eps = 10 ** (-float(alpha[0]))
             q = np.arange(1, Q2+1).reshape((1,)*len(x.shape) + (Q2,))
             prod1 = np.prod(x[..., D2:, np.newaxis] ** (q) - eps, axis=-2)  # (..., Q2)
             prod2 = np.prod(x[..., :D2], axis=-1, keepdims=True)              # (..., 1)
-            return prod1 * prod2
+            return {'y': prod1 * prod2}
 
         def f3(x, alpha, *args, D3=D1, **kwargs):
             eps = 10 ** (-float(alpha[0]))
             prod1 = np.exp(-np.sum((x[..., D3:] - eps) ** 2, axis=-1))  # (...,)
             prod2 = 1 + (25/16)*np.sum(x[..., :D3], axis=-1) ** 2       # (...,)
-            return np.expand_dims(prod1 / prod2, axis=-1)               # (..., 1)
+            return {'y': np.expand_dims(prod1 / prod2, axis=-1)}              # (..., 1)
 
         def f(x):
             # Ground truth (arbitrary high alpha)
@@ -306,11 +306,11 @@ def test_feedforward():
     # Figure 5 in Jakeman 2022
     def coupled_system():
         def f1(x, alpha):
-            return x * np.sin(np.pi * x)
+            return {'y': x * np.sin(np.pi * x)}
         def f2(x, alpha):
-            return 1 / (1 + 25*x**2)
+            return {'y': 1 / (1 + 25*x**2)}
         def f(x, alpha):
-            return f2(f1(x, alpha), alpha)
+            return f2(f1(x, alpha)['y'], alpha)['y']
         return f1, f2, f
 
     f1, f2, f = coupled_system()
@@ -323,7 +323,7 @@ def test_feedforward():
     sys = SystemSurrogate([comp1, comp2], exo_vars, coupling_bds)
 
     x = np.linspace(0, 1, 100).reshape((100, 1))
-    y1 = f1(x, ())
+    y1 = f1(x, ())['y']
     y2 = f(x, ())
     y_surr = sys(x, ground_truth=True)
 
@@ -392,43 +392,70 @@ def test_fire_sat(filename=None):
         # xt = sys.sample_inputs((N,))
         # yt = sys(xt, ground_truth=True, training=False)
         # test_set = {'xt': xt, 'yt': yt}
-        sys.build_system(max_iter=20, max_tol=1e-3, max_runtime=3600, test_set=test_set, n_jobs=-1, prune_tol=1e-10)
-        e = 1
-        # with MPICommExecutor(MPI.COMM_WORLD, root=0) as e:
-        #     if e is not None:
-        #         sys = fire_sat_system()
-        #         sys.set_executor(e)
-        #         sys.build_system(max_iter=10, max_tol=1e-3, max_runtime=3600)
+        sys.build_system(max_iter=20, max_tol=1e-3, max_runtime=3600, test_set=test_set, n_jobs=1, prune_tol=1e-10,
+                         N_refine=1000)
 
-    if e is not None:
-        x = sys.sample_inputs((1000,), use_pdf=True)
-        logger.info('---Evaluating ground truth system on test set---')
-        yt = sys(x, ground_truth=True, verbose=True)
-        logger.info('---Evaluating system surrogate on test set---')
-        ysurr = sys(x, verbose=True)
+    x = sys.sample_inputs((1000,), use_pdf=True)
+    logger.info('---Evaluating ground truth system on test set---')
+    yt = sys(x, ground_truth=True, verbose=True)
+    logger.info('---Evaluating system surrogate on test set---')
+    ysurr = sys(x, verbose=True)
 
-        # Print test results
-        error = 100 * (np.abs(ysurr - yt)) / yt
-        use_idx = ~np.any(np.isnan(yt), axis=-1)
-        for i in range(yt.shape[1]):
-            logger.info(f'Test set percent error results for QoI {i}')
-            print_stats(error[use_idx, i], logger=logger)
+    # Print test results
+    error = 100 * (np.abs(ysurr - yt)) / yt
+    use_idx = ~np.any(np.isnan(yt), axis=-1)
+    for i in range(yt.shape[1]):
+        logger.info(f'Test set percent error results for QoI {i}')
+        print_stats(error[use_idx, i], logger=logger)
 
-        # Plot some output histograms
-        fig, ax = plt.subplots(1, 3)
-        ax[0].hist(yt[use_idx, 0], color='red', bins=20, edgecolor='black', density=True, linewidth=1.2, label='Truth')
-        ax[0].hist(ysurr[:, 0], color='blue', bins=20, edgecolor='black', density=True, linewidth=1.2, alpha=0.4, label='Surrogate')
-        ax[1].hist(yt[use_idx, 7], color='red', bins=20, edgecolor='black', density=True, linewidth=1.2, label='Truth')
-        ax[1].hist(ysurr[:, 7], color='blue', bins=20, edgecolor='black', density=True, linewidth=1.2, alpha=0.4, label='Surrogate')
-        ax[2].hist(yt[use_idx, 8], color='red', bins=20, edgecolor='black', density=True, linewidth=1.2, label='Truth')
-        ax[2].hist(ysurr[:, 8], color='blue', bins=20, edgecolor='black', density=True, linewidth=1.2, alpha=0.4, label='Surrogate')
-        ax_default(ax[0], 'Satellite velocity ($m/s$)', '', legend=True)
-        ax_default(ax[1], 'Solar panel area ($m^2$)', '', legend=True)
-        ax_default(ax[2], 'Attitude control power ($W$)', '', legend=True)
-        fig.set_size_inches(9, 3)
-        fig.tight_layout()
-        plt.show()
-        # fig.savefig('test_surr.png', dpi=300, format='png')
+    # Plot some output histograms
+    fig, ax = plt.subplots(1, 3)
+    ax[0].hist(yt[use_idx, 0], color='red', bins=20, edgecolor='black', density=True, linewidth=1.2, label='Truth')
+    ax[0].hist(ysurr[:, 0], color='blue', bins=20, edgecolor='black', density=True, linewidth=1.2, alpha=0.4, label='Surrogate')
+    ax[1].hist(yt[use_idx, 7], color='red', bins=20, edgecolor='black', density=True, linewidth=1.2, label='Truth')
+    ax[1].hist(ysurr[:, 7], color='blue', bins=20, edgecolor='black', density=True, linewidth=1.2, alpha=0.4, label='Surrogate')
+    ax[2].hist(yt[use_idx, 8], color='red', bins=20, edgecolor='black', density=True, linewidth=1.2, label='Truth')
+    ax[2].hist(ysurr[:, 8], color='blue', bins=20, edgecolor='black', density=True, linewidth=1.2, alpha=0.4, label='Surrogate')
+    ax_default(ax[0], 'Satellite velocity ($m/s$)', '', legend=True)
+    ax_default(ax[1], 'Solar panel area ($m^2$)', '', legend=True)
+    ax_default(ax[2], 'Attitude control power ($W$)', '', legend=True)
+    fig.set_size_inches(9, 3)
+    fig.tight_layout()
+    plt.show()
+
+    # Plot 1d slices
+    slice_idx = ['H', 'Po', 'Cd']
+    qoi_idx = ['Vsat', 'Asa', 'Pat']
+    fig, ax = sys.plot_slice(slice_idx, qoi_idx, compare_truth=True)
+
+    # Plot error vs. cost over training
+    err_record = np.atleast_1d(sys.build_metrics['err_record'])
+    cost_alloc, cost_cum = sys.get_allocation()
+    fig, ax = plt.subplots()
+    ax.plot(cost_cum, err_record, '-k')
+    ax.set_yscale('log')
+    ax.set_xscale('log')
+    ax.grid()
+    ax_default(ax, 'Cost', 'Error indicator', legend=False)
+    plt.show()
+
+    # Bar chart showing cost allocation breakdown
+    fig, ax = plt.subplots()
+    width = 0.7
+    x = np.arange(len(cost_alloc))
+    xlabels = list(cost_alloc.keys())
+    cmap = plt.get_cmap('viridis')
+    for j, (node, alpha_dict) in enumerate(cost_alloc.items()):
+        bottom = 0
+        c_intervals = np.linspace(0, 1, len(alpha_dict))
+        for i, (alpha, cost) in enumerate(alpha_dict.items()):
+            p = ax.bar(x[j], cost[1] / cost_cum[-1], width, color=cmap(c_intervals[i]), linewidth=1,
+                       edgecolor=[0, 0, 0], bottom=bottom)
+            bottom += cost[1] / cost_cum[-1]
+            ax.bar_label(p, labels=[f'{round(cost[0]):d}'], label_type='center')    # Label with number of model evals
+    ax_default(ax, "Components", "Fraction of total cost", legend=False)
+    ax.set_xticks(x, xlabels)
+    plt.show()
 
 
 def test_fpi():
@@ -526,9 +553,9 @@ def test_system_refine():
     # Figure 5 in Jakeman 2022
     def coupled_system():
         def f1(x, alpha):
-            return x * np.sin(np.pi * x)
+            return {'y': x * np.sin(np.pi * x)}
         def f2(x, alpha):
-            return 1 / (1 + 25 * x ** 2)
+            return {'y': 1 / (1 + 25 * x ** 2)}
         return f1, f2
 
     f1, f2 = coupled_system()
@@ -542,9 +569,9 @@ def test_system_refine():
 
     Niter = 3
     x = np.linspace(0, 1, 100).reshape((100, 1))
-    y1 = f1(x, ())
-    y2 = f2(x, ())
-    y3 = f2(y1, ())
+    y1 = f1(x, ())['y']
+    y2 = f2(x, ())['y']
+    y3 = f2(y1, ())['y']
     fig, ax = plt.subplots(Niter, 3, sharex='col', sharey='row')
     for i in range(Niter):
         # Plot actual function values
@@ -559,13 +586,13 @@ def test_system_refine():
         for alpha, beta in comp.index_set:
             if beta[0] > beta_max:
                 beta_max = beta[0]
-        surr = comp.get_sub_surrogate((), (beta_max,))
+        surr = comp.get_sub_surrogate((), (beta_max,), include_grid=True)
         ax[i, 0].plot(surr.xi, surr.yi, 'ok', markersize=8, label='')
         for alpha, beta in comp.iterate_candidates():
             comp.update_misc_coeffs()
             yJ1 = sys(x, training=True)
             ax[i, 0].plot(x, comp(x, training=True), ':b', label='$f_1$ candidate')
-            surr = comp.get_sub_surrogate(alpha, beta)
+            surr = comp.get_sub_surrogate(alpha, beta, include_grid=True)
             ax[i, 0].plot(surr.xi, surr.yi, 'xb', markersize=8, label='')
         comp.update_misc_coeffs()
 
@@ -576,13 +603,13 @@ def test_system_refine():
         for alpha, beta in comp.index_set:
             if beta[0] > beta_max:
                 beta_max = beta[0]
-        surr = comp.get_sub_surrogate((), (beta_max,))
+        surr = comp.get_sub_surrogate((), (beta_max,), include_grid=True)
         ax[i, 1].plot(surr.xi, surr.yi, 'ok', markersize=8, label='')
         for alpha, beta in comp.iterate_candidates():
             comp.update_misc_coeffs()
             yJ2 = sys(x, training=True)
             ax[i, 1].plot(x, comp(x, training=True), '-.g', label='$f_2$ candidate')
-            surr = comp.get_sub_surrogate(alpha, beta)
+            surr = comp.get_sub_surrogate(alpha, beta, include_grid=True)
             ax[i, 1].plot(surr.xi, surr.yi, 'xg', markersize=8, label='')
         comp.update_misc_coeffs()
 
@@ -662,8 +689,8 @@ if __name__ == '__main__':
     # test_feedforward()
     # test_system_surrogate()
     # test_system_refine()
-    # test_fire_sat(filename=None)
+    test_fire_sat(filename=None)
     # test_fire_sat(filename=Path('save')/'sys_error.pkl')
     # test_fpi()
     # test_fake_pem()
-    test_1d_sweep()
+    # test_1d_sweep()

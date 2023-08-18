@@ -11,6 +11,7 @@ from abc import ABC, abstractmethod
 import logging
 import sys
 import uuid
+import os
 
 INPUT_DIR = Path(__file__).parent / 'input'
 LOG_FORMATTER = logging.Formatter("%(asctime)s \u2014 [%(levelname)s] \u2014 %(name)-36s \u2014 %(message)s")
@@ -55,6 +56,8 @@ class BaseRV(ABC):
         :param symbol: just latex symbol if true, otherwise the full description
         """
         s = self.tex if symbol else self.description
+        if s == '':
+            s = str(self)
         return r'{} [{}]'.format(s, self.units) if units else r'{}'.format(s)
 
     def bounds(self):
@@ -93,7 +96,7 @@ class UniformRV(BaseRV):
     def __init__(self, arg1, arg2, domain=None, **kwargs):
         """Implements a Uniform RV
         :param arg1: lower bound if specifying U(lb, ub), otherwise a tol or pct if specifying U(+/- tol/pct)
-        :param arg2: upper bound if specifying U(lb, ub), otherwise a str() of either 'tol' or 'pct'
+        :param arg2: upper bound if specifying U(lb, ub), otherwise a str() of either 'tol', 'pct', or 'none'
         """
         if isinstance(arg2, str):
             self.value = arg1   # Either an absolute tolerance or a relative percent
@@ -106,6 +109,10 @@ class UniformRV(BaseRV):
         else:
             domain = (0, 1) if domain is None else tuple(domain)
         super().__init__(domain=domain, **kwargs)
+
+        # Set default nominal value as middle of the domain if not specified
+        if kwargs.get('nominal', None) is None:
+            self.nominal = (self.bds[1] - self.bds[0]) / 2
 
     # Override
     def __str__(self):
@@ -124,12 +131,21 @@ class UniformRV(BaseRV):
                 if nominal is None:
                     return self.bds     # Default to full domain if nominal is not passed in
                 return nominal - self.value, nominal + self.value
+            case 'none':
+                # Just return the nominal value as upper and lower bounds (no uncertainty for this variable)
+                if nominal is None:
+                    return self.nominal, self.nominal
+                return nominal, nominal
             case other:
                 raise NotImplementedError(f'self.type = {self.type} not known. Choose from ["pct, "tol", "bds"]')
 
     def pdf(self, x, nominal=None):
+        if self.type == 'none':
+            return np.ones(x.shape)  # No pdf for none type
         bds = self.get_uniform_bounds(nominal)
-        y = np.broadcast_to(1 / (bds[1] - bds[0]), x.shape).copy()
+        den = bds[1] - bds[0]
+        den = 1 if np.isclose(den, 0) else den
+        y = np.broadcast_to(1 / den, x.shape).copy()
         y[np.where(x > bds[1])] = 0
         y[np.where(x < bds[0])] = 0
         return y
@@ -196,9 +212,14 @@ class NormalRV(BaseRV):
         self.mu = mu
         self.std = std
 
-    def recenter(self, mu, std):
+        # Set default nominal value as the provided mean
+        if kwargs.get('nominal', None) is None:
+            self.nominal = mu
+
+    def recenter(self, mu, std=None):
         self.mu = mu
-        self.std = std
+        if std is not None:
+            self.std = std
 
     def __str__(self):
         return self.id if self.custom_id else f'N({self.mu}, {self.std})'
@@ -237,9 +258,8 @@ def load_variables(variables):
                     mu, std = var_info.get('rv_params')
                     vars.append(NormalRV(mu, std, **kwargs))
                 case 'none':
-                    # Make a plain stand-in uniform RV over the full domain if RV type is not specified
-                    bds = var_info.get('domain')
-                    vars.append(UniformRV(bds[0], bds[1], **kwargs))
+                    # Make a plain stand-in uniform RV if RV type is none (i.e. no uncertainty when sampling)
+                    vars.append(UniformRV(None, 'none', **kwargs))
                 case other:
                     raise NotImplementedError(f'RV type "{var_info.get("rv_type")}" is not known.')
         else:
@@ -556,80 +576,68 @@ def nearest_positive_definite(A):
     return A3
 
 
-def spt100_data(exclude=None):
-    """Return a list of tuples of the form (data_type, operating conditions, data, experimental noise)"""
-    exp_data = []
+def spt100_data(qois=None):
+    """Return a dict with experimental data for each specified quantity for the SPT-100
+    :param qois: a list() of str specifying the experimental data to return, must be in ['V_cc', 'T', 'uion', 'jion']
+    """
+    if qois is None:
+        qois = ['V_cc', 'T', 'uion', 'jion']
+    exp_data = {qoi: None for qoi in qois}
     base_dir = Path(__file__).parent / 'data' / 'spt100'
 
-    if exclude is None:
-        exclude = []
-
     # Load Vcc data
-    if 'vcc' not in exclude:
+    if 'V_cc' in exp_data:
         data = np.loadtxt(base_dir / 'vcc_dataset8.csv', delimiter=',', skiprows=1)
-        for i in range(data.shape[0]):
-            x = {'anode_potential': data[i, 1],
-                 'anode_mass_flow_rate': data[i, 2]*1e-6,
-                 'background_pressure_Torr': data[i, 3]}
-            y = data[i, 4]
-            var = {'noise_var': 'constant', 'value': (0.3/2)**2}
-            exp_data.append(('cc_voltage', x.copy(), y, var.copy()))
+        x = data[:, [3, 1, 2]]  # (PB, Va, mdot_a)
+        y = data[:, 4]
+        noise_var = data[:, 5]
+        exp_data['V_cc'] = dict(x=x, y=y, noise_var=noise_var)
 
     # Load thrust data
-    if 'thrust' not in exclude:
+    if 'T' in exp_data:
         # files = [f for f in os.listdir(base_dir) if f.startswith('thrust')]
         files = ['thrust_dataset1.csv', 'thrust_dataset3.csv']
-        data = np.zeros((1, 6))
+        x = np.zeros((0, 3))
+        y = np.zeros((0, 1))
+        noise_var = np.zeros((0, 1))
         for fname in files:
             thrust_data = np.loadtxt(base_dir / fname, delimiter=',', skiprows=1)
-            thrust_data = np.atleast_2d(thrust_data).reshape((-1, 6))
-            data = np.concatenate((data, thrust_data), axis=0)
-        data = data[1:, :]
-
-        for i in range(data.shape[0]):
-            x = {'anode_potential': data[i, 1],
-                 'anode_mass_flow_rate': data[i, 2] * 1e-6,
-                 'background_pressure_Torr': data[i, 3]}
-            y = data[i, 4] * 1e-3  # N
-            var = {'noise_var': 'percent', 'value': 0.9}
-            exp_data.append(('thrust', x.copy(), y, var.copy()))
+            x = np.concatenate((x, thrust_data[:, [3, 1, 2]]), axis=0)  # (PB, Va, mdot_a)
+            y = np.concatenate((y, thrust_data[:, [4]]), axis=0)
+            noise_var = np.concatenate((noise_var, thrust_data[:, [5]]), axis=0)
+        y = np.squeeze(y) * 1e-3                    # N
+        noise_var = np.squeeze(noise_var) * 1e-6    # N^2
+        exp_data['T'] = dict(x=x, y=y, noise_var=noise_var)
 
     # Load ion velocity data
-    if 'ion_velocity' not in exclude:
-        data = np.loadtxt(base_dir / 'ui_dataset5.csv', delimiter=',', skiprows=1)
-        Np = 3
-        data = data.reshape((Np, -1, 7))
-        for i in range(Np):
-            x = {'anode_potential': data[i, 0, 1],
-                 'anode_mass_flow_rate': data[i, 0, 2] * 1e-6,
-                 'background_pressure_Torr': data[i, 0, 3],
-                 'z_m': list(data[i, :, 4])}
-            y = list(data[i, :, 5])
-            var = {'noise_var': 'constant', 'value': 62500}
-            exp_data.append(('axial_ion_velocity', copy.deepcopy(x), y.copy(), var.copy()))
+    if 'uion' in exp_data:
+        # files = [f for f in os.listdir(base_dir) if f.startswith('ui')]
+        files = ['ui_dataset5.csv']
+        x = np.zeros((0, 4))
+        y = np.zeros((0, 1))
+        noise_var = np.zeros((0, 1))
+        for fname in files:
+            data = np.loadtxt(base_dir / fname, delimiter=',', skiprows=1)
+            x = np.concatenate((x, data[:, [3, 1, 2, 4]]), axis=0)  # (PB, Va, mdot_a, z)
+            y = np.concatenate((y, data[:, [5]]), axis=0)
+            noise_var = np.concatenate((noise_var, data[:, [6]]), axis=0)
+        y = np.squeeze(y) * 1e-3  # km/s
+        noise_var = np.squeeze(noise_var) * 1e-6  # (km/s)^2
+        exp_data['uion'] = dict(x=x, y=y, noise_var=noise_var)
 
-        # data = np.loadtxt(base_dir / 'ui_dataset6.csv', delimiter=',', skiprows=1)
-        # x = {'anode_potential': data[0, 1],
-        #      'anode_mass_flow_rate': data[0, 2] * 1e-6,
-        #      'background_pressure_Torr': data[0, 3],
-        #      'z_m': list(data[:, 4])}
-        # y = list(data[:, 5])
-        # var = {'noise_var': 'constant', 'value': 62500}
-        # exp_data.append(('axial_ion_velocity', copy.deepcopy(x), y.copy(), var.copy()))
-
-    # Load ion current density data
-    if 'ion_current_density' not in exclude:
-        data = np.loadtxt(base_dir / 'jion_dataset4.csv', delimiter=',', skiprows=1)
-        Np = 8
-        data = data.reshape((Np, -1, 8))
-        for i in range(Np):
-            x = {'anode_potential': data[i, 0, 1],
-                 'anode_mass_flow_rate': data[i, 0, 2] * 1e-6,
-                 'background_pressure_Torr': data[i, 0, 3],
-                 'r_m': list(data[i, :, 4]),
-                 'alpha_deg': list(data[i, :, 5])}
-            y = list(data[i, :, 6] * 10)  # A/m^2
-            var = {'noise_var': 'percent', 'value': 20}
-            exp_data.append(('ion_current_density', copy.deepcopy(x), y.copy(), var.copy()))
+    # Load ion velocity data
+    if 'jion' in exp_data:
+        files = [f for f in os.listdir(base_dir) if f.startswith('jion')]
+        x = np.zeros((0, 5))
+        y = np.zeros((0, 1))
+        noise_var = np.zeros((0, 1))
+        for fname in files:
+            data = np.loadtxt(base_dir / fname, delimiter=',', skiprows=1)
+            x = np.concatenate((x, data[:, [3, 1, 2, 4, 5]]), axis=0)  # (PB, Va, mdot_a, r_m, alpha_deg)
+            y = np.concatenate((y, data[:, [6]]), axis=0)
+            noise_var = np.concatenate((noise_var, data[:, [7]]), axis=0)
+        y = np.squeeze(y) * 10  # A/m^2
+        noise_var = np.squeeze(noise_var) * 10**2  # (A/m^2)^2
+        exp_data['jion'] = dict(x=x, y=y, noise_var=noise_var)
 
     return exp_data
