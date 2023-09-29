@@ -1,15 +1,10 @@
 {
-	"julia": "1.9.2",
+	"julia": "1.9",
 	"packages": {
-		"PythonCall": {
-			"uuid": "6099a3de-0909-46bc-b1f4-468b9a2dfc0d",
-			"url": "https://github.com/cjdoris/PythonCall.jl",
-			"version": "0.9.13"
-		},
 		"HallThruster": {
 			"uuid": "2311f341-5e6d-4941-9e3e-3ce0ae0d9ed6",
 			"url": "https://github.com/UM-PEPL/HallThruster.jl",
-			"version": "0.8.2"
+			"version": "0.8"
 		}
 	}
 }
