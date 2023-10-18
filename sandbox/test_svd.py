@@ -6,7 +6,7 @@ from matplotlib import cm
 sys.path.append('..')
 
 from models.simple_models import tanh_func
-from surrogates.sparse_grids import LagrangeInterpolator
+from surrogates.sparse_grids import TensorProductInterpolator
 from utils import UniformRV, print_stats, ax_default
 
 
@@ -18,9 +18,9 @@ def test_tanh():
         return np.concatenate((A, L, frac), axis=-1)
 
     # Set inputs
-    r_pct = 0.99            # Reconstruction accuracy
-    interp_dim = 4          # Control interpolation accuracy
-    N = 1000                # Size of data matrix
+    r_pct = 0.999            # Reconstruction accuracy
+    interp_dim = 3          # Control interpolation accuracy
+    N = 500                 # Size of data matrix
     M = 200                 # Number of FE grid cells
 
     # Form data matrix
@@ -31,8 +31,8 @@ def test_tanh():
         A[i, :] = tanh_func(zg, A=params[i, 0], L=params[i, 1], frac=params[i, 2])
 
     # Get reduced linear basis
-    u, s, vt = np.linalg.svd(A)  # (NxN), (NxM), (MxM)
-    frac = np.cumsum(s / np.sum(s))
+    u, s, vt = np.linalg.svd((A - np.mean(A, axis=0))/np.std(A, axis=0))
+    frac = np.cumsum(s**2 / np.sum(s**2))
     idx = int(np.where(frac >= r_pct)[0][0])
     r = idx + 1  # Number of singular values to take
     print(f'r={r} with singular values {s[:r]} and cumsum {frac[:r]}')
@@ -44,99 +44,112 @@ def test_tanh():
     plt.show()
 
     def model(x):
-        bt = tanh_func(zg, A=x[..., 0, np.newaxis], L=x[..., 1, np.newaxis], frac=x[..., 2, np.newaxis])[..., np.newaxis]
+        bt = tanh_func(zg, A=x[..., 0, np.newaxis], L=x[..., 1, np.newaxis], frac=x[..., 2, np.newaxis])
+        bt = ((bt - np.mean(A, axis=0))/np.std(A, axis=0))[..., np.newaxis]
         at = vtr @ bt     # (..., r, 1)
-        return np.squeeze(at, axis=-1)
+        return {'y': np.squeeze(at, axis=-1)}
 
     # Interpolate reduced basis
     beta = [interp_dim, interp_dim, interp_dim]
     x_vars = [UniformRV(1, 4), UniformRV(1, 4), UniformRV(1, 8)]  # (A, L, frac)
-    interp = LagrangeInterpolator(beta, x_vars, model=model)
+    interp = TensorProductInterpolator(beta, x_vars, model=model)
     interp.set_yi()
 
-    # Set up test grid for computing errors
-    Ng = 50
-    t_grid = np.linspace(1, 4, Ng)
-    tg1, tg2 = np.meshgrid(t_grid, t_grid)
-    tg1 = tg1.reshape((Ng, Ng, 1))
-    tg2 = tg2.reshape((Ng, Ng, 1))
-    f_cross = [1, 3, 6, 8]
-
-    # Cross-sections of the f parameter
-    fig, ax = plt.subplots(len(f_cross), r)
-    fig2, ax2 = plt.subplots(len(f_cross), 5)
-    for j, f in enumerate(f_cross):
-        xt = np.concatenate((tg1, tg2, np.broadcast_to(f, tg1.shape).copy()), axis=-1)
-        at = model(xt)          # (..., r)
-        ahat_t = interp(xt)     # (..., r)
-        bt = tanh_func(zg, A=xt[..., 0, np.newaxis], L=xt[..., 1, np.newaxis], frac=xt[..., 2, np.newaxis])[
-            ..., np.newaxis]
-        bhat_t = vtr.T @ at[..., np.newaxis]
-        bhat_interp = vtr.T @ ahat_t[..., np.newaxis]
-        ei = ahat_t - at
-        er = bhat_t - bt
-        eq = vtr.T @ ei[..., np.newaxis] + er
-        eq_abs = np.abs(vtr.T @ ei[..., np.newaxis]) + np.abs(er)
-        eq_also = bhat_interp - bt
-        assert np.max(np.abs(eq - eq_also)) <= 1e-10
-        ei_frac = np.squeeze(np.abs(vtr.T @ ei[..., np.newaxis]) / eq_abs, axis=-1)   # (..., M)
-        er_frac = np.squeeze(np.abs(er) / eq_abs, axis=-1)  # (..., M)
-        eq_pct = np.squeeze(np.abs(bhat_interp - bt) / bt, axis=-1)
-
-        # Plot svd coeffs
-        for i in range(r):
-            vmin = min(np.min(at[..., i]), np.min(ahat_t[..., i]))
-            vmax = max(np.max(at[..., i]), np.max(ahat_t[..., i]))
-            c1 = ax[j, i].contourf(tg1.squeeze(), tg2.squeeze(), at[..., i], 60, cmap=cm.coolwarm, vmin=vmin, vmax=vmax)
-            plt.colorbar(c1, ax=ax[j, i])
-
-            if j == 0:
-                ax[j, i].set_title(r'{}'.format(f'Coeff $a_{i}$'))
-            ylabel = r'{}'.format(f'$L$ for $f={f}$') if i == 0 else r'$L$'
-            ax_default(ax[j, i], r'$A$', ylabel, legend=False)
-        fig.set_size_inches(r * 3, len(f_cross) * 3)
-        fig.tight_layout()
-
-        # Plot errors (percentiles over FE z grid)
-        c3 = ax2[j, 0].contourf(tg1.squeeze(), tg2.squeeze(), np.mean(ei_frac, axis=-1), 60, cmap=cm.viridis)
-        plt.colorbar(c3, ax=ax2[j, 0])
-        c4 = ax2[j, 1].contourf(tg1.squeeze(), tg2.squeeze(), np.mean(er_frac, axis=-1), 60, cmap=cm.viridis)
-        plt.colorbar(c4, ax=ax2[j, 1])
-        c5 = ax2[j, 2].contourf(tg1.squeeze(), tg2.squeeze(), np.percentile(eq_pct, 25, axis=-1), 60, cmap=cm.viridis)
-        plt.colorbar(c5, ax=ax2[j, 2])
-        c6 = ax2[j, 3].contourf(tg1.squeeze(), tg2.squeeze(), np.percentile(eq_pct, 50, axis=-1), 60, cmap=cm.viridis)
-        plt.colorbar(c6, ax=ax2[j, 3])
-        c7 = ax2[j, 4].contourf(tg1.squeeze(), tg2.squeeze(), np.percentile(eq_pct, 75, axis=-1), 60, cmap=cm.viridis)
-        plt.colorbar(c7, ax=ax2[j, 4])
-
-        if j == 0:
-            ax2[j, 0].set_title('Mean interp error $|e_i|/|e_q|$')
-            ax2[j, 1].set_title('Mean reconstr error $|e_r|/|e_q|$')
-            ax2[j, 2].set_title('25th pct error $|\hat{b} - b|/b$')
-            ax2[j, 3].set_title('50th pct error $|\hat{b} - b|/b$')
-            ax2[j, 4].set_title('75th pct error $|\hat{b} - b|/b$')
-
-        for i in range(5):
-            ylabel = r'{}'.format(f'$L$ for $f={f}$') if i == 0 else f'$L$'
-            ax_default(ax2[j, i], r'$A$', ylabel, legend=False)
-        fig2.set_size_inches(5*3, len(f_cross)*3)
-        fig2.tight_layout()
-
-        # Print statistics
-        print(f'-----Results for f={f}-----')
-        print(f'Mean interpolation error over input space:')
-        print_stats(np.mean(ei_frac, axis=(0, 1)))
-        print(f'Mean reconstruction error over input space:')
-        print_stats(np.mean(er_frac, axis=(0, 1)))
-        print(f'Min percent error (avg over input space): {np.mean(np.min(eq_pct, axis=-1))}')
-        print(f'25th pctile percent error (avg over input space): {np.mean(np.percentile(eq_pct, 25, axis=-1))}')
-        print(f'50th pctile percent error (avg over input space): {np.mean(np.percentile(eq_pct, 50, axis=-1))}')
-        print(f'Mean percent error (avg over input space): {np.mean(np.mean(eq_pct, axis=-1))}')
-        print(f'75th pctile percent error (avg over input space): {np.mean(np.percentile(eq_pct, 75, axis=-1))}')
-        print(f'Max percent error (avg over input space): {np.mean(np.max(eq_pct, axis=-1))}')
-        print(' ')
-
+    # Show some random reconstructions
+    xtest = np.array([[2.5, 2, 3], [3.5, 1.5, 4], [1.5, 3.5, 2]])
+    c = ['r', 'g', 'b']
+    ytest = (np.squeeze(vtr.T @ interp(xtest)[..., np.newaxis], axis=-1) * np.std(A, axis=0)) + np.mean(A, axis=0)
+    ytruth = tanh_func(zg, A=xtest[..., 0:1], L=xtest[..., 1:2], frac=xtest[..., 2:])
+    fig, ax = plt.subplots()
+    for i in range(xtest.shape[0]):
+        ax.plot(zg, ytruth[i, :], ls='-', c=c[i])
+        ax.plot(zg, ytest[i, :], ls='--', c=c[i])
+    ax_default(ax, 'z', 'f(z)', legend=False)
     plt.show()
+
+    # Set up test grid for computing errors
+    # Ng = 50
+    # t_grid = np.linspace(1, 4, Ng)
+    # tg1, tg2 = np.meshgrid(t_grid, t_grid)
+    # tg1 = tg1.reshape((Ng, Ng, 1))
+    # tg2 = tg2.reshape((Ng, Ng, 1))
+    # f_cross = [1, 3, 6, 8]
+    #
+    # # Cross-sections of the f parameter
+    # fig, ax = plt.subplots(len(f_cross), r)
+    # fig2, ax2 = plt.subplots(len(f_cross), 5)
+    # for j, f in enumerate(f_cross):
+    #     xt = np.concatenate((tg1, tg2, np.broadcast_to(f, tg1.shape).copy()), axis=-1)
+    #     at = model(xt)['y']         # (..., r)
+    #     ahat_t = interp(xt)         # (..., r)
+    #     bt = tanh_func(zg, A=xt[..., 0, np.newaxis], L=xt[..., 1, np.newaxis], frac=xt[..., 2, np.newaxis])[
+    #         ..., np.newaxis]
+    #     bhat_t = vtr.T @ at[..., np.newaxis]
+    #     bhat_interp = vtr.T @ ahat_t[..., np.newaxis]
+    #     ei = ahat_t - at
+    #     er = bhat_t - bt
+    #     eq = vtr.T @ ei[..., np.newaxis] + er
+    #     eq_abs = np.abs(vtr.T @ ei[..., np.newaxis]) + np.abs(er)
+    #     eq_also = bhat_interp - bt
+    #     assert np.max(np.abs(eq - eq_also)) <= 1e-10
+    #     ei_frac = np.squeeze(np.abs(vtr.T @ ei[..., np.newaxis]) / eq_abs, axis=-1)   # (..., M)
+    #     er_frac = np.squeeze(np.abs(er) / eq_abs, axis=-1)  # (..., M)
+    #     eq_pct = np.squeeze(np.abs(bhat_interp - bt) / bt, axis=-1)
+    #
+    #     # Plot svd coeffs
+    #     for i in range(r):
+    #         vmin = min(np.min(at[..., i]), np.min(ahat_t[..., i]))
+    #         vmax = max(np.max(at[..., i]), np.max(ahat_t[..., i]))
+    #         c1 = ax[j, i].contourf(tg1.squeeze(), tg2.squeeze(), at[..., i], 60, cmap=cm.coolwarm, vmin=vmin, vmax=vmax)
+    #         plt.colorbar(c1, ax=ax[j, i])
+    #
+    #         if j == 0:
+    #             ax[j, i].set_title(r'{}'.format(f'Coeff $a_{i}$'))
+    #         ylabel = r'{}'.format(f'$L$ for $f={f}$') if i == 0 else r'$L$'
+    #         ax_default(ax[j, i], r'$A$', ylabel, legend=False)
+    #     fig.set_size_inches(r * 3, len(f_cross) * 3)
+    #     fig.tight_layout()
+    #
+    #     # Plot errors (percentiles over FE z grid)
+    #     c3 = ax2[j, 0].contourf(tg1.squeeze(), tg2.squeeze(), np.mean(ei_frac, axis=-1), 60, cmap=cm.viridis)
+    #     plt.colorbar(c3, ax=ax2[j, 0])
+    #     c4 = ax2[j, 1].contourf(tg1.squeeze(), tg2.squeeze(), np.mean(er_frac, axis=-1), 60, cmap=cm.viridis)
+    #     plt.colorbar(c4, ax=ax2[j, 1])
+    #     c5 = ax2[j, 2].contourf(tg1.squeeze(), tg2.squeeze(), np.percentile(eq_pct, 25, axis=-1), 60, cmap=cm.viridis)
+    #     plt.colorbar(c5, ax=ax2[j, 2])
+    #     c6 = ax2[j, 3].contourf(tg1.squeeze(), tg2.squeeze(), np.percentile(eq_pct, 50, axis=-1), 60, cmap=cm.viridis)
+    #     plt.colorbar(c6, ax=ax2[j, 3])
+    #     c7 = ax2[j, 4].contourf(tg1.squeeze(), tg2.squeeze(), np.percentile(eq_pct, 75, axis=-1), 60, cmap=cm.viridis)
+    #     plt.colorbar(c7, ax=ax2[j, 4])
+    #
+    #     if j == 0:
+    #         ax2[j, 0].set_title('Mean interp error $|e_i|/|e_q|$')
+    #         ax2[j, 1].set_title('Mean reconstr error $|e_r|/|e_q|$')
+    #         ax2[j, 2].set_title('25th pct error $|\hat{b} - b|/b$')
+    #         ax2[j, 3].set_title('50th pct error $|\hat{b} - b|/b$')
+    #         ax2[j, 4].set_title('75th pct error $|\hat{b} - b|/b$')
+    #
+    #     for i in range(5):
+    #         ylabel = r'{}'.format(f'$L$ for $f={f}$') if i == 0 else f'$L$'
+    #         ax_default(ax2[j, i], r'$A$', ylabel, legend=False)
+    #     fig2.set_size_inches(5*3, len(f_cross)*3)
+    #     fig2.tight_layout()
+    #
+    #     # Print statistics
+    #     print(f'-----Results for f={f}-----')
+    #     print(f'Mean interpolation error over input space:')
+    #     print_stats(np.mean(ei_frac, axis=(0, 1)))
+    #     print(f'Mean reconstruction error over input space:')
+    #     print_stats(np.mean(er_frac, axis=(0, 1)))
+    #     print(f'Min percent error (avg over input space): {np.mean(np.min(eq_pct, axis=-1))}')
+    #     print(f'25th pctile percent error (avg over input space): {np.mean(np.percentile(eq_pct, 25, axis=-1))}')
+    #     print(f'50th pctile percent error (avg over input space): {np.mean(np.percentile(eq_pct, 50, axis=-1))}')
+    #     print(f'Mean percent error (avg over input space): {np.mean(np.mean(eq_pct, axis=-1))}')
+    #     print(f'75th pctile percent error (avg over input space): {np.mean(np.percentile(eq_pct, 75, axis=-1))}')
+    #     print(f'Max percent error (avg over input space): {np.mean(np.max(eq_pct, axis=-1))}')
+    #     print(' ')
+    #
+    # plt.show()
 
 
 def test_tanh_2d():
@@ -172,9 +185,9 @@ def test_tanh_2d():
     def model(x):
         y = tanh_func(xg, A=x[..., 0, np.newaxis], L=x[..., 1, np.newaxis], frac=4)[..., np.newaxis]
         yr = vtk @ y  # (..., r, 1)
-        return np.squeeze(yr, axis=-1)
+        return {'y': np.squeeze(yr, axis=-1)}
 
-    interp = LagrangeInterpolator(beta, x_vars, model=model)
+    interp = TensorProductInterpolator(beta, x_vars, model=model)
     interp.set_yi()
     Ntheta = 50
     theta_grid = np.linspace(1, 4, Ntheta)
@@ -188,7 +201,7 @@ def test_tanh_2d():
 
     # Refine interpolant
     beta2 = [3, 3]
-    interp2 = LagrangeInterpolator(beta2, x_vars, model=model)
+    interp2 = TensorProductInterpolator(beta2, x_vars, model=model)
     interp2.set_yi()
     z2_interp = interp2(x)[..., qoi_idx, np.newaxis]
     error2 = np.abs(z2_interp - z)

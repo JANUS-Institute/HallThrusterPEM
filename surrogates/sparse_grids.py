@@ -102,6 +102,21 @@ class SparseGridSurrogate(ComponentSurrogate):
 
         return xi, yi
 
+    def get_training_data(self):
+        """Grab all x,y training data stored in the sparse grid for each model fidelity level alpha"""
+        xi, yi = dict(), dict()
+        for alpha, x_map in self.xi_map.items():
+            x = np.zeros((len(x_map), len(self.x_vars)))
+            y = np.zeros((len(x_map), self.ydim))
+            for i, (coord, x_coord) in enumerate(x_map.items()):
+                x[i, :] = x_coord
+                y[i, :] = self.yi_nan_map[alpha].get(coord, self.yi_map[alpha][coord])
+
+            xi[alpha] = x
+            yi[alpha] = y
+
+        return xi, yi
+
     def update_yi(self, alpha, beta, yi_dict):
         """Helper method to update yi values, accounting for possible nans by regression imputation"""
         self.yi_map[str(alpha)].update(yi_dict)

@@ -429,32 +429,44 @@ def test_fire_sat(filename=None):
     fig, ax = sys.plot_slice(slice_idx, qoi_idx, compare_truth=True)
 
     # Plot error vs. cost over training
-    err_record = np.atleast_1d(sys.build_metrics['err_record'])
-    cost_alloc, cost_cum = sys.get_allocation()
+    err_record = np.atleast_1d([res[0] for res in sys.build_metrics['train_record']])
+    cost_alloc, offline_alloc, cost_cum = sys.get_allocation()
     fig, ax = plt.subplots()
-    ax.plot(cost_cum, err_record, '-k')
+    ax.plot(cost_cum[1:], err_record, '-k')
     ax.set_yscale('log')
     ax.set_xscale('log')
     ax.grid()
     ax_default(ax, 'Cost', 'Error indicator', legend=False)
     plt.show()
 
-    # Bar chart showing cost allocation breakdown
-    fig, ax = plt.subplots()
+    # Get total cost (including offline overhead)
+    total_cost = cost_cum[-1]
+    for node, alpha_dict in offline_alloc.items():
+        for alpha, cost in alpha_dict.items():
+            total_cost += cost[1]
+
+    # Bar chart showing cost allocation breakdown (online and offline)
+    fig, axs = plt.subplots(1, 2, sharey='row')
     width = 0.7
     x = np.arange(len(cost_alloc))
     xlabels = list(cost_alloc.keys())
     cmap = plt.get_cmap('viridis')
-    for j, (node, alpha_dict) in enumerate(cost_alloc.items()):
-        bottom = 0
-        c_intervals = np.linspace(0, 1, len(alpha_dict))
-        for i, (alpha, cost) in enumerate(alpha_dict.items()):
-            p = ax.bar(x[j], cost[1] / cost_cum[-1], width, color=cmap(c_intervals[i]), linewidth=1,
-                       edgecolor=[0, 0, 0], bottom=bottom)
-            bottom += cost[1] / cost_cum[-1]
-            ax.bar_label(p, labels=[f'{round(cost[0]):d}'], label_type='center')    # Label with number of model evals
-    ax_default(ax, "Components", "Fraction of total cost", legend=False)
-    ax.set_xticks(x, xlabels)
+    for k in range(2):
+        ax = axs[k]
+        alloc = cost_alloc if k == 0 else offline_alloc
+        ax.set_title('Online training' if k == 0 else 'Overhead')
+        for j, (node, alpha_dict) in enumerate(alloc.items()):
+            bottom = 0
+            c_intervals = np.linspace(0, 1, len(alpha_dict))
+            for i, (alpha, cost) in enumerate(alpha_dict.items()):
+                p = ax.bar(x[j], cost[1] / total_cost, width, color=cmap(c_intervals[i]), linewidth=1,
+                           edgecolor=[0, 0, 0], bottom=bottom)
+                bottom += cost[1] / total_cost
+                ax.bar_label(p, labels=[f'{alpha} - {round(cost[0]):d}'], label_type='center')    # Label with number of model evals
+        ax_default(ax, "Components", "Fraction of total cost" if k==0 else '', legend=False)
+        ax.set_xticks(x, xlabels)
+    fig.set_size_inches(8, 4)
+    fig.tight_layout()
     plt.show()
 
 

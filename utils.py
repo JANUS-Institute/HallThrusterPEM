@@ -91,12 +91,25 @@ class BaseRV(ABC):
         pass
 
 
+class ScalarRV(BaseRV):
+
+    def __init__(self, **kwargs):
+        """Implements a stand-in variable with no uncertainty/pdf, just scalars"""
+        super().__init__(**kwargs)
+
+    def pdf(self, x):
+        return np.ones(x.shape)
+
+    def sample(self, shape, **kwargs):
+        return self.sample_domain(shape)
+
+
 class UniformRV(BaseRV):
 
     def __init__(self, arg1, arg2, domain=None, **kwargs):
         """Implements a Uniform RV
         :param arg1: lower bound if specifying U(lb, ub), otherwise a tol or pct if specifying U(+/- tol/pct)
-        :param arg2: upper bound if specifying U(lb, ub), otherwise a str() of either 'tol', 'pct', or 'none'
+        :param arg2: upper bound if specifying U(lb, ub), otherwise a str() of either 'tol' or 'pct'
         """
         if isinstance(arg2, str):
             self.value = arg1   # Either an absolute tolerance or a relative percent
@@ -131,17 +144,10 @@ class UniformRV(BaseRV):
                 if nominal is None:
                     return self.bds     # Default to full domain if nominal is not passed in
                 return nominal - self.value, nominal + self.value
-            case 'none':
-                # Just return the nominal value as upper and lower bounds (no uncertainty for this variable)
-                if nominal is None:
-                    return self.nominal, self.nominal
-                return nominal, nominal
             case other:
                 raise NotImplementedError(f'self.type = {self.type} not known. Choose from ["pct, "tol", "bds"]')
 
     def pdf(self, x, nominal=None):
-        if self.type == 'none':
-            return np.ones(x.shape)  # No pdf for none type
         bds = self.get_uniform_bounds(nominal)
         den = bds[1] - bds[0]
         den = 1 if np.isclose(den, 0) else den
@@ -232,12 +238,13 @@ class NormalRV(BaseRV):
         return np.random.randn(*shape) * self.std + center
 
 
-def load_variables(variables):
+def load_variables(variables, file='variables.json'):
     """Load from variables.json into a list of BaseRV objects
-    :param variables: list() of str() ids to match in variables.json
+    :param variables: list() of str() ids to match in json file
+    :param file: json file in models/config to search for variable definitions
     :return vars: list() of corresponding BaseRV objects
     """
-    with open(Path(__file__).parent / 'models' / 'config' / 'variables.json', 'r') as fd:
+    with open(Path(__file__).parent / 'models' / 'config' / file, 'r') as fd:
         data = json.load(fd)
 
     vars = []
@@ -258,13 +265,13 @@ def load_variables(variables):
                     mu, std = var_info.get('rv_params')
                     vars.append(NormalRV(mu, std, **kwargs))
                 case 'none':
-                    # Make a plain stand-in uniform RV if RV type is none (i.e. no uncertainty when sampling)
-                    vars.append(UniformRV(None, 'none', **kwargs))
+                    # Make a plain stand-in scalar RV object (no uncertainty)
+                    vars.append(ScalarRV(**kwargs))
                 case other:
                     raise NotImplementedError(f'RV type "{var_info.get("rv_type")}" is not known.')
         else:
-            raise ValueError(f'You have requested the variable {str_id}, but it was not found in variables.json. '
-                             f'Please add a definition of {str_id} to variables.json or construct it on your own.')
+            raise ValueError(f'You have requested the variable {str_id}, but it was not found in {file}. '
+                             f'Please add a definition of {str_id} to {file} or construct it on your own.')
 
     return vars
 

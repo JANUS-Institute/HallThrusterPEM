@@ -356,11 +356,10 @@ class SystemSurrogate:
         curr_error = np.inf
         t_start = time.time()
 
-        # Record of (component, alpha, beta, num_evals, total added cost (s)) for each iteration of training
+        # Record of (error indicator, component, alpha, beta, num_evals, total added cost (s)) for each iteration
         train_record = self.build_metrics.get('train_record', [])
 
         # Track convergence progress on a test set and on the max error indicator
-        err_record = self.build_metrics.get('err_record', [])
         err_fig, err_ax = plt.subplots()
         test_stats, xt, yt, t_fig, t_ax, Nqoi = None, None, None, None, None, 0
         if test_set is not None:
@@ -396,18 +395,18 @@ class SystemSurrogate:
                     break
 
                 # Refine surrogate and save progress
-                curr_error, refine_res = self.refine(qoi_ind=qoi_ind, N_refine=N_refine, update_bounds=update_bounds,
-                                                     prune_tol=prune_tol, ppool=ppool)
+                refine_res = self.refine(qoi_ind=qoi_ind, N_refine=N_refine, update_bounds=update_bounds,
+                                         prune_tol=prune_tol, ppool=ppool)
+                curr_error = refine_res[0]
                 if save_interval > 0 and self.refine_level % save_interval == 0:
                     self.save_to_file(f'sys_iter_{self.refine_level}.pkl')
 
-                # Plot progress of maximum error indicator
-                err_record.append(curr_error)
+                # Plot progress of error indicator
                 train_record.append(refine_res)
-                self.build_metrics['err_record'] = err_record
+                error_record = [res[0] for res in train_record]
                 self.build_metrics['train_record'] = train_record
-                err_ax.clear(); err_ax.grid(); err_ax.plot(err_record, '-k')
-                ax_default(err_ax, 'Iteration', 'Max error indicator', legend=False)
+                err_ax.clear(); err_ax.grid(); err_ax.plot(error_record, '-k')
+                ax_default(err_ax, 'Iteration', 'Error indicator', legend=False)
                 err_ax.set_yscale('log')
                 err_fig.savefig(str(Path(self.root_dir) / 'error_indicator.png'), dpi=300, format='png')
 
@@ -432,7 +431,7 @@ class SystemSurrogate:
     def get_allocation(self, idx=None):
         """Get a breakdown of cost allocation up to a certain iteration number during training (starting at 1)
         :param idx: the iteration number to get allocation results for (defaults to last refinement step)
-        :returns cost_alloc, cost_cum: the cost allocation per node/fidelity and cumulative cost over training
+        :returns cost_alloc, offline_alloc, cost_cum: the cost alloc per node/fidelity and cumulative training cost
         """
         if idx is None:
             idx = self.refine_level
@@ -440,17 +439,39 @@ class SystemSurrogate:
             raise ValueError(f'Specified index: {idx} is greater than the max training level of {self.refine_level}')
 
         cost_alloc = dict()     # Cost allocation per node and model fidelity
-        cost_cum = list()       # Cumulative cost allocation
+        cost_cum = [0.0]          # Cumulative cost allocation during training
+
+        # Add initialization costs for each node
+        for node, node_obj in self.graph.nodes.items():
+            surr = node_obj['surrogate']
+            base_alpha = (0,) * len(surr.truth_alpha)
+            base_beta = (0,) * (len(surr.max_refine) - len(surr.truth_alpha))
+            base_cost = surr.get_cost(base_alpha, base_beta)
+            cost_alloc[node] = dict()
+            cost_alloc[node][str(base_alpha)] = np.array([1, float(base_cost)])
+            cost_cum[0] += float(base_cost)
+
+        # Add cumulative training costs
         for i in range(idx):
-            node, alpha, beta, num_evals, cost = self.build_metrics['train_record'][i]
-            if cost_alloc.get(node, None) is None:
-                cost_alloc[node] = dict()
+            err_indicator, node, alpha, beta, num_evals, cost = self.build_metrics['train_record'][i]
             if cost_alloc[node].get(str(alpha), None) is None:
                 cost_alloc[node][str(alpha)] = np.zeros(2)  # (num model evals, total cpu_time cost)
-            cost_alloc[node][str(alpha)] += [num_evals, cost]
-            cost_cum.append(cost)
+            cost_alloc[node][str(alpha)] += [round(num_evals), float(cost)]
+            cost_cum.append(float(cost))
 
-        return cost_alloc, np.cumsum(cost_cum)
+        # Get summary of total offline costs spent building search candidates (i.e. training overhead)
+        offline_alloc = dict()
+        for node, node_obj in self.graph.nodes.items():
+            surr = node_obj['surrogate']
+            offline_alloc[node] = dict()
+            for alpha, beta in surr.candidate_set:
+                if offline_alloc[node].get(str(alpha), None) is None:
+                    offline_alloc[node][str(alpha)] = np.zeros(2)   # (num model evals, total cpu_time cost)
+                added_cost = surr.get_cost(alpha, beta)
+                base_cost = surr.get_sub_surrogate(alpha, beta).model_cost
+                offline_alloc[node][str(alpha)] += [round(added_cost/base_cost), float(added_cost)]
+
+        return cost_alloc, offline_alloc, np.cumsum(cost_cum)
 
     def get_test_metrics(self, xt, yt, qoi_ind=None, training=True):
         """Get relative L2 error metric over a test set
@@ -458,7 +479,7 @@ class SystemSurrogate:
         :param yt: (Nt, ydim) random test set outputs
         :param qoi_ind: list() of indices of QoIs to get metrics for
         :param training: whether to evaluate the surrogate in training or evaluation mode
-        :returns stats: (3, Nqoi) -> [refine_level, num_cands, Relative L2] for each QoI
+        :returns stats: (2, Nqoi) -> [num_cands, Relative L2] for each QoI
         """
         if qoi_ind is None:
             qoi_ind = slice(None)
@@ -490,8 +511,8 @@ class SystemSurrogate:
                           tolerance for indicating when a candidate surrogate multi-index has negligible effect on
                           improving system QoI prediction
         :param ppool: a Parallel pool instance from joblib to compute error indicators in parallel, otherwise sequential
-        :returns curr_error, refine_res: the current maximum L2 error and a tuple() of (node_star, alpha_star,
-                                         beta_star, N, cost) indicating the chosen cand index and incurred cost
+        :returns refine_res: a tuple() of (error_indicator, component, node_star, alpha_star, beta_star, N, cost)
+                             indicating the chosen candidate index and incurred cost
         """
         self.print_title_str(f'Refining system surrogate: iteration {self.refine_level+1}')
         set_loky_pickler('dill')    # Dill can serialize 'self' for parallel workers
@@ -570,7 +591,7 @@ class SystemSurrogate:
             self.logger.info(f"No candidates left for refinement, iteration: {self.refine_level}")
 
         num_evals = round(cost_star / self[node_star].get_sub_surrogate(alpha_star, beta_star).model_cost)
-        return l2_star, (node_star, alpha_star, beta_star, num_evals, cost_star)
+        return l2_star, node_star, alpha_star, beta_star, num_evals, cost_star
 
     def __call__(self, x, max_fpi_iter=100, anderson_mem=10, fpi_tol=1e-10, ground_truth=False, verbose=False,
                  training=False, index_set=None, qois=None):

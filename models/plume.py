@@ -206,6 +206,9 @@ def plume_pem(x, *args, compress=True, **kwargs):
         with open(Path(__file__).parent / 'data' / 'plume_svd.pkl', 'rb') as fd:
             svd_data = pickle.load(fd)
             vtr = svd_data['vtr']       # (r x M)
+            A = svd_data['A']
+            A_mu = np.mean(A, axis=0)
+            A_std = np.std(A, axis=0)
             r, M = vtr.shape
             ydim = r + 1
     else:
@@ -255,7 +258,7 @@ def plume_pem(x, *args, compress=True, **kwargs):
         y[..., 0] = np.arccos(cos_div)  # Divergence angle (rad)
 
         # Ion current density (A/m^2), in compressed dimension (r) or default dimension (M)
-        y[..., 1:] = np.squeeze(vtr @ np.log10(j[..., np.newaxis].real), axis=-1) if compress else j.real
+        y[..., 1:] = np.squeeze(vtr @ ((j.real - A_mu) / A_std)[..., np.newaxis], axis=-1) if compress else j.real
         return {'y': y, 'cost': 1}
 
     except Exception as e:
@@ -272,9 +275,12 @@ def jion_reconstruct(xr, alpha=None):
     with open(Path(__file__).parent / 'data' / 'plume_svd.pkl', 'rb') as fd:
         svd_data = pickle.load(fd)
         vtr = svd_data['vtr']       # (r x M)
+        A = svd_data['A']
+        A_mu = np.mean(A, axis=0)
+        A_std = np.std(A, axis=0)
         r, M = vtr.shape
     alpha_g = np.linspace(0, np.pi/2, M)
-    jion_g = 10 ** np.squeeze(vtr.T @ xr[..., np.newaxis], axis=-1)  # (..., M)
+    jion_g = np.squeeze(vtr.T @ xr[..., np.newaxis], axis=-1) * A_std + A_mu  # (..., M)
 
     # Do interpolation
     if alpha is not None:

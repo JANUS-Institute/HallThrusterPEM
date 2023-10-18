@@ -60,11 +60,11 @@ def pem_system(root_dir=None, executor=None, init=True, hf_override=False):
         r1 = d['vtr'].shape[0]
         d2 = pickle.load(fd2)
         r2 = d2['vtr'].shape[0]
-        coupling_vars.extend([UniformRV(-20, 20, id=f'uion{i}', tex=f"$u_{{svd,{i}}}$",
-                                        description=f'Ion velocity SVD coefficient {i}',
+        coupling_vars.extend([UniformRV(-20, 20, id=f'uion{i}', tex=f"$\\tilde{{u}}_{{ion,{i}}}$",
+                                        description=f'Ion velocity latent coefficient {i}',
                                         param_type='coupling') for i in range(r1)])
-        coupling_vars.extend([UniformRV(-20, 20, id=f'jion{i}', tex=f"$j_{{svd,{i}}}$",
-                                        description=f'Current density SVD coefficient {i}',
+        coupling_vars.extend([UniformRV(-20, 20, id=f'jion{i}', tex=f"$\\tilde{{j}}_{{ion,{i}}}$",
+                                        description=f'Current density latent coefficient {i}',
                                         param_type='coupling') for i in range(r2)])
 
     cathode_exo = ['PB', 'Va', 'T_ec', 'V_vac', 'P*', 'PT']

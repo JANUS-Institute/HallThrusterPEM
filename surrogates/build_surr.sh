@@ -17,7 +17,7 @@ echo "Starting job script..."
 
 module load python3.10-anaconda
 module load gcc/10.3.0
-module load openmpi/4.1.4
+module load openmpi/4.1.6
 export MPICC=$(which mpicc)
 module list
 

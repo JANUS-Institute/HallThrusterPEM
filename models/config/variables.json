@@ -52,7 +52,7 @@
         "nominal": -5,
         "domain": [-8, -4],
         "rv_type": "uniform_tol",
-        "rv_params": 0.043575
+        "rv_params": 0.08804563
     },
     "Va": {
         "id": "Va",
@@ -100,7 +100,7 @@
     },
     "vAN1": {
         "id": "vAN1",
-        "tex": "$\\nu_{AN,1}$",
+        "tex": "$\\nu_1$",
         "description": "Anomalous transport coefficient 1",
         "units": "-",
         "param_type": "calibration",
@@ -111,7 +111,7 @@
     },
     "vAN2": {
         "id": "vAN2",
-        "tex": "$\\nu_{AN,2}$",
+        "tex": "$\\nu_2$",
         "description": "Anomalous transport coefficient 2",
         "units": "-",
         "param_type": "calibration",
@@ -234,7 +234,7 @@
         "id": "sigma_cex",
         "tex": "$\\sigma_{cex}$",
         "description": "Charge-exchange collision cross-sectional area",
-        "units": "$\\mathrm{\\AA}^2$ e-20",
+        "units": "$\\mathrm{\\AA}^2$",
         "param_type": "other",
         "nominal": 55,
         "domain": [51, 58],
