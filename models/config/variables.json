@@ -25,23 +25,23 @@
         "id": "P*",
         "tex": "$P^*$",
         "description": "Turning point pressure",
-        "units": "Torr e-5",
+        "units": "$\\mu$-Torr",
         "param_type": "calibration",
-        "nominal": 2.87,
-        "domain": [1, 10],
+        "nominal": 28.7,
+        "domain": [10, 100],
         "rv_type": "uniform_bds",
-        "rv_params": [1, 10]
+        "rv_params": [10, 100]
     },
     "PT": {
         "id": "PT",
         "tex": "$P_T$",
         "description": "Thruster to facility plasma density ratio",
-        "units": "Torr e-5",
+        "units": "$\\mu$-Torr",
         "param_type": "calibration",
-        "nominal": 1,
-        "domain": [1, 10],
+        "nominal": 10,
+        "domain": [10, 100],
         "rv_type": "uniform_bds",
-        "rv_params": [1, 10]
+        "rv_params": [10, 100]
     },
     "PB": {
         "id": "PB",
@@ -119,6 +119,50 @@
         "domain": [10, 100],
         "rv_type": "uniform_bds",
         "rv_params": [10, 100]
+    },
+    "delta_z": {
+        "id": "delta_z",
+        "tex": "$\\Delta z$",
+        "description": "Anomalous transport profile shift",
+        "units": "-",
+        "param_type": "calibration",
+        "nominal": 0.308,
+        "domain": [0, 0.6],
+        "rv_type": "normal",
+        "rv_params": [0.25, 0.1]
+    },
+    "z0*": {
+        "id": "z0*",
+        "tex": "$z_0^*$",
+        "description": "Anomalous transport profile max shift",
+        "units": "-",
+        "param_type": "calibration",
+        "nominal": -0.08,
+        "domain": [-0.5, 0.5],
+        "rv_type": "normal",
+        "rv_params": [0, 0.1]
+    },
+    "p_u": {
+        "id": "p_u",
+        "tex": "$p_u$",
+        "description": "Anomalous transport pressure shift upper bound",
+        "units": "$\\mu$-Torr",
+        "param_type": "calibration",
+        "nominal": 43.5,
+        "domain": [0, 80],
+        "rv_type": "normal",
+        "rv_params": [40, 10]
+    },
+    "alpha": {
+        "id": "alpha",
+        "tex": "$\\alpha$",
+        "description": "Anomalous transport pressure shift slope",
+        "units": "-",
+        "param_type": "calibration",
+        "nominal": 13.4,
+        "domain": [2, 100],
+        "rv_type": "uniform_bds",
+        "rv_params": [2, 100]
     },
     "l_c": {
         "id": "l_c",

@@ -38,6 +38,12 @@ def hallthruster_jl_input(thruster_input):
                                'background_pressure_Torr': 10 ** thruster_input['PB'],
                                'background_temperature_K': thruster_input['background_temperature_K'],
                                }
+    if thruster_input['anom_model'] == 'ShiftedTwoZone':
+        # Add extra parameters for shifted two zone anomalous model
+        json_data['parameters'].update({'pressure_dz': thruster_input['delta_z'] * thruster_input['channel_length'],
+                                        'pressure_z0': thruster_input['z0*'] * thruster_input['channel_length'],
+                                        'pressure_pstar': thruster_input['p_u'] * 1e-6,
+                                        'pressure_alpha': thruster_input['alpha']})
     json_data['design'] = {'thruster_name': thruster_input['thruster_name'],
                            'inner_radius': thruster_input['inner_radius'],
                            'outer_radius': thruster_input['outer_radius'],
@@ -298,7 +304,7 @@ def thruster_pem(x, alpha, *args, compress=True, output_dir=None, n_jobs=-1, con
         save_dict = {'alpha': alpha, 'x': x, 'y': y_ret, 'is_compressed': compress, 'files': files, 'costs': costs}
         with open(Path(output_dir) / f'{eval_id}_eval.pkl', 'wb') as fd:
             pickle.dump(save_dict, fd)
-    costs = np.atleast_1d(costs)
+    costs = np.atleast_1d(costs).astype(np.float64)
     costs[costs == 0] = np.nan
     avg_model_cpu_time = np.nanmean(costs)
 

@@ -61,8 +61,8 @@ def cc_pem(x, *args, **kwargs):
     Va = x[..., 1, np.newaxis]
     Te = x[..., 2, np.newaxis]
     V_vac = x[..., 3, np.newaxis]
-    Pstar = x[..., 4, np.newaxis] * 1e-5 * TORR_2_PA
-    PT = x[..., 5, np.newaxis] * 1e-5 * TORR_2_PA
+    Pstar = x[..., 4, np.newaxis] * 1e-6 * TORR_2_PA
+    PT = x[..., 5, np.newaxis] * 1e-6 * TORR_2_PA
 
     # Compute cathode coupling voltage
     y = V_vac + Te * np.log(1 + PB / PT) - (Te / (PT + Pstar)) * PB
