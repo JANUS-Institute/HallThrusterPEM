@@ -127,7 +127,7 @@ class SparseGridSurrogate(ComponentSurrogate):
                     # Grab all 'good' interpolation points and train a simple linear regression fit
                     xi_mat, yi_mat = np.zeros((0, xdim)), np.zeros((0, self.ydim))
                     for coord, xi in self.xi_map[str(alpha)].items():
-                        if coord not in self.yi_nan_map[str(alpha)]:
+                        if coord not in self.yi_nan_map[str(alpha)] and coord in self.yi_map[str(alpha)]:
                             yi_add = self.yi_map[str(alpha)][str(coord)]
                             xi_mat = np.concatenate((xi_mat, xi.reshape((1, xdim))), axis=0)
                             yi_mat = np.concatenate((yi_mat, yi_add.reshape((1, self.ydim))), axis=0)
