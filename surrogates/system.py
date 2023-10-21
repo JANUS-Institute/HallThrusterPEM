@@ -448,8 +448,9 @@ class SystemSurrogate:
             base_beta = (0,) * (len(surr.max_refine) - len(surr.truth_alpha))
             base_cost = surr.get_cost(base_alpha, base_beta)
             cost_alloc[node] = dict()
-            cost_alloc[node][str(base_alpha)] = np.array([1, float(base_cost)])
-            cost_cum[0] += float(base_cost)
+            if base_cost > 0:
+                cost_alloc[node][str(base_alpha)] = np.array([1, float(base_cost)])
+                cost_cum[0] += float(base_cost)
 
         # Add cumulative training costs
         for i in range(idx):
@@ -1255,7 +1256,10 @@ class ComponentSurrogate(ABC):
         :param alpha: A multi-index (tuple) specifying model fidelity
         :param beta: A multi-index (tuple) specifying surrogate fidelity
         """
-        return self.costs[str(alpha)][str(beta)]
+        try:
+            return self.costs[str(alpha)][str(beta)]
+        except:
+            return 0
 
     def update_input_bds(self, idx, bds):
         """Update the bounds of the input at the given idx (assumes a uniform RV)
@@ -1528,7 +1532,7 @@ class AnalyticalSurrogate(ComponentSurrogate):
     # Override
     def get_cost(self, *args):
         """Return nothing"""
-        return None
+        return 0
 
     def add_interpolator(self, *args):
         """Abstract method implementation, return none for an analytical model"""

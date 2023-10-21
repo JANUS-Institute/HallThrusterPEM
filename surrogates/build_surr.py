@@ -170,6 +170,15 @@ def train_mf():
             fig.tight_layout()
             fig.savefig(root_dir/'error_v_cost.png', dpi=300, format='png')
 
+            # Remove nodes with cost=0 from alloc dicts (i.e. analytical models)
+            remove_nodes = []
+            for node, alpha_dict in mf_alloc.items():
+                if len(alpha_dict) == 0:
+                    remove_nodes.append(node)
+            for node in remove_nodes:
+                del mf_alloc[node]
+                del mf_offline[node]
+
             # Bar chart showing cost allocation breakdown for MF system at end
             fig, axs = plt.subplots(1, 2, sharey='row')
             width = 0.8
