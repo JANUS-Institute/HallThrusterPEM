@@ -218,16 +218,17 @@ class SparseGridSurrogate(ComponentSurrogate):
         """Awkward solution, I know, but actually compute and save the model evaluations here"""
         # Compute and store model output at new refinement points in a hash structure
         yi_ret = interp.set_yi(x_new=(x_new_idx, x_new))
+
+        if self.ydim is None:
+            for coord_str, yi in yi_ret['y'].items():
+                self.ydim = yi.shape[0]
+                break
+
         alpha = interp._model_args[0]
         self.update_yi(alpha, interp.beta, yi_ret['y'])
         if self.save_enabled():
             self.yi_files[str(alpha)].update(yi_ret['files'])
         cost = interp.model_cost * len(x_new_idx)
-
-        if self.ydim is None:
-            for coord_str, yi in self.yi_map[str(alpha)].items():
-                self.ydim = yi.shape[0]
-                break
 
         return cost
 
