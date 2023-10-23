@@ -13,10 +13,10 @@ import os
 import datetime
 from datetime import timezone
 import matplotlib.pyplot as plt
-# import dill
-# from mpi4py import MPI
-# MPI.pickle.__init__(dill.dumps, dill.loads)
-# from mpi4py.futures import MPICommExecutor
+import dill
+from mpi4py import MPI
+MPI.pickle.__init__(dill.dumps, dill.loads)
+from mpi4py.futures import MPICommExecutor
 
 sys.path.append('../..')
 
@@ -270,13 +270,13 @@ def thruster_madison(x, alpha, *args, compress=True, output_dir=None, n_jobs=-1,
 
 if __name__ == '__main__':
     # Run training on Great lakes with MPI parallel execution
-    # with MPICommExecutor(MPI.COMM_WORLD, root=0) as executor:
-    #     if executor is not None:
-    #         surr = train_surrogate(executor=executor)
-    #
-    #         # Plot some 1d slices to check how training went
-    #         surr.set_output_dir({'Thruster': None})  # Don't save outputs for testing
-    #         surr.plot_slice([0, 1, 2], [0, 1, 2], compare_truth=True)
+    with MPICommExecutor(MPI.COMM_WORLD, root=0) as executor:
+        if executor is not None:
+            surr = train_surrogate(executor=executor)
+    
+            # Plot some 1d slices to check how training went
+            surr.set_output_dir({'Thruster': None})  # Don't save outputs for testing
+            surr.plot_slice([0, 1, 2], [0, 1, 2], compare_truth=True)
 
     # Test surrogate prediction of full reconstructed ion velocity field
     PB = -5     # log10 torr
