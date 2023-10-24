@@ -1178,8 +1178,16 @@ class ComponentSurrogate(ABC):
         :returns y: (..., ydim) the surrogate approximation of the qois
         """
         if ground_truth:
-            # Bypass surrogate evaluation
+            # Bypass surrogate evaluation (don't save output)
+            output_dir = self._model_kwargs.get('output_dir')
+            if self.save_enabled():
+                self._model_kwargs['output_dir'] = None
+
             ret = self._model(x, self.truth_alpha, *self._model_args, **self._model_kwargs)
+
+            if output_dir is not None:
+                self._model_kwargs['output_dir'] = output_dir
+
             return ret['y']
 
         # Decide which index set and corresponding misc coefficients to use
