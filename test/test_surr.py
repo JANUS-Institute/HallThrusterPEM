@@ -7,6 +7,7 @@ import time
 import warnings
 import sys
 import logging
+import pickle
 import os
 import dill
 from pathlib import Path
@@ -655,6 +656,64 @@ def test_1d_sweep():
     plt.show()
 
 
+def show_train_record():
+    """Plot error indicator and test set results by looping through surrogate training record"""
+    surr_dir = Path('../results/surrogates/') / 'mf_2023-10-25T14.45.43' / 'multi-fidelity'
+    surr = SystemSurrogate.load_from_file(surr_dir / 'sys' / 'sys_final.pkl', root_dir=surr_dir)
+    record = surr.build_metrics['train_record']
+    xt, yt = surr.build_metrics['xt'], surr.build_metrics['yt']
+    qoi_ind = [1, 2, 8, 9]
+    yt = yt[:, qoi_ind]
+    Nqoi = len(qoi_ind)
+    err_indicator = []
+    index_sets = {comp: [next(iter(node_obj['surrogate'].index_set), None)] for comp, node_obj in surr.graph.nodes.items()}
+    Nt = len(record)
+    l2 = np.empty((Nt + 1, yt.shape[-1]))
+
+    # Get initial test set error on initialization
+    ysurr = surr(xt, training=True, index_set=index_sets)[:, qoi_ind]
+    with np.errstate(divide='ignore', invalid='ignore'):
+        rel_l2_err = np.sqrt(np.mean((yt - ysurr) ** 2, axis=0)) / np.sqrt(np.mean(yt ** 2, axis=0))
+        rel_l2_err = np.nan_to_num(rel_l2_err, posinf=np.nan, neginf=np.nan, nan=np.nan)
+    l2[0, :] = rel_l2_err
+
+    # Get test set error over the course of training
+    print(f'{"Iteration": <15} {"Time": <10} {"Indicator": <10} {"L2 error"}')
+    for i, (err, comp, alpha, beta, num_eval, cost) in enumerate(record[:Nt]):
+        err_indicator.append(err)
+        index_sets[comp].append((alpha, beta))
+        t1 = time.time()
+        ysurr = surr(xt, training=True, index_set=index_sets)[:, qoi_ind]
+        t2 = time.time()
+        with np.errstate(divide='ignore', invalid='ignore'):
+            rel_l2_err = np.sqrt(np.mean((yt - ysurr) ** 2, axis=0)) / np.sqrt(np.mean(yt ** 2, axis=0))
+            rel_l2_err = np.nan_to_num(rel_l2_err, posinf=np.nan, neginf=np.nan, nan=np.nan)
+        l2[i+1, :] = rel_l2_err
+        print(f'{i: <15d} {t2-t1: <10.3f} {err: <10.5f} {rel_l2_err}')
+
+    # Plot test set error results
+    t_fig, t_ax = plt.subplots(1, Nqoi) if Nqoi > 1 else plt.subplots()
+    for i in range(Nqoi):
+        ax = t_ax if Nqoi == 1 else t_ax[i]
+        ax.clear(); ax.grid(); ax.set_yscale('log')
+        ax.plot(l2[:, i], '-k')
+        ax.set_title(f'{surr.coupling_vars[qoi_ind[i]].to_tex(units=True)}')
+        ax_default(ax, 'Iteration', r'Relative $L_2$ error', legend=False)
+    t_fig.set_size_inches(3.5 * Nqoi, 3.5)
+    t_fig.tight_layout()
+    t_fig.savefig('test_set.png', dpi=300, format='png')
+    plt.show()
+
+    # Plot error indicator results
+    err_fig, err_ax = plt.subplots()
+    err_ax.grid()
+    err_ax.plot(err_indicator, '-k')
+    ax_default(err_ax, 'Iteration', 'Error indicator', legend=False)
+    err_ax.set_yscale('log')
+    err_fig.savefig('error_indicator.png', dpi=300, format='png')
+    plt.show()
+
+
 if __name__ == '__main__':
     """Each one of these tests was used to iteratively build up the SystemSurrogate class for MD, MF interpolation"""
     # test_tensor_product_1d()
@@ -669,4 +728,5 @@ if __name__ == '__main__':
     # test_fire_sat(filename=Path('save')/'sys_error.pkl')
     # test_fpi()
     # test_fake_pem()
-    test_1d_sweep()
+    # test_1d_sweep()
+    show_train_record()
