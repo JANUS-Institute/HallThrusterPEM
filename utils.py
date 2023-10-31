@@ -213,7 +213,7 @@ class NormalRV(BaseRV):
 
     def __init__(self, mu, std, domain=None, **kwargs):
         if domain is None:
-            domain = (mu - 4*std, mu + 4*std)   # Use a default domain of +- 4std
+            domain = (mu - 2.5*std, mu + 2.5*std)   # Use a default domain of +- 2.5std
         super().__init__(domain=domain, **kwargs)
         self.mu = mu
         self.std = std

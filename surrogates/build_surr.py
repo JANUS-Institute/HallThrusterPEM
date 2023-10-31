@@ -24,7 +24,7 @@ def gen_svd_data(N=500, r_pct=0.999):
     root_dir = Path('../results/svd') / f'svd_{timestamp}'
     os.mkdir(root_dir)
     surr = pem_system(executor=None, init=False, root_dir=root_dir)
-    xt = surr.sample_inputs((N,), comp='Thruster')
+    xt = surr.sample_inputs((N,), comp='Thruster', use_pdf=True)
     comp = surr['Thruster']
     comp._model_kwargs['compress'] = False
     yt = comp(xt, ground_truth=True)
@@ -60,7 +60,7 @@ def gen_svd_data(N=500, r_pct=0.999):
     fig.savefig(str(root_dir/'uion.png'), dpi=300, format='png')
 
     # Generate SVD data matrix for Plume
-    xt = surr.sample_inputs((N,), comp='Plume')
+    xt = surr.sample_inputs((N,), comp='Plume', use_pdf=True)
     comp = surr['Plume']
     comp._model_kwargs['compress'] = False
     yt = comp(xt, ground_truth=True)
@@ -103,7 +103,7 @@ def gen_test_set(N=1000):
     root_dir = Path('../results/test') / f'test_{timestamp}'
     os.mkdir(root_dir)
     sys = pem_system(executor=None, init=False, root_dir=root_dir)
-    xt = sys.sample_inputs((N,))     # (N, xdim)
+    xt = sys.sample_inputs((N,), use_pdf=True)     # (N, xdim)
     yt = sys(xt, ground_truth=True, training=False)
     nan_idx = np.any(np.isnan(yt), axis=-1)
     xt = xt[~nan_idx, :]
