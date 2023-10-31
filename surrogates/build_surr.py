@@ -181,10 +181,10 @@ def train_mf():
 
             # Bar chart showing cost allocation breakdown for MF system at end
             fig, axs = plt.subplots(1, 2, sharey='row')
-            width = 0.8
+            width = 0.7
             x = np.arange(len(mf_alloc))
             xlabels = list(mf_alloc.keys())
-            cmap = plt.get_cmap('viridis')
+            cmap = plt.get_cmap('Blues')
             for k in range(2):
                 ax = axs[k]
                 alloc = mf_alloc if k == 0 else mf_offline
@@ -192,14 +192,23 @@ def train_mf():
                 for j, (node, alpha_dict) in enumerate(alloc.items()):
                     bottom = 0
                     c_intervals = np.linspace(0, 1, len(alpha_dict))
-                    for i, (alpha, cost) in enumerate(alpha_dict.items()):
-                        p = ax.bar(x[j], cost[1] / total_cost, width, color=cmap(c_intervals[i]), linewidth=1,
+                    bars = [(alpha, cost, cost[1] / total_cost) for alpha, cost in alpha_dict.items()]
+                    bars = sorted(bars, key=lambda ele: ele[2], reverse=True)
+                    for i, (alpha, cost, frac) in enumerate(bars):
+                        p = ax.bar(x[j], frac, width, color=cmap(c_intervals[i]), linewidth=1,
                                    edgecolor=[0, 0, 0], bottom=bottom)
-                        bottom += cost[1] / total_cost
-                        ax.bar_label(p, labels=[f'{alpha} - {round(cost[0])}'], label_type='center')
+                        bottom += frac
+                        if frac > 0.06:
+                            ax.bar_label(p, labels=[f'{alpha}, {round(cost[0])}'], label_type='center')
+                        elif frac > 0.02:
+                            xy = (x[j] + width / 2, bottom - frac / 2) # Label smaller bars with a text off to the side
+                            ax.annotate(f'{alpha}, {round(cost[0])}', xy, xytext=(xy[0] + 0.2, xy[1]),
+                                        arrowprops={'arrowstyle': '->', 'linewidth': 1})
+                        else:
+                            pass  # Don't label really small bars
                 ax_default(ax, '', "Fraction of total cost" if k == 0 else '', legend=False)
                 ax.set_xticks(x, xlabels)
-                ax.set_xlim(left=-1, right=1)
+                ax.set_xlim(left=-1, right=x[-1] + 1)
             fig.set_size_inches(8, 4)
             fig.tight_layout()
             fig.savefig(root_dir/'mf_allocation.png', dpi=300, format='png')
