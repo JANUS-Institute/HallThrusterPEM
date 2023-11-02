@@ -10,6 +10,7 @@ import datetime
 from datetime import timezone
 import os
 import matplotlib.pyplot as plt
+import shutil
 
 sys.path.append('..')
 
@@ -96,6 +97,8 @@ def gen_svd_data(N=500, r_pct=0.999):
     ax_default(ax, 'Normalized angle', 'Current density ($A/m^2$)', legend=False)
     fig.savefig(str(root_dir / 'jion.png'), dpi=300, format='png')
 
+    return root_dir
+
 
 def gen_test_set(N=1000):
     """Generate a test set of high-fidelity model solves"""
@@ -112,6 +115,8 @@ def gen_test_set(N=1000):
 
     with open(Path(sys.root_dir) / 'test_set.pkl', 'wb') as dill_file:
         dill.dump(data, dill_file)
+
+    return root_dir
 
 
 def train_mf():
@@ -216,6 +221,13 @@ def train_mf():
 
 
 if __name__ == '__main__':
-    gen_svd_data()
-    # gen_test_set()
+    # Generate SVD and test set files
+    svd_dir = gen_svd_data()
+    copy_dir = Path(__file__).parent / '..' / 'models' / 'data'
+    shutil.copyfile(svd_dir / 'plume_svd.pkl', copy_dir / 'plume_svd.pkl')
+    shutil.copyfile(svd_dir / 'thruster_svd.pkl', copy_dir / 'thruster_svd.pkl')
+    test_dir = gen_test_set()
+    shutil.copyfile(test_dir / 'test_set.pkl', copy_dir / 'test_set.pkl')
+
+    # Build surrogate
     # train_mf()

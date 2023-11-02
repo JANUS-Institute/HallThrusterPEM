@@ -82,7 +82,7 @@
         "description": "Wall sheath loss coefficient",
         "units": "-",
         "param_type": "calibration",
-        "nominal": 0.2176,
+        "nominal": 0.2,
         "domain": [0.1, 0.3],
         "rv_type": "uniform_bds",
         "rv_params": [0.1, 0.3]
@@ -159,7 +159,7 @@
         "description": "Anomalous transport pressure shift slope",
         "units": "-",
         "param_type": "calibration",
-        "nominal": 13.4,
+        "nominal": 15,
         "domain": [2, 100],
         "rv_type": "uniform_bds",
         "rv_params": [2, 100]

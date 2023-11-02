@@ -38,12 +38,12 @@ def hallthruster_jl_input(thruster_input):
                                'background_pressure_Torr': 10 ** thruster_input['PB'],
                                'background_temperature_K': thruster_input['background_temperature_K'],
                                }
-    # if thruster_input['anom_model'] == 'ShiftedTwoZone':
-    # Add extra parameters for shifted two zone anomalous model
-    json_data['parameters'].update({'pressure_dz': thruster_input['delta_z'] * thruster_input['channel_length'],
-                                    'pressure_z0': thruster_input['z0*'] * thruster_input['channel_length'],
-                                    'pressure_pstar': thruster_input['p_u'] * 1e-6,
-                                    'pressure_alpha': thruster_input['alpha']})
+    if thruster_input['anom_model'] == 'ShiftedTwoZone':
+        # Add extra parameters for shifted two zone anomalous model
+        json_data['parameters'].update({'pressure_dz': thruster_input['delta_z'] * thruster_input['channel_length'],
+                                        'pressure_z0': thruster_input['z0*'] * thruster_input['channel_length'],
+                                        'pressure_pstar': thruster_input['p_u'] * 1e-6,
+                                        'pressure_alpha': thruster_input['alpha']})
     json_data['design'] = {'thruster_name': thruster_input['thruster_name'],
                            'inner_radius': thruster_input['inner_radius'],
                            'outer_radius': thruster_input['outer_radius'],

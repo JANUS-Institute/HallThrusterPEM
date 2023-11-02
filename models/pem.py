@@ -49,9 +49,8 @@ def feedforward_pem(model_inputs, jl=None):
 
 def pem_system(root_dir=None, executor=None, init=True, hf_override=False):
     """Return a SystemSurrogate object for the feedforward PEM system"""
-    exo_vars = load_variables(['PB', 'Va', 'mdot_a', 'T_ec', 'V_vac', 'P*', 'PT', 'u_n', 'c_w', 'l_t', 'vAN1', 'vAN2',
-                               'delta_z', 'z0*', 'p_u', 'alpha', 'l_c', 'c0', 'c1', 'c2', 'c3', 'c4', 'c5',
-                               'sigma_cex', 'r_m'])
+    exo_vars = load_variables(['PB', 'Va', 'mdot_a', 'T_ec', 'V_vac', 'P*', 'PT', 'u_n', 'l_t', 'vAN1', 'vAN2',
+                               'delta_z', 'z0*', 'p_u', 'c0', 'c1', 'c2', 'c3', 'c4', 'c5', 'sigma_cex', 'r_m'])
     coupling_vars = load_variables(['V_cc', 'I_B0', 'T', 'eta_v', 'eta_c', 'eta_m', 'ui_avg', 'theta_d'])
 
     # Get number of reconstruction coefficients
@@ -69,8 +68,7 @@ def pem_system(root_dir=None, executor=None, init=True, hf_override=False):
                                         param_type='coupling') for i in range(r2)])
 
     cathode_exo = ['PB', 'Va', 'T_ec', 'V_vac', 'P*', 'PT']
-    thruster_exo = ['PB', 'Va', 'mdot_a', 'T_ec', 'u_n', 'c_w', 'l_t', 'vAN1', 'vAN2', 'delta_z', 'z0*',
-                    'p_u', 'alpha', 'l_c']
+    thruster_exo = ['PB', 'Va', 'mdot_a', 'T_ec', 'u_n', 'l_t', 'vAN1', 'vAN2', 'delta_z', 'z0*', 'p_u']
     plume_exo = ['PB', 'c0', 'c1', 'c2', 'c3', 'c4', 'c5', 'sigma_cex', 'r_m']
     # Models must be specified at the global scope for pickling
     cathode = {'name': 'Cathode', 'model': cc_pem, 'truth_alpha': (), 'exo_in': cathode_exo, 'coupling_in': {},

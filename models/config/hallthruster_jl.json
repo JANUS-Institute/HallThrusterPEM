@@ -1,6 +1,6 @@
 {
     "all_inputs": ["PB", "Va", "mdot_a", "T_ec", "u_n", "c_w", "l_t", "vAN1", "vAN2", "delta_z", "z0*", "p_u", "alpha", "l_c", "V_cc"],
-    "inputs": ["PB", "Va", "mdot_a", "T_ec", "u_n", "c_w", "l_t", "vAN1", "vAN2", "delta_z", "z0*", "p_u", "alpha", "l_c", "V_cc"],
+    "inputs": ["PB", "Va", "mdot_a", "T_ec", "u_n", "l_t", "vAN1", "vAN2", "delta_z", "z0*", "p_u", "V_cc"],
     "outputs": ["I_B0", "T", "eta_v", "eta_c", "eta_m", "ui_avg", "uion"],
     "SPT-100": {
         "channel_length": 0.025,
