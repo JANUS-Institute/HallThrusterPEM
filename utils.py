@@ -14,7 +14,7 @@ import uuid
 import os
 
 INPUT_DIR = Path(__file__).parent / 'input'
-LOG_FORMATTER = logging.Formatter("%(asctime)s \u2014 [%(levelname)s] \u2014 %(name)-36s \u2014 %(message)s")
+LOG_FORMATTER = logging.Formatter("%(asctime)s \u2014 [%(levelname)s] \u2014 %(name)-20s \u2014 %(message)s")
 
 
 class ModelRunException(Exception):
@@ -125,7 +125,7 @@ class UniformRV(BaseRV):
 
         # Set default nominal value as middle of the domain if not specified
         if kwargs.get('nominal', None) is None:
-            self.nominal = (self.bds[1] - self.bds[0]) / 2
+            self.nominal = (self.bds[1] + self.bds[0]) / 2
 
     # Override
     def __str__(self):
@@ -276,29 +276,22 @@ def load_variables(variables, file='variables.json'):
     return vars
 
 
-def get_logger(name):
-    """Setup a generic stdout logger with the given name"""
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(LOG_FORMATTER)
+def get_logger(name, stdout=True, log_file=None):
+    """Setup a file/stdout logger with the given name"""
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
-    logger.addHandler(handler)
-    return logger
-
-
-def add_file_logging(logger, log_file, suppress_stdout=False):
-    """Setup file logging for this logger (clear all handlers and add file+stdout logging"""
     logger.handlers.clear()
-    f_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
-    f_handler.setLevel(logging.DEBUG)
-    f_handler.setFormatter(LOG_FORMATTER)
-    logger.addHandler(f_handler)
+    if stdout:
+        std_handler = logging.StreamHandler(sys.stdout)
+        std_handler.setFormatter(LOG_FORMATTER)
+        logger.addHandler(std_handler)
+    if log_file is not None:
+        f_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
+        f_handler.setLevel(logging.DEBUG)
+        f_handler.setFormatter(LOG_FORMATTER)
+        logger.addHandler(f_handler)
 
-    if not suppress_stdout:
-        s_handler = logging.StreamHandler(sys.stdout)
-        s_handler.setFormatter(LOG_FORMATTER)
-        s_handler.setLevel(logging.DEBUG)
-        logger.addHandler(s_handler)
+    return logger
 
 
 def print_stats(data, logger=None):

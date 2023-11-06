@@ -104,7 +104,7 @@ def wing_weight_func(x, *args, **kwargs):
     Wwing = 0.036*(Sw**0.758)*(Wfw**0.0035)*((A/(np.cos(Lambda))**2)**0.6)*(q**0.006)*(lamb**0.04)*\
             (100*tc/np.cos(Lambda))**(-0.3)*((Nz*Wdg)**0.49) + Sw*Wp
 
-    return Wwing[..., np.newaxis]
+    return {'y': Wwing[..., np.newaxis]}
 
 
 def fire_sat_system():
@@ -342,16 +342,35 @@ def borehole_system():
 
 def wing_weight_system():
     d = 10
-    idx = list(np.arange(d))
-    vars = [UniformRV(150, 250, 'Sw'), UniformRV(220, 300, 'Wfw'), UniformRV(6, 10, 'A'),
-            UniformRV(-10, 10, 'Lambda'), UniformRV(16, 45, 'q'), UniformRV(0.5, 1, 'lambda'),
-            UniformRV(0.08, 0.18, 'tc'), UniformRV(2.5, 6, 'Nz'), UniformRV(1700, 2500, 'Wdg'),
-            UniformRV(0.025, 0.08, 'Wp')]
-    coupling_vars = [UniformRV(0, 10000, 'Wwing')]
+    idx = [int(i) for i in np.arange(d)]
+    vars = [UniformRV(150, 250, id='Sw'), UniformRV(220, 300, id='Wfw'), UniformRV(6, 10, id='A'),
+            UniformRV(-10, 10, id='Lambda'), UniformRV(16, 45, id='q'), UniformRV(0.5, 1, id='lambda'),
+            UniformRV(0.08, 0.18, id='tc'), UniformRV(2.5, 6, id='Nz'), UniformRV(1700, 2500, id='Wdg'),
+            UniformRV(0.025, 0.08, id='Wp')]
+    coupling_vars = [UniformRV(0, 10000, id='Wwing')]
     exo_vars = [vars[i] for i in idx]
-    comp = {'name': 'Wing', 'model': wing_weight_func, 'exo_in': idx, 'local_in': {}, 'global_out': [0],
-            'truth_alpha': (), 'max_beta': (3,)*d}
-    sys = SystemSurrogate([comp], exo_vars, coupling_vars, root_dir='build', suppress_stdout=True, est_bds=1000)
+    comp = {'name': 'Wing', 'model': wing_weight_func, 'exo_in': idx, 'coupling_in': {}, 'coupling_out': [0],
+            'truth_alpha': (), 'max_beta': (2,)*d, 'type': 'lagrange'}
+    sys = SystemSurrogate([comp], exo_vars, coupling_vars, root_dir='build', est_bds=1000)
 
     return sys
 
+
+def chatgpt_model(x, *args, **kwargs):
+    y = (np.tanh(x[..., 0] * x[..., 1]) + np.sin(np.pi*x[..., 2] * x[..., 3]) + np.abs(x[..., 4] * x[..., 5]) +
+         np.exp(x[..., 6] * x[..., 7]) + x[..., 8]*np.log(np.abs(x[..., 9]) + 1) +
+         np.sqrt(np.abs(x[..., 10] * x[..., 11])))
+
+    return {'y': y[..., np.newaxis]}
+
+
+def chatgpt_system():
+    d = 12
+    exo_vars = [UniformRV(0, 1, id=f'x{i}') for i in range(d)]
+    exo_idx = [int(i) for i in range(d)]
+    coupling_vars = [UniformRV(0, 1, id='y0')]
+    comp = {'name': 'chatgpt', 'model': chatgpt_model, 'exo_in': exo_idx, 'coupling_in': {}, 'coupling_out': [0],
+            'truth_alpha': (), 'max_beta': (2,)*d, 'type': 'lagrange'}
+    surr = SystemSurrogate([comp], exo_vars, coupling_vars, root_dir='build', est_bds=1000)
+
+    return surr

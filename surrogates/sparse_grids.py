@@ -13,7 +13,7 @@ from sklearn.preprocessing import MaxAbsScaler
 sys.path.append('..')
 
 from surrogates.system import ComponentSurrogate, BaseInterpolator
-from utils import get_logger, add_file_logging
+from utils import get_logger
 
 
 class SparseGridSurrogate(ComponentSurrogate):
@@ -255,11 +255,8 @@ class SparseGridSurrogate(ComponentSurrogate):
 
         def parallel_task(alpha, beta, x_new_idx, x_new, interp):
             # Must return anything you want changed in self or interp (mutable changes aren't saved over MPI workers)
-            logger = get_logger(__name__)
-            logger_child = logger.getChild(self.__class__.__name__)
-            if self.log_file is not None:
-                add_file_logging(logger_child, self.log_file, suppress_stdout=True)
-            logger_child.info(f'Building interpolant for index {(alpha, beta)} ...')
+            logger = get_logger(self.__class__.__name__, log_file=self.log_file, stdout=False)
+            logger.info(f'Building interpolant for index {(alpha, beta)} ...')
             yi_ret = interp.set_yi(x_new=(x_new_idx, x_new))
             model_cost = interp.model_cost if interp.model_cost is not None else 1
             return yi_ret, model_cost

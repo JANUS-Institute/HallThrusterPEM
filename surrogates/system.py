@@ -20,17 +20,13 @@ from joblib.externals.loky import set_loky_pickler
 
 sys.path.append('..')
 
-from utils import get_logger, add_file_logging, ax_default
-
-
-# Setup logging for the module
-logger = get_logger(__name__)
+from utils import get_logger, ax_default
 
 
 class SystemSurrogate:
 
     def __init__(self, components, exo_vars, coupling_vars, est_bds=0, root_dir=None, executor=None,
-                 suppress_stdout=False, init_surr=True):
+                 stdout=True, init_surr=True):
         """Construct a multidisciplinary system surrogate
         :param components: list(Nk,) of dicts specifying component name (str), a callable function model(x, alpha), a
                            string specifying surrogate class type, the highest 'truth' set of model fidelity indices,
@@ -48,7 +44,7 @@ class SystemSurrogate:
         :param est_bds: (int) number of samples to estimate coupling variable bounds, do nothing if 0
         :param root_dir: (str) Root directory for all build products (.logs, .pkl, .json, etc.)
         :param executor: An instance of a concurrent.futures.Executor, use to iterate new candidates in parallel
-        :param suppress_stdout: only log to file, don't print to console
+        :param stdout: only log to file and don't print to console if False
         :param init_surr: whether to initialize the surrogate with the coarsest fidelity index
         """
         # Setup root directory
@@ -69,15 +65,14 @@ class SystemSurrogate:
                             shutil.rmtree(os.path.join(self.root_dir, d))
                 else:
                     error_msg = f'Please specify a different root directory to use then...'
-                    logger.error(error_msg)
+                    print(error_msg)
                     raise Exception(error_msg)
 
         os.mkdir(Path(self.root_dir) / 'sys')
         os.mkdir(Path(self.root_dir) / 'components')
         fname = datetime.datetime.now(tz=timezone.utc).isoformat().split('.')[0].replace(':', '.') + 'UTC_sys.log'
         self.log_file = str((Path(self.root_dir) / fname).resolve())
-        add_file_logging(logger, self.log_file, suppress_stdout=suppress_stdout)
-        self.logger = logger.getChild(self.__class__.__name__)
+        self.logger = get_logger(self.__class__.__name__, log_file=self.log_file, stdout=stdout)
         self.executor = executor
 
         # Store system info in a directed graph data structure
@@ -386,7 +381,7 @@ class SystemSurrogate:
                     self.print_title_str(f'Termination criteria reached: No candidates left to refine')
                     break
                 if curr_error < max_tol:
-                    self.print_title_str(f'Termination criteria reached: error {curr_error} < tol {max_tol}')
+                    self.print_title_str(f'Termination criteria reached: L2 error {curr_error} < tol {max_tol}')
                     break
                 if ((time.time() - t_start)/3600.0) >= max_runtime:
                     actual = datetime.timedelta(seconds=time.time()-t_start)
@@ -406,7 +401,7 @@ class SystemSurrogate:
                 error_record = [res[0] for res in train_record]
                 self.build_metrics['train_record'] = train_record
                 err_ax.clear(); err_ax.grid(); err_ax.plot(error_record, '-k')
-                ax_default(err_ax, 'Iteration', 'Error indicator', legend=False)
+                ax_default(err_ax, 'Iteration', 'Relative L2 error indicator', legend=False)
                 err_ax.set_yscale('log')
                 err_fig.savefig(str(Path(self.root_dir) / 'error_indicator.png'), dpi=300, format='png')
 
@@ -414,11 +409,12 @@ class SystemSurrogate:
                 if test_set is not None:
                     stats = self.get_test_metrics(xt, yt, qoi_ind=qoi_ind)
                     test_stats = np.concatenate((test_stats, stats[np.newaxis, ...]), axis=0)
+                    ind_use = qoi_ind if qoi_ind is not None else [int(i) for i in np.arange(Nqoi)]
                     for i in range(Nqoi):
                         ax = t_ax if Nqoi == 1 else t_ax[i]
                         ax.clear(); ax.grid(); ax.set_yscale('log')
                         ax.plot(test_stats[:, 1, i], '-k')
-                        ax.set_title(f'QoI {i}')
+                        ax.set_title(self.coupling_vars[ind_use[i]].to_tex(units=True))
                         ax_default(ax, 'Iteration', r'Relative $L_2$ error', legend=False)
                     t_fig.set_size_inches(3.5*Nqoi, 3.5)
                     t_fig.tight_layout()
@@ -532,7 +528,7 @@ class SystemSurrogate:
 
         # Find the candidate surrogate with the largest error indicator
         error_max, error_indicator = -np.inf, -np.inf
-        node_star, alpha_star, beta_star, l2_star, cost_star = None, None, None, None, None
+        node_star, alpha_star, beta_star, l2_star, cost_star = None, None, None, -np.inf, 0
         for node, node_obj in self.graph.nodes.items():
             self.logger.info(f"Estimating error for component '{node}'...")
             candidates = node_obj['surrogate'].candidate_set.copy()
@@ -561,10 +557,10 @@ class SystemSurrogate:
                         y_min = np.min(np.concatenate((y_min, ymin), axis=0), axis=0, keepdims=True)
                         y_max = np.max(np.concatenate((y_max, ymax), axis=0), axis=0, keepdims=True)
                     alpha, beta = candidates[i]
-                    error_indicator = d_error  # Or d_error / d_work
+                    error_indicator = d_error / d_work
                     if d_error > prune_tol:
-                        self.logger.info(f"Candidate multi-index: {(alpha, beta)}. (Global) error indicator: "
-                                         f"{error_indicator}")
+                        self.logger.info(f"Candidate multi-index: {(alpha, beta)}. Error indicator: "
+                                         f"{error_indicator}. L2 error: {d_error}")
                     else:
                         node_obj['surrogate'].prune_index(alpha, beta)
                         self.logger.info(f"PRUNED candidate multi-index: {(alpha, beta)}, since max relative L2 error "
@@ -588,10 +584,11 @@ class SystemSurrogate:
             self.logger.info(f"Candidate multi-index {(alpha_star, beta_star)} chosen for component '{node_star}'")
             self.graph.nodes[node_star]['surrogate'].activate_index(alpha_star, beta_star)
             self.refine_level += 1
+            num_evals = round(cost_star / self[node_star].get_sub_surrogate(alpha_star, beta_star).model_cost)
         else:
             self.logger.info(f"No candidates left for refinement, iteration: {self.refine_level}")
+            num_evals = 0
 
-        num_evals = round(cost_star / self[node_star].get_sub_surrogate(alpha_star, beta_star).model_cost)
         return l2_star, node_star, alpha_star, beta_star, num_evals, cost_star
 
     def __call__(self, x, max_fpi_iter=100, anderson_mem=10, fpi_tol=1e-10, ground_truth=False, verbose=False,
@@ -859,7 +856,12 @@ class SystemSurrogate:
         fig, axs = plt.subplots(len(qoi_idx), len(slice_idx), sharex='col', sharey='row')
         for i in range(len(qoi_idx)):
             for j in range(len(slice_idx)):
-                ax = axs[i, j]
+                if len(qoi_idx) == 1:
+                    ax = axs if len(slice_idx) == 1 else axs[j]
+                elif len(slice_idx) == 1:
+                    ax = axs if len(qoi_idx) == 1 else axs[i]
+                else:
+                    ax = axs[i, j]
                 x = xs[:, j, slice_idx[j]]
                 y_surr = ys_surr[:, j, qoi_idx[i]]
                 if compare_truth:
@@ -911,9 +913,10 @@ class SystemSurrogate:
             if node in set_dict:
                 node_obj['surrogate'].set_output_dir(set_dict.get(node))
 
-    def set_root_directory(self, dir):
+    def set_root_directory(self, dir, stdout=True):
         """Set the root to a new directory, for example if you move to a new system
         :param dir: str() or Path specifying new root directory
+        :param stdout: whether to connect the logger to console (default)
         """
         self.root_dir = str(Path(dir).resolve())
         log_file = None
@@ -931,13 +934,12 @@ class SystemSurrogate:
 
         # Setup the log file
         self.log_file = log_file
-        add_file_logging(logger, self.log_file)
-        self.logger = logger.getChild(SystemSurrogate.__name__)
+        self.logger = get_logger(self.__class__.__name__, log_file=log_file, stdout=stdout)
 
         # Update model output directories
         for node, node_obj in self.graph.nodes.items():
             surr = node_obj['surrogate']
-            surr.logger = logger.getChild(surr.__class__.__name__)
+            surr.logger = get_logger(surr.__class__.__name__, log_file=log_file, stdout=stdout)
             surr.log_file = self.log_file
             if surr.save_enabled():
                 output_dir = str((Path(self.root_dir) / 'components' / node).resolve())
@@ -1027,7 +1029,7 @@ class ComponentSurrogate(ABC):
         :param model_args: tuple() optional args to pass when calling the model
         :param model_kwargs: dict() optional kwargs to pass when calling the model
         """
-        self.logger = logger.getChild(self.__class__.__name__)
+        self.logger = get_logger(self.__class__.__name__, log_file=log_file)
         self.log_file = log_file
         assert self.is_downward_closed(multi_index), 'Must be a downward closed set.'
         self.index_set = []         # The active index set for the MISC approximation
@@ -1384,7 +1386,7 @@ class BaseInterpolator(ABC):
         :param model_args: tuple() of optional args for the model
         :param model_kwargs: dict() of optional kwargs for the model
         """
-        self.logger = logger.getChild(self.__class__.__name__)
+        self.logger = get_logger(self.__class__.__name__)
         self._model = model
         self._model_args = model_args
         self._model_kwargs = model_kwargs if model_kwargs is not None else {}

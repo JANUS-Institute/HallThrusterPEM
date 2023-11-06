@@ -15,10 +15,8 @@ sys.path.append('../..')
 
 # Custom imports
 from models.thruster import thruster_pem, uion_reconstruct
-from utils import UniformRV, load_variables, get_logger, ax_default
+from utils import UniformRV, load_variables, ax_default
 from surrogates.system import SystemSurrogate   # This is the data structure that does all the surrogate stuff
-
-logger = get_logger(__name__)
 
 
 def predict_ion_velocity(x, surr=None, root_dir=None, truth=False):

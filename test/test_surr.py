@@ -23,8 +23,8 @@ sys.path.append('..')
 from utils import ax_default, print_stats, UniformRV
 from surrogates.system import SystemSurrogate
 from surrogates.sparse_grids import SparseGridSurrogate, TensorProductInterpolator
-from models.simple_models import tanh_func, custom_nonlinear, fire_sat_system, fake_pem
-from models.pem import pem_system
+from models.simple_models import tanh_func, custom_nonlinear, fire_sat_system, fake_pem, wing_weight_system
+from models.simple_models import chatgpt_system
 
 FORMATTER = logging.Formatter("%(asctime)s — [%(levelname)s] — %(name)s — %(message)s")
 handler = logging.StreamHandler(sys.stdout)
@@ -714,6 +714,24 @@ def show_train_record():
     plt.show()
 
 
+def test_wing_weight():
+    """Test convergence on smooth d=10 problem"""
+    # surr = wing_weight_system()
+    surr = chatgpt_system()
+    N = 500
+    xt = surr.sample_inputs((N,), use_pdf=True)
+    yt = surr(xt, ground_truth=True)
+    test_set = {'xt': xt, 'yt': yt}
+    surr.build_system(max_iter=30, max_tol=1e-5, max_runtime=3600, test_set=test_set, n_jobs=-1, prune_tol=1e-10,
+                      N_refine=100)
+
+    # Plot 1d slices
+    slice_idx = [0, 1, 2, 3, 4]
+    qoi_idx = [0]
+    fig, ax = surr.plot_slice(slice_idx, qoi_idx, compare_truth=True)
+    plt.show()
+
+
 if __name__ == '__main__':
     """Each one of these tests was used to iteratively build up the SystemSurrogate class for MD, MF interpolation"""
     # test_tensor_product_1d()
@@ -729,4 +747,5 @@ if __name__ == '__main__':
     # test_fpi()
     # test_fake_pem()
     # test_1d_sweep()
-    show_train_record()
+    # show_train_record()
+    test_wing_weight()

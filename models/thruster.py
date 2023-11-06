@@ -18,8 +18,7 @@ import uuid
 Q_E = 1.602176634e-19   # Fundamental charge (C)
 sys.path.append('..')
 
-from utils import ModelRunException, data_write, get_logger, load_variables
-logger = get_logger(__name__)
+from utils import ModelRunException, data_write, load_variables, get_logger
 
 
 def hallthruster_jl_input(thruster_input):
@@ -207,7 +206,8 @@ def thruster_pem(x, alpha, *args, compress=True, output_dir=None, n_jobs=-1, con
             try:
                 res = hallthruster_jl_model(thruster_input, jl=jl)
             except ModelRunException as e:
-                logger.warning(f'Skipping index {index} due to caught exception: {e}')
+                logger = get_logger(__name__)
+                logger.info(f'Skipping index {index} due to caught exception: {e}')
                 y[index + (slice(None),)] = np.nan
                 if output_dir is not None:
                     save_dict = {'input': thruster_input, 'Exception': str(e), 'index': index}
