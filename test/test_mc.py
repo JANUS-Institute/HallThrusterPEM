@@ -16,16 +16,16 @@ import matplotlib.pyplot as plt
 import pickle
 
 sys.path.append('..')
-logging.basicConfig(level=logging.INFO)
 
 # Custom imports
 from models.pem import feedforward_pem
 from models.cc import cathode_coupling_model_feedforward as cc_model
 from models.plume import plume_pem, jion_reconstruct
 from models.thruster import thruster_pem, uion_reconstruct
-from utils import parse_input_file, data_write, ModelRunException, data_load, ax_default, spt100_data
+from utils import parse_input_file, data_write, ModelRunException, ax_default
 from utils import batch_normal_sample, is_positive_definite, nearest_positive_definite
 from surrogates.system import SystemSurrogate
+from data.loader import spt100_data
 
 
 def plot_qoi(ax, x, qoi, xlabel, ylabel, legend=False):

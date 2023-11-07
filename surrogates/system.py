@@ -1171,10 +1171,11 @@ class ComponentSurrogate(ABC):
             yield alpha, beta
             del self.index_set[-1]
 
-    def __call__(self, x, ground_truth=False, training=False, index_set=None):
+    def __call__(self, x, ground_truth=False, truth_dir=None, training=False, index_set=None):
         """Evaluate the surrogate at points x
         :param x: (..., xdim) the points to be interpolated, must be within domain of x bounds
         :param ground_truth: whether to use the highest fidelity model or the surrogate (default)
+        :param truth_dir: directory to save output files if ground_truth=True, ignored otherwise
         :param training: if True, then only compute with active index set, otherwise use all candidates as well
         :param index_set: a list() of (alpha, beta) to override self.index_set if given, else ignore
         :returns y: (..., ydim) the surrogate approximation of the qois
@@ -1183,7 +1184,7 @@ class ComponentSurrogate(ABC):
             # Bypass surrogate evaluation (don't save output)
             output_dir = self._model_kwargs.get('output_dir')
             if self.save_enabled():
-                self._model_kwargs['output_dir'] = None
+                self._model_kwargs['output_dir'] = truth_dir
 
             ret = self._model(x, self.truth_alpha, *self._model_args, **self._model_kwargs)
 

@@ -40,3 +40,29 @@ def load_vcc():
     var_y = (data[:, 5, np.newaxis] / 2)**2
 
     return dict(x=x, y=y, var_y=var_y)
+
+
+def load_jion():
+    """Load ion current density profile from L-3"""
+    base_dir = Path(__file__).parent
+    data = np.loadtxt(base_dir / 'jion_L-3.csv', delimiter=',', skiprows=1)
+    N = 8   # 8 unique operating conditions for L-3 dataset
+    data = np.reshape(data, (N, -1, 8))
+
+    # Load operating conditions
+    pb = np.log10(data[:, 0, 3, np.newaxis])
+    Va = data[:, 0, 0, np.newaxis]
+    mdot = data[:, 0, 1, np.newaxis]        # Total flow rate (mg/s)
+    ma2mc = data[:, 0, 2, np.newaxis]       # Anode to cathode flow ratio
+    mdot_a = ma2mc / (1 + ma2mc) * mdot     # Anode mass flow rate (mg/s)
+    x = np.concatenate((pb, Va, mdot_a), axis=1)
+
+    # Load coordinates of data
+    loc = np.zeros((data.shape[:2] + (2,)))
+    loc[..., 0] = data[..., 4]              # Axial location (m)
+    loc[..., 1] = data[..., 5]*np.pi/180    # Radial location (rad)
+
+    y = data[..., 6, np.newaxis]*10         # Ion current density (A/m^2)
+    var_y = (data[..., 7, np.newaxis] * y / 2) ** 2
+
+    return dict(x=x, loc=loc, y=y, var_y=var_y)
