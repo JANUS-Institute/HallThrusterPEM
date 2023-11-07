@@ -100,8 +100,11 @@ class ScalarRV(BaseRV):
     def pdf(self, x):
         return np.ones(x.shape)
 
-    def sample(self, shape, **kwargs):
-        return self.sample_domain(shape)
+    def sample(self, shape, nominal=None):
+        if nominal is not None:
+            return np.ones(shape)*nominal
+        else:
+            return self.sample_domain(shape)
 
 
 class UniformRV(BaseRV):
@@ -372,16 +375,6 @@ def load_system_inputs(input_data):
         for input_param, sys_value in input_dict.items():
             if input_data[input_type].get(input_param):
                 input_data[input_type][input_param] = copy.deepcopy(sys_value)
-
-
-def set_model_inputs(model_name, inputs_to_set):
-    """Set values for model inputs"""
-    model_data = data_load(f'{model_name}_input.json')
-    for input_type, input_dict in model_data.items():
-        for input_param in input_dict:
-            if input_param in inputs_to_set:
-                model_data[input_type][input_param]['nominal'] = inputs_to_set[input_param]
-    data_write(model_data, f'{model_name}_input.json')
 
 
 def parse_input_file(file, exclude=None):
