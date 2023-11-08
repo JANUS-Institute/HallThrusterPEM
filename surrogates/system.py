@@ -820,13 +820,14 @@ class SystemSurrogate:
 
         return x
 
-    def plot_slice(self, slice_idx, qoi_idx, compare_truth=False, N=50, nominal=None):
+    def plot_slice(self, slice_idx, qoi_idx, compare_truth=False, N=50, nominal=None, random=False):
         """Helper function to plot 1d slices over the inputs (all other inputs set to nominal)
         :param slice_idx: list of exogenous input variables or indices to take 1d slices of
         :param qoi_idx: list of model output variables or indices to plot 1d slices of
         :param compare_truth: whether to also plot the ground truth model against the surrogate
         :param N: the number of points to take the 1d slice
         :param nominal: dict() of str(var)->nominal value to use as constant value for all non-sliced variables
+        :param random: whether to slice in a random d-dimensional direction or hold all params constant while slicing
         :returns fig, ax with num_slice by num_qoi subplots
         """
         if nominal is None:
@@ -837,16 +838,31 @@ class SystemSurrogate:
             qoi_idx = [self.coupling_vars.index(str(var)) for var in qoi_idx]
 
         exo_bds = [var.bounds() for var in self.exo_vars]
+        ub = [bds[1] for bds in exo_bds]
         xlabels = [self.exo_vars[idx].to_tex(units=True) for idx in slice_idx]
         ylabels = [self.coupling_vars[idx].to_tex(units=True) for idx in qoi_idx]
 
         xs = np.zeros((N, len(slice_idx), len(self.exo_vars)))
         for i in range(len(slice_idx)):
-            for j in range(len(self.exo_vars)):
-                if j == slice_idx[i]:
-                    xs[:, i, j] = np.linspace(exo_bds[j][0], exo_bds[j][1], N)  # 1d slice of input param of interest
-                else:
-                    xs[:, i, j] = nominal.get(str(self.exo_vars[j]), self.exo_vars[j].nominal)
+            xi_slice = np.linspace(exo_bds[slice_idx[i]][0], exo_bds[slice_idx[i]][1], N)
+
+            if random:
+                # Make a random walk across d-cube (threshold at domain maximums)
+                vec = np.random.rand(len(self.exo_vars))
+                vhat = vec / np.linalg.norm(vec)            # Random "positive" unit vector in d dimensions
+                dxi = xi_slice[1] - xi_slice[0]             # Increment in the slice variable
+                M = dxi / vhat[slice_idx[i]]                # Step size of the walk (or slice)
+                dx = vhat * M                               # Increment for all directions
+                xs[0, i, :] = np.array([bds[0] for bds in exo_bds])     # Start at lower left corner of domain
+                for k in range(1, N):
+                    xs[k, i, :] = np.minimum(xs[k-1, i, :] + dx, ub)
+            else:
+                # Otherwise, only slice one variable
+                for j in range(len(self.exo_vars)):
+                    if j == slice_idx[i]:
+                        xs[:, i, j] = xi_slice              # 1d slice of input param of interest
+                    else:
+                        xs[:, i, j] = nominal.get(str(self.exo_vars[j]), self.exo_vars[j].nominal)
 
         if compare_truth:
             ys_model = self(xs, ground_truth=True)

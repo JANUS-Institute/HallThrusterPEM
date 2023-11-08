@@ -645,14 +645,14 @@ def test_system_refine():
 
 def test_1d_sweep():
     # Load the trained system surrogate
-    surr_dir = Path('../results/surrogates/') / 'mf_2023-10-24T01.06.28' / 'multi-fidelity'
+    surr_dir = Path('../results/surrogates/') / 'mf_2023-11-02T17.57.44' / 'multi-fidelity'
     surr = SystemSurrogate.load_from_file(surr_dir / 'sys' / 'sys_final.pkl', root_dir=surr_dir)
 
     # 1d slice test set(s) for plotting
     N = 50
-    slice_idx = [0, 1, 2, 10]
-    qoi_idx = [1, 2, 3, 8]
-    fig, ax = surr.plot_slice(slice_idx, qoi_idx, compare_truth=True, N=N)
+    slice_idx = ['vAN1', 'vAN2', 'delta_z', 'z0*', 'p_u']
+    qoi_idx = ['I_B0', 'T', 'uion0', 'uion1']
+    fig, ax = surr.plot_slice(slice_idx, qoi_idx, compare_truth=True, N=N, random=True)
     plt.show()
 
 
@@ -746,6 +746,6 @@ if __name__ == '__main__':
     # test_fire_sat(filename=Path('save')/'sys_error.pkl')
     # test_fpi()
     # test_fake_pem()
-    # test_1d_sweep()
+    test_1d_sweep()
     # show_train_record()
-    test_wing_weight()
+    # test_wing_weight()
