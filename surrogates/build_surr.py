@@ -15,7 +15,7 @@ import shutil
 sys.path.append('..')
 
 from models.pem import pem_system
-from utils import ax_default
+from utils import ax_default, load_variables
 
 
 def gen_svd_data(N=500, r_pct=0.999):
@@ -128,6 +128,15 @@ def train_mf():
             qoi_ind = [1, 2, 8, 9]  # just I_B0, thrust, and first two u_ion latent coefficients
             # qoi_ind = [0, 1, 2, 7, 8, int(7 + r1), int(7 + r1 + 1), int(7 + r1 + 2)]
 
+            # Remove test cases outside bounds
+            exo_vars = load_variables(['PB', 'Va', 'mdot_a', 'T_ec', 'V_vac', 'P*', 'PT', 'u_n', 'l_t', 'vAN1', 'vAN2',
+                                       'delta_z', 'z0*', 'p_u', 'c0', 'c1', 'c2', 'c3', 'c4', 'c5', 'sigma_cex', 'r_m'])
+            lb = np.array([var.bounds()[0] for var in exo_vars])
+            ub = np.array([var.bounds()[1] for var in exo_vars])
+            keep_idx = np.all((test_set['xt'] < ub) & (test_set['xt'] > lb), axis=1)
+            test_set['xt'] = test_set['xt'][keep_idx, :]
+            test_set['yt'] = test_set['yt'][keep_idx, :]
+
             # Set up multi-fidelity vs. single-fidelity comparison folders
             timestamp = datetime.datetime.now(tz=timezone.utc).isoformat().split('.')[0].replace(':', '.')
             root_dir = Path('../results/surrogates') / f'mf_{timestamp}'
@@ -222,12 +231,12 @@ def train_mf():
 
 if __name__ == '__main__':
     # Generate SVD and test set files
-    svd_dir = gen_svd_data()
-    copy_dir = Path(__file__).parent / '..' / 'models' / 'data'
-    shutil.copyfile(svd_dir / 'plume_svd.pkl', copy_dir / 'plume_svd.pkl')
-    shutil.copyfile(svd_dir / 'thruster_svd.pkl', copy_dir / 'thruster_svd.pkl')
-    test_dir = gen_test_set()
-    shutil.copyfile(test_dir / 'test_set.pkl', copy_dir / 'test_set.pkl')
+    # svd_dir = gen_svd_data()
+    # copy_dir = Path(__file__).parent / '..' / 'models' / 'data'
+    # shutil.copyfile(svd_dir / 'plume_svd.pkl', copy_dir / 'plume_svd.pkl')
+    # shutil.copyfile(svd_dir / 'thruster_svd.pkl', copy_dir / 'thruster_svd.pkl')
+    # test_dir = gen_test_set()
+    # shutil.copyfile(test_dir / 'test_set.pkl', copy_dir / 'test_set.pkl')
 
     # Build surrogate
-    # train_mf()
+    train_mf()
