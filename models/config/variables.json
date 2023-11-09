@@ -128,7 +128,7 @@
         "param_type": "calibration",
         "nominal": 0.308,
         "domain": [0, 0.3],
-        "rv_type": "uniform",
+        "rv_type": "uniform_bds",
         "rv_params": [0, 0.3]
     },
     "z0*": {
@@ -139,7 +139,7 @@
         "param_type": "calibration",
         "nominal": -0.08,
         "domain": [-0.3, -0.05],
-        "rv_type": "uniform",
+        "rv_type": "uniform_bds",
         "rv_params": [-0.3, -0.05]
     },
     "p_u": {

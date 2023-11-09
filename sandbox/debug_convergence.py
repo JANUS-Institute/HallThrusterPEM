@@ -27,7 +27,7 @@ def cc_system():
     cathode = {'name': 'Cathode', 'model': cc_pem, 'truth_alpha': (), 'exo_in': idx, 'local_in': {},
                'global_out': [0], 'max_alpha': (), 'max_beta': (3,)*d, 'type': 'lagrange',
                'model_args': (), 'model_kwargs': {}}
-    sys = SystemSurrogate([cathode], vars, coupling_vars, root_dir='build', suppress_stdout=True)
+    sys = SystemSurrogate([cathode], vars, coupling_vars, root_dir='build', stdout=False)
 
     return sys
 

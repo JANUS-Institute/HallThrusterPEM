@@ -83,7 +83,7 @@ def config_surrogate(executor=None, root_dir=None):
                 'exo_in': ['PB', 'vAN1', 'vAN2'], 'coupling_in': [], 'coupling_out': [f'uion{i}' for i in range(r1)],
                 'type': 'lagrange', 'max_beta': (3, 3, 3), 'save_output': True, 'model_args': (),
                 'model_kwargs': {'n_jobs': -1, 'compress': True, 'config': Path('hallthruster_jl.json')}}
-    surr = SystemSurrogate([thruster], exo_vars, coupling_vars, executor=executor, suppress_stdout=True,
+    surr = SystemSurrogate([thruster], exo_vars, coupling_vars, executor=executor, stdout=False,
                            root_dir=root_dir)
 
     return surr

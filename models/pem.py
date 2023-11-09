@@ -84,6 +84,6 @@ def pem_system(root_dir=None, executor=None, init=True, hf_override=False):
              'type': 'analytical', 'max_beta': (3,)*(len(plume_exo)+1), 'model_args': (),
              'model_kwargs': {'compress': True}}
     surr = SystemSurrogate([cathode, thruster, plume], exo_vars, coupling_vars, executor=executor, init_surr=init,
-                           suppress_stdout=True, root_dir=root_dir)
+                           stdout=False, root_dir=root_dir)
 
     return surr

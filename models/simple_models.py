@@ -335,7 +335,7 @@ def borehole_system():
     exo_vars = [vars[i] for i in idx]
     comp = {'name': 'Borehole', 'model': borehole_func, 'exo_in': idx, 'local_in': {}, 'global_out': [0],
             'truth_alpha': (), 'max_beta': (3,)*d}
-    sys = SystemSurrogate([comp], exo_vars, coupling_vars, root_dir='build', suppress_stdout=True, est_bds=1000)
+    sys = SystemSurrogate([comp], exo_vars, coupling_vars, root_dir='build', stdout=False, est_bds=1000)
 
     return sys
 
