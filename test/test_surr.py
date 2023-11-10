@@ -427,7 +427,7 @@ def test_fire_sat(filename=None):
     # Plot 1d slices
     slice_idx = ['H', 'Po', 'Cd']
     qoi_idx = ['Vsat', 'Asa', 'Pat']
-    fig, ax = sys.plot_slice(slice_idx, qoi_idx, compare_truth=True)
+    fig, ax = sys.plot_slice(slice_idx, qoi_idx, show_model=True)
 
     # Plot error vs. cost over training
     err_record = np.atleast_1d([res[0] for res in sys.build_metrics['train_record']])
@@ -652,7 +652,8 @@ def test_1d_sweep():
     N = 50
     slice_idx = ['vAN1', 'vAN2', 'delta_z', 'z0*', 'p_u']
     qoi_idx = ['I_B0', 'T', 'uion0', 'uion1']
-    fig, ax = surr.plot_slice(slice_idx, qoi_idx, compare_truth=True, N=N, random=True)
+    nominal = {str(var): var.sample_domain((1,)) for var in surr.exo_vars}  # Random nominal test point
+    fig, ax = surr.plot_slice(slice_idx, qoi_idx, show_model=True, show_surr=False, N=N, random=True, nominal=nominal)
     plt.show()
 
 
@@ -728,7 +729,7 @@ def test_wing_weight():
     # Plot 1d slices
     slice_idx = [0, 1, 2, 3, 4]
     qoi_idx = [0]
-    fig, ax = surr.plot_slice(slice_idx, qoi_idx, compare_truth=True)
+    fig, ax = surr.plot_slice(slice_idx, qoi_idx, show_model=True)
     plt.show()
 
 

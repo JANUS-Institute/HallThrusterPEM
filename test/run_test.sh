@@ -4,7 +4,7 @@
 #SBATCH --job-name=test_sweep
 #SBATCH --account=goroda0
 #SBATCH --partition=standard
-#SBATCH --time=00-02:00:00
+#SBATCH --time=00-01:00:00
 #SBATCH --nodes=1
 #SBATCH --mem-per-cpu=2g
 #SBATCH --ntasks-per-node=1

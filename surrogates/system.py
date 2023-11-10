@@ -820,11 +820,12 @@ class SystemSurrogate:
 
         return x
 
-    def plot_slice(self, slice_idx, qoi_idx, compare_truth=False, N=50, nominal=None, random=False):
+    def plot_slice(self, slice_idx, qoi_idx, show_surr=True, show_model=False, N=50, nominal=None, random=False):
         """Helper function to plot 1d slices over the inputs (all other inputs set to nominal)
         :param slice_idx: list of exogenous input variables or indices to take 1d slices of
         :param qoi_idx: list of model output variables or indices to plot 1d slices of
-        :param compare_truth: whether to also plot the ground truth model against the surrogate
+        :param show_surr: whether to show the surrogate prediction
+        :param show_model: whether to also plot the ground truth model
         :param N: the number of points to take the 1d slice
         :param nominal: dict() of str(var)->nominal value to use as constant value for all non-sliced variables
         :param random: whether to slice in a random d-dimensional direction or hold all params constant while slicing
@@ -864,9 +865,10 @@ class SystemSurrogate:
                     else:
                         xs[:, i, j] = nominal.get(str(self.exo_vars[j]), self.exo_vars[j].nominal)
 
-        if compare_truth:
+        if show_model:
             ys_model = self(xs, ground_truth=True)
-        ys_surr = self(xs)
+        if show_surr:
+            ys_surr = self(xs)
 
         # Make len(qoi) by len(inputs) grid of subplots
         fig, axs = plt.subplots(len(qoi_idx), len(slice_idx), sharex='col', sharey='row')
@@ -879,14 +881,15 @@ class SystemSurrogate:
                 else:
                     ax = axs[i, j]
                 x = xs[:, j, slice_idx[j]]
-                y_surr = ys_surr[:, j, qoi_idx[i]]
-                if compare_truth:
+                if show_surr:
+                    y_surr = ys_surr[:, j, qoi_idx[i]]
+                    ax.plot(x, y_surr, '--r', label='Surrogate')
+                if show_model:
                     y_model = ys_model[:, j, qoi_idx[i]]
                     ax.plot(x, y_model, '-k', label='Model')
-                ax.plot(x, y_surr, '--r', label='Surrogate')
                 ylabel = ylabels[i] if j == 0 else ''
                 xlabel = xlabels[j] if i == len(qoi_idx) - 1 else ''
-                legend = (i == 0 and j == len(slice_idx) - 1) and compare_truth
+                legend = (i == 0 and j == len(slice_idx) - 1)
                 ax_default(ax, xlabel, ylabel, legend=legend)
         fig.set_size_inches(3 * len(slice_idx), 3 * len(qoi_idx))
         fig.tight_layout()

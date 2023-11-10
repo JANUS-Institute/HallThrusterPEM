@@ -127,9 +127,9 @@
         "units": "-",
         "param_type": "calibration",
         "nominal": 0.308,
-        "domain": [0, 0.3],
-        "rv_type": "uniform_bds",
-        "rv_params": [0, 0.3]
+        "domain": [0, 0.5],
+        "rv_type": "normal",
+        "rv_params": [0.25, 0.1]
     },
     "z0*": {
         "id": "z0*",
@@ -138,9 +138,9 @@
         "units": "-",
         "param_type": "calibration",
         "nominal": -0.08,
-        "domain": [-0.3, -0.05],
-        "rv_type": "uniform_bds",
-        "rv_params": [-0.3, -0.05]
+        "domain": [-0.25, 0.25],
+        "rv_type": "normal",
+        "rv_params": [0, 0.1]
     },
     "p_u": {
         "id": "p_u",
