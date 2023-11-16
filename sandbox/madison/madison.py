@@ -165,9 +165,12 @@ def thruster_madison(x, alpha, *args, compress=True, output_dir=None, n_jobs=-1,
             x_curr = [float(x[index + (i,)]) for i in range(x.shape[-1])]   # (xdim,)
             thruster_input.update({
                 'background_pressure_Torr': 10 ** x_curr[0],
-                'anom_coeff_1': 10 ** x_curr[1],
-                'anom_coeff_2': x_curr[2],
-                'anom_coeff_3': x_curr[3],
+                
+                'z_start': x_curr[1],
+                'z_end': x_curr[2],
+                'anom_coeff_1': 10 ** x_curr[3],
+                'anom_coeff_2': 10 ** x_curr[4],
+                
             })
 
             # Run hallthruster.jl for one set of inputs
@@ -283,8 +286,10 @@ if __name__ == '__main__':
     PB = -5     # log10 torr
     vAN1 = -2   # vAN1 -> [-3, -1]
     vAN2 = 12   # vAN2 -> [10, 100]
-    vAN3 = 25   # vAN3 -> [10, 100]
-    x = np.array([PB, vAN1, vAN2])
+    z_s = .01  # z1 -> [0.001, 0.025]
+    z_e = .03   # z2 -> [0.026, 0.079]
+    
+    x = np.array([PB, z_s, z_e, vAN1, vAN2])
     zh, uion_hat, zt, uion_truth = predict_ion_velocity(x, truth=True)
     fig, ax = plt.subplots()
     ax.plot(zt, uion_truth, '-k', label='Model')
