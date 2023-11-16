@@ -67,7 +67,7 @@ def train_surrogate(executor=None):
     os.mkdir(root_dir)
 
     # Configure and train the surrogate
-    qoi_ind = [0, 1, 2, 3]  # just first 3 latent coefficients for guiding the training process
+    qoi_ind = [0, 1, 2, 3, 4]  # just first 3 latent coefficients for guiding the training process
     surr = config_surrogate(executor=executor, root_dir=root_dir)
     surr.build_system(qoi_ind=qoi_ind, N_refine=1000, max_iter=200, max_tol=1e-4, max_runtime=3,
                       save_interval=50, prune_tol=1e-8, n_jobs=-1)
@@ -77,7 +77,7 @@ def train_surrogate(executor=None):
 def config_surrogate(executor=None, root_dir=None):
     """Return a SystemSurrogate object for hallthruster.jl"""
     # Load surrogate input variables
-    exo_vars = load_variables(['PB', 'vAN1', 'vAN2','vAN3'])
+    exo_vars = load_variables(['PB', 'z_start','z_end','vAN1', 'vAN2'])
 
     # Get number of latent coefficients for ion velocity profile
     with open(Path(__file__).parent / '..' / '..' / 'models' / 'data' / 'thruster_svd.pkl', 'rb') as fd:
@@ -89,8 +89,8 @@ def config_surrogate(executor=None, root_dir=None):
 
     # Models must be specified at global scope
     thruster = {'name': 'Thruster', 'model': thruster_madison, 'truth_alpha': (2, 2), 'max_alpha': (2, 2),
-                'exo_in': ['PB', 'vAN1', 'vAN2','vAN3'], 'coupling_in': [], 'coupling_out': [f'uion{i}' for i in range(r1)],
-                'type': 'lagrange', 'max_beta': (3, 3, 3), 'save_output': True,
+                'exo_in': ['PB', 'z_start', 'z_end', 'vAN1', 'vAN2',], 'coupling_in': [], 'coupling_out': [f'uion{i}' for i in range(r1)],
+                'type': 'lagrange', 'max_beta': (3, 3, 3, 3 ,3), 'save_output': True,
                 'model_args': (), 'model_kwargs': {'n_jobs': -1, 'compress': True}}
     surr = SystemSurrogate([thruster], exo_vars, coupling_vars, executor=executor, suppress_stdout=True,
                            root_dir=root_dir)
@@ -131,6 +131,7 @@ def thruster_madison(x, alpha, *args, compress=True, output_dir=None, n_jobs=-1,
         'inner_outer_transition_length_m': 10.93 * 1e-3,    # [m]
         'cathode_location_m': 0.08,             # [m]
         'cathode_potential': 30                 # [V]
+        'anom_model': 'MultiLogBohm'
     })
 
     # Load svd params for dimension reduction of ion velocity profile
