@@ -30,7 +30,7 @@ logger = get_logger(__name__)
 
 def predict_ion_velocity(x, surr=None, root_dir=None, truth=False):
     """Predict an ion velocity curve with the surrogate
-    :param x: (..., 3) Any shape np.ndarray where last dimension has the inputs of [PB, vAN1, vAN2]
+    :param x: (..., 3) Any shape np.ndarray where last dimension has the inputs of [PB, vAN1, vAN2, vAN3]
     :param surr: the SystemSurrogate object to use for prediction, will try to load from root_dir if None
     :param root_dir: Path/str of surrogate root build directory (overridden if surr is provided directly)
     :param truth: Also return z, uion for the ground truth comparison of the full simulation
@@ -67,7 +67,7 @@ def train_surrogate(executor=None):
     os.mkdir(root_dir)
 
     # Configure and train the surrogate
-    qoi_ind = [0, 1, 2]  # just first 3 latent coefficients for guiding the training process
+    qoi_ind = [0, 1, 2, 3]  # just first 3 latent coefficients for guiding the training process
     surr = config_surrogate(executor=executor, root_dir=root_dir)
     surr.build_system(qoi_ind=qoi_ind, N_refine=1000, max_iter=200, max_tol=1e-4, max_runtime=3,
                       save_interval=50, prune_tol=1e-8, n_jobs=-1)
@@ -77,7 +77,7 @@ def train_surrogate(executor=None):
 def config_surrogate(executor=None, root_dir=None):
     """Return a SystemSurrogate object for hallthruster.jl"""
     # Load surrogate input variables
-    exo_vars = load_variables(['PB', 'vAN1', 'vAN2'])
+    exo_vars = load_variables(['PB', 'vAN1', 'vAN2','vAN3'])
 
     # Get number of latent coefficients for ion velocity profile
     with open(Path(__file__).parent / '..' / '..' / 'models' / 'data' / 'thruster_svd.pkl', 'rb') as fd:
@@ -89,7 +89,7 @@ def config_surrogate(executor=None, root_dir=None):
 
     # Models must be specified at global scope
     thruster = {'name': 'Thruster', 'model': thruster_madison, 'truth_alpha': (2, 2), 'max_alpha': (2, 2),
-                'exo_in': ['PB', 'vAN1', 'vAN2'], 'coupling_in': [], 'coupling_out': [f'uion{i}' for i in range(r1)],
+                'exo_in': ['PB', 'vAN1', 'vAN2','vAN3'], 'coupling_in': [], 'coupling_out': [f'uion{i}' for i in range(r1)],
                 'type': 'lagrange', 'max_beta': (3, 3, 3), 'save_output': True,
                 'model_args': (), 'model_kwargs': {'n_jobs': -1, 'compress': True}}
     surr = SystemSurrogate([thruster], exo_vars, coupling_vars, executor=executor, suppress_stdout=True,
@@ -101,7 +101,7 @@ def config_surrogate(executor=None, root_dir=None):
 def thruster_madison(x, alpha, *args, compress=True, output_dir=None, n_jobs=-1, config='hallthruster_jl.json',
                      **kwargs):
     """Run Hallthruster.jl in Madison's format on the SPT-100
-    :param x: (..., xdim) Inputs: ['PB', 'vAN1', 'vAN2']
+    :param x: (..., xdim) Inputs: ['PB', 'vAN1', 'vAN2','vAN3']
     :param alpha: tuple(alpha_1, alpha_2) Model fidelity indices = (N_cells, N_charge)
     :param compress: Whether to compress the ion velocity profile
     :param output_dir: str or Path specifying where to save Hallthruster.jl results
@@ -167,6 +167,7 @@ def thruster_madison(x, alpha, *args, compress=True, output_dir=None, n_jobs=-1,
                 'background_pressure_Torr': 10 ** x_curr[0],
                 'anom_coeff_1': 10 ** x_curr[1],
                 'anom_coeff_2': x_curr[2],
+                'anom_coeff_3': x_curr[3],
             })
 
             # Run hallthruster.jl for one set of inputs
@@ -281,7 +282,8 @@ if __name__ == '__main__':
     # Test surrogate prediction of full reconstructed ion velocity field
     PB = -5     # log10 torr
     vAN1 = -2   # vAN1 -> [-3, -1]
-    vAN2 = 20   # vAN2 -> [10, 100]
+    vAN2 = 12   # vAN2 -> [10, 100]
+    vAN3 = 25   # vAN3 -> [10, 100]
     x = np.array([PB, vAN1, vAN2])
     zh, uion_hat, zt, uion_truth = predict_ion_velocity(x, truth=True)
     fig, ax = plt.subplots()
