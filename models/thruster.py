@@ -26,14 +26,15 @@ def hallthruster_jl_input(thruster_input):
     """Format inputs for Hallthruster.jl"""
     json_data = dict()
     data_dir = Path(__file__).parent / 'data'
-    vAN2 = thruster_input['anom_coeff_1'] * thruster_input['anom_coeff_2']
+    # vAN2 = thruster_input['anom_coeff_1'] * thruster_input['anom_coeff_2']
+    # vAN3 = thruster_input['anom_coeff_1'] * thruster_input['anom_coeff_3']
     json_data['parameters'] = {'neutral_temp_K': thruster_input['neutral_temp_K'],
                                'neutral_velocity_m_s': thruster_input['neutral_velocity_m_s'],
                                'ion_temp_K': thruster_input['ion_temp_K'],
                                'cathode_electron_temp_eV': thruster_input['cathode_electron_temp_eV'],
                                'sheath_loss_coefficient': thruster_input['sheath_loss_coefficient'],
                                'inner_outer_transition_length_m': thruster_input['inner_outer_transition_length_m'],
-                               'anom_model_coeffs': [thruster_input['anom_coeff_1'], vAN2],
+                               'anom_model_coeffs': [thruster_input['z_start'], thruster_input['z_end'], thruster_input['anom_coeff_1'],thruster_input['anom_coeff_2'],
                                'background_pressure_Torr': thruster_input['background_pressure_Torr'],
                                'background_temperature_K': thruster_input['background_temperature_K'],
                                }
