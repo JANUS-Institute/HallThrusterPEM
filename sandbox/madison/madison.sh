@@ -9,7 +9,7 @@
 #SBATCH --mem-per-cpu=2g
 #SBATCH --ntasks-per-node=2
 #SBATCH --cpus-per-task=16
-#SBATCH --output=/scratch/bjorns_root/bjorns0/mgallen/HallThrusterPEM/sandbox/madison/%x-%j.log
+#SBATCH --output= output.log #/scratch/bjorns_root/bjorns0/mgallen/HallThrusterPEM/sandbox/madison/%x-%j.log
 #SBATCH --export=ALL
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --mail-user=mgallen@umich.edu
