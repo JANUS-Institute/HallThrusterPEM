@@ -104,10 +104,10 @@
         "description": "Anomalous transport coefficient 1",
         "units": "-",
         "param_type": "calibration",
-        "nominal": -2.111,
-        "domain": [-3, -1],
+        "nominal": -2,
+        "domain": [-2, -1],
         "rv_type": "uniform_bds",
-        "rv_params": [-3, -1]
+        "rv_params": [-2, -1]
     },
     "vAN2": {
         "id": "vAN2",
@@ -115,10 +115,10 @@
         "description": "Anomalous transport coefficient 2",
         "units": "-",
         "param_type": "calibration",
-        "nominal": 10,
-        "domain": [10, 100],
+        "nominal": 30,
+        "domain": [25, 100],
         "rv_type": "uniform_bds",
-        "rv_params": [10, 100]
+        "rv_params": [25, 100]
     },
     "delta_z": {
         "id": "delta_z",
@@ -127,9 +127,9 @@
         "units": "-",
         "param_type": "calibration",
         "nominal": 0.308,
-        "domain": [0, 0.5],
+        "domain": [0, 0.4],
         "rv_type": "normal",
-        "rv_params": [0.25, 0.1]
+        "rv_params": [0.2, 0.07]
     },
     "z0*": {
         "id": "z0*",
@@ -138,9 +138,9 @@
         "units": "-",
         "param_type": "calibration",
         "nominal": -0.08,
-        "domain": [-0.25, 0.25],
+        "domain": [-0.25, 0],
         "rv_type": "normal",
-        "rv_params": [0, 0.1]
+        "rv_params": [-0.12, 0.04]
     },
     "p_u": {
         "id": "p_u",
@@ -149,9 +149,9 @@
         "units": "$\\mu$-Torr",
         "param_type": "calibration",
         "nominal": 43.5,
-        "domain": [15, 65],
+        "domain": [25, 65],
         "rv_type": "normal",
-        "rv_params": [40, 10]
+        "rv_params": [45, 7]
     },
     "alpha": {
         "id": "alpha",
