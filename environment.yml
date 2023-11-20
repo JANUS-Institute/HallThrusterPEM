@@ -5,8 +5,8 @@ dependencies:
   - python=3.10
   - numpy
   - scipy=1.10.0
-  - scikit-optimize
   - pip:
+      - scikit-optimize
       - juliacall
       - juliapkg
       - matplotlib=3.7.0
