@@ -1,7 +1,7 @@
 """Module for inverse uncertainty quantification tasks (i.e. MCMC)"""
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.ticker import StrMethodFormatter, AutoLocator
+from matplotlib.ticker import StrMethodFormatter, AutoLocator, FuncFormatter
 import matplotlib
 import scipy.stats as st
 
@@ -25,12 +25,21 @@ def ndscatter(samples, labels=None, tick_fmts=None, plot='scatter', cmap='viridi
     x_max = np.max(samples, axis=0)
     if labels is None:
         labels = [f"x{i}" for i in range(dim)]
-    if tick_fmts is None:
-        tick_fmts = ['{x:.2G}' for i in range(dim)]
     if z is None:
         z = np.zeros(N)
     if cb_label is None:
         cb_label = 'Performance metric'
+
+    def tick_format_func(value, pos):
+        if value > 1:
+            return f'{value:.2f}'
+        if value > 0.01:
+            return f'{value:.4f}'
+        if value < 0.01:
+            return f'{value:.2E}'
+    default_ticks = FuncFormatter(tick_format_func)
+    # if tick_fmts is None:
+    #     tick_fmts = ['{x:.2G}' for i in range(dim)]
 
     # Set up triangle plot formatting
     fig, axs = plt.subplots(dim, dim, sharex='col', sharey='row')
@@ -49,11 +58,13 @@ def ndscatter(samples, labels=None, tick_fmts=None, plot='scatter', cmap='viridi
             if i == dim - 1:                # Bottom row
                 ax.set_xlabel(labels[j])
                 ax.xaxis.set_major_locator(AutoLocator())
-                ax.xaxis.set_major_formatter(StrMethodFormatter(tick_fmts[j]))
+                formatter = StrMethodFormatter(tick_fmts[j]) if tick_fmts is not None else default_ticks
+                ax.xaxis.set_major_formatter(formatter)
             if j == 0 and i > 0:            # Left column
                 ax.set_ylabel(labels[i])
                 ax.yaxis.set_major_locator(AutoLocator())
-                ax.yaxis.set_major_formatter(StrMethodFormatter(tick_fmts[i]))
+                formatter = StrMethodFormatter(tick_fmts[i]) if tick_fmts is not None else default_ticks
+                ax.yaxis.set_major_formatter(formatter)
 
     # Plot marginals
     for i in range(dim):

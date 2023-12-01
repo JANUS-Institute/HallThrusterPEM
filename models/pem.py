@@ -2,49 +2,17 @@
 
 import numpy as np
 import sys
-import logging
-import copy
 from pathlib import Path
 import pickle
 
 sys.path.append('..')
 
 # Custom imports
-from models.cc import cathode_coupling_model_feedforward, cc_pem
-from models.thruster import hallthruster_jl_model, thruster_pem
-from models.plume import jion_modified, plume_pem
+from models.cc import cc_pem
+from models.thruster import thruster_pem
+from models.plume import plume_pem
 from utils import UniformRV, load_variables
 from surrogates.system import SystemSurrogate
-
-
-def feedforward_pem(model_inputs, jl=None):
-    """Run a single vcc-thruster-plume model with dictionary inputs"""
-    assert len(model_inputs) == 3
-
-    # Allocate space for return dictionary
-    pem_result = {'pem_version': 'feedforward', 'cc': {}, 'thruster': {}, 'plume': {}}
-
-    # Run cathode-coupling model
-    cc_input = model_inputs[0]
-    cc_output = cathode_coupling_model_feedforward(cc_input)
-    pem_result['cc']['input'] = cc_input
-    pem_result['cc']['output'] = cc_output
-
-    # Run Hallthruster.jl model
-    thruster_input = model_inputs[1]
-    pem_result['thruster']['input'] = copy.deepcopy(thruster_input)
-    thruster_input.update(cc_output)
-    thruster_output = hallthruster_jl_model(thruster_input, jl=jl)
-    pem_result['thruster']['output'] = thruster_output
-
-    # # Run plume model
-    plume_input = model_inputs[2]
-    pem_result['plume']['input'] = copy.deepcopy(plume_input)
-    plume_input.update(thruster_output)
-    plume_output = jion_modified(plume_input)
-    pem_result['plume']['output'] = plume_output
-
-    return pem_result
 
 
 def pem_system(root_dir=None, executor=None, init=True, hf_override=False):
