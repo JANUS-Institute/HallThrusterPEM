@@ -281,7 +281,7 @@ def test_system_surrogate():
     N = 5000
     x = np.random.rand(N, D1+D2)
     y = f(x)
-    y_surr = sys(x, ground_truth=True)
+    y_surr = sys(x, use_model='best')
 
     error = np.abs(y - y_surr)  # (N, ydim)
     for i in range(error.shape[-1]):
@@ -326,7 +326,7 @@ def test_feedforward():
     x = np.linspace(0, 1, 100).reshape((100, 1))
     y1 = f1(x, ())['y']
     y2 = f(x, ())
-    y_surr = sys(x, ground_truth=True)
+    y_surr = sys(x, use_model='best')
 
     fig, ax = plt.subplots(1, 2)
     ax[0].plot(x, y1, '-r', label='$f_1(x)$')
@@ -391,14 +391,14 @@ def test_fire_sat(filename=None):
         sys = fire_sat_system()
         test_set = None
         # xt = sys.sample_inputs((N,))
-        # yt = sys(xt, ground_truth=True, training=False)
+        # yt = sys(xt, use_model='best', training=False)
         # test_set = {'xt': xt, 'yt': yt}
         sys.build_system(max_iter=20, max_tol=1e-3, max_runtime=3600, test_set=test_set, n_jobs=1, prune_tol=1e-10,
                          N_refine=1000)
 
     x = sys.sample_inputs((1000,), use_pdf=True)
     logger.info('---Evaluating ground truth system on test set---')
-    yt = sys(x, ground_truth=True, verbose=True)
+    yt = sys(x, use_model='best', verbose=True)
     logger.info('---Evaluating system surrogate on test set---')
     ysurr = sys(x, verbose=True)
 
@@ -427,7 +427,7 @@ def test_fire_sat(filename=None):
     # Plot 1d slices
     slice_idx = ['H', 'Po', 'Cd']
     qoi_idx = ['Vsat', 'Asa', 'Pat']
-    fig, ax = sys.plot_slice(slice_idx, qoi_idx, show_model=True)
+    fig, ax = sys.plot_slice(slice_idx, qoi_idx, show_model=['best', 'worst'], model_dir=sys.root_dir, random_walk=True)
 
     # Plot error vs. cost over training
     err_record = np.atleast_1d([res[0] for res in sys.build_metrics['train_record']])
@@ -488,7 +488,7 @@ def test_fpi():
     tol = 1e-12
     x0 = np.array([5.5, 5.5])
     exo = sys.sample_inputs((N,))
-    y_surr = sys(exo, ground_truth=True, anderson_mem=10, max_fpi_iter=200, fpi_tol=tol)  # (N, 2)
+    y_surr = sys(exo, use_model='best', anderson_mem=10, max_fpi_iter=200, fpi_tol=tol)  # (N, 2)
     nan_idx = list(np.any(np.isnan(y_surr), axis=-1).nonzero()[0])
     y_true = np.zeros((N, 2))
     bad_idx = []
@@ -545,7 +545,7 @@ def test_fake_pem():
     N = 1000
     sys.estimate_coupling_bds(N, max_fpi_iter=100, anderson_mem=10)
     x = sys.sample_inputs((N,))
-    y = sys(x, ground_truth=True)
+    y = sys(x, use_model='best')
 
     # Plot some output histograms
     fig, ax = plt.subplots(1, 4)
@@ -649,11 +649,12 @@ def test_1d_sweep():
     surr = SystemSurrogate.load_from_file(surr_dir / 'sys' / 'sys_final.pkl', root_dir=surr_dir)
 
     # 1d slice test set(s) for plotting
-    N = 50
+    N = 25
     slice_idx = ['vAN1', 'vAN2', 'delta_z', 'z0*', 'p_u']
     qoi_idx = ['I_B0', 'T', 'uion0', 'uion1']
     nominal = {str(var): var.sample_domain((1,)) for var in surr.exo_vars}  # Random nominal test point
-    fig, ax = surr.plot_slice(slice_idx, qoi_idx, show_model=True, show_surr=False, N=N, random=True, nominal=nominal)
+    fig, ax = surr.plot_slice(slice_idx, qoi_idx, show_model=['best', 'worst'], show_surr=True, N=N,
+                              random_walk=True, nominal=nominal, model_dir=surr_dir)
     plt.show()
 
 
@@ -721,7 +722,7 @@ def test_wing_weight():
     surr = chatgpt_system()
     N = 500
     xt = surr.sample_inputs((N,), use_pdf=True)
-    yt = surr(xt, ground_truth=True)
+    yt = surr(xt, use_model='best')
     test_set = {'xt': xt, 'yt': yt}
     surr.build_system(max_iter=30, max_tol=1e-5, max_runtime=3600, test_set=test_set, n_jobs=-1, prune_tol=1e-10,
                       N_refine=100)
@@ -729,7 +730,7 @@ def test_wing_weight():
     # Plot 1d slices
     slice_idx = [0, 1, 2, 3, 4]
     qoi_idx = [0]
-    fig, ax = surr.plot_slice(slice_idx, qoi_idx, show_model=True)
+    fig, ax = surr.plot_slice(slice_idx, qoi_idx, show_model=['best'])
     plt.show()
 
 

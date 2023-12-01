@@ -152,6 +152,7 @@ def fire_sat_system():
         return {'y': y}
 
     def power_fun(x, *args, output_dir=None, **kwargs):
+        pct = 1 - (2 - args[0][0]) * 0.04 if len(args) == 1 else 1
         Po = x[..., 0:1]            # Other power sources (W)
         Fs = x[..., 1:2]            # Solar flux (W/m^2)
         dt_orbit = x[..., 2:3]      # Orbit period (s)
@@ -182,7 +183,7 @@ def fire_sat_system():
             i2 = tuple([np.random.randint(0, N) for N in x.shape[:-1]])
             Imin[i2 + (0,)] = np.nan
             Asa[i + (0,)] = np.nan
-        y = np.concatenate((Imin, Imax, Ptot, Asa), axis=-1)
+        y = np.concatenate((Imin, Imax*pct, Ptot*pct, Asa), axis=-1)
 
         if output_dir is not None:
             files = []
@@ -197,6 +198,7 @@ def fire_sat_system():
             return {'y': y}
 
     def attitude_fun(x, *args, output_dir=None, **kwargs):
+        pct = 1 - (2 - args[0][0])*0.04 if len(args) == 1 else 1
         H = x[..., 0:1]             # Altitude (m)
         Fs = x[..., 1:2]            # Solar flux
         Lsp = x[..., 2:3]           # Moment arm for solar radiation pressure
@@ -215,7 +217,7 @@ def fire_sat_system():
         tau_dist = np.sqrt(tau_g**2 + tau_sp**2 + tau_m**2 + tau_a**2)
         tau_tot = np.max(np.concatenate((tau_slew, tau_dist), axis=-1), axis=-1, keepdims=True)
         Pacs = tau_tot*(omega*(2*np.pi/60)) + nrw*Phold
-        y = np.concatenate((Pacs, tau_tot), axis=-1)
+        y = np.concatenate((Pacs, tau_tot), axis=-1) * pct
 
         if output_dir is not None:
             files = []
@@ -232,12 +234,12 @@ def fire_sat_system():
     orbit = {'name': 'Orbit', 'model': orbit_fun, 'truth_alpha': (), 'exo_in': [0, 1], 'coupling_in': {},
              'coupling_out': [0, 1, 2, 3], 'max_alpha': (), 'max_beta': (3, 3), 'type': 'lagrange',
              'model_kwargs': {'pct_failure': 0}}
-    power = {'name': 'Power', 'model': power_fun, 'truth_alpha': (), 'exo_in': [2, 3], 'max_alpha': (),
+    power = {'name': 'Power', 'model': power_fun, 'truth_alpha': (2,), 'exo_in': [2, 3], 'max_alpha': (2,),
              'coupling_in': {'Orbit': [1, 2], 'Attitude': [0]}, 'coupling_out': [4, 5, 6, 7], 'type': 'lagrange',
-             'max_beta': (3,)*5, 'save_output': False, 'model_kwargs': {'pct_failure': 0}}
-    attitude = {'name': 'Attitude', 'model': attitude_fun, 'truth_alpha': (), 'exo_in': [0, 3, 4, 5, 6, 7],
-                'max_alpha': (), 'coupling_in': {'Orbit': [0, 3], 'Power': [0, 1]}, 'coupling_out': [8, 9],
-                'type': 'lagrange', 'max_beta': (3,)*10, 'save_output': False}
+             'max_beta': (3,)*5, 'save_output': True, 'model_kwargs': {'pct_failure': 0}}
+    attitude = {'name': 'Attitude', 'model': attitude_fun, 'truth_alpha': (2,), 'exo_in': [0, 3, 4, 5, 6, 7],
+                'max_alpha': (2,), 'coupling_in': {'Orbit': [0, 3], 'Power': [0, 1]}, 'coupling_out': [8, 9],
+                'type': 'lagrange', 'max_beta': (3,)*10, 'save_output': True}
     exo_vars = [NormalRV(18e6, 1e6, id='H'), NormalRV(235e3, 10e3, id='\u03D5'), NormalRV(1000, 50, id='Po'),
                 NormalRV(1400, 20, id='Fs'), NormalRV(2, 0.4, id='Lsp'), NormalRV(0.5, 0.1, id='q'),
                 NormalRV(2, 0.4, id='La'), NormalRV(1, 0.2, id='Cd')]

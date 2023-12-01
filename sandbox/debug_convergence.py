@@ -50,7 +50,7 @@ def test_convergence(system='Borehole', max_iter=30, N=1000):
     # Random test set for percent error
     comp = sys.get_component(system)
     xt = sys.sample_inputs((N,))
-    yt = sys(xt, ground_truth=True)
+    yt = sys(xt, use_model='best')
 
     # 1d slice test set(s) for plotting
     bds = [var.bounds() for var in comp.x_vars]
@@ -62,7 +62,7 @@ def test_convergence(system='Borehole', max_iter=30, N=1000):
             else:
                 # xs[j, :, i] = (bds[i][0] + bds[i][1]) / 2  # Middle of domain constant
                 xs[j, :, i] = bds[i][0] * 1.05
-    ys = sys(xs, ground_truth=True)
+    ys = sys(xs, use_model='best')
 
     stats = np.zeros((max_iter+1, 9))
     def print_iter(i, time_s):
@@ -224,7 +224,7 @@ def plot_sys():
     ys = surr(xs)
 
     # Plot 1d slice of surrogate vs. truth for Thrust
-    # ytruth = surr(xs, ground_truth=True, verbose=True)
+    # ytruth = surr(xs, use_model='best', verbose=True)
     # ytruth = ys + np.random.randn(*ys.shape)*np.sqrt(0.5e-5)
     # ytruth[np.random.randint(N), 0, 2] = np.nan
     # va = xs[:, 0, 1]

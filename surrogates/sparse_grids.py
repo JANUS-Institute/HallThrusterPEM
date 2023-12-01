@@ -33,22 +33,23 @@ class SparseGridSurrogate(ComponentSurrogate):
         super().__init__(*args, **kwargs)
 
     # Override super
-    def __call__(self, x, ground_truth=False, truth_dir=None, training=False, index_set=None):
+    def __call__(self, x, use_model=None, model_dir=None, training=False, index_set=None):
         """Evaluate the surrogate at points x (use xi,yi interpolation points specific to each sub tensor-product grid)
         :param x: (..., xdim) the points to be interpolated, must be within domain of x bounds
-        :param ground_truth: whether to use the highest fidelity model or the surrogate (default)
-        :param truth_dir: directory to save output files if ground_truth=True, ignored otherwise
+        :param use_model: 'best'=HF, 'worst'=LF, tuple=specific alpha, none=surrogate
+        :param model_dir: directory to save output files if use_model is specified, ignored otherwise
         :param training: if True, then only compute with active index set, otherwise use all candidates as well
         :param index_set: a list() of (alpha, beta) to override self.index_set if given, else ignore
         :returns y: (..., ydim) the surrogate approximation of the qois
         """
-        if ground_truth:
+        if use_model is not None:
             # Bypass surrogate evaluation (don't save output)
             output_dir = self._model_kwargs.get('output_dir')
             if self.save_enabled():
-                self._model_kwargs['output_dir'] = truth_dir
+                self._model_kwargs['output_dir'] = model_dir
 
-            ret = self._model(x, self.truth_alpha, *self._model_args, **self._model_kwargs)
+            alpha_use = {'best': self.truth_alpha, 'worst': (0,) * len(self.truth_alpha)}.get(use_model, use_model)
+            ret = self._model(x, alpha_use, *self._model_args, **self._model_kwargs)
 
             if output_dir is not None:
                 self._model_kwargs['output_dir'] = output_dir
@@ -503,8 +504,8 @@ class TensorProductInterpolator(BaseInterpolator):
         :param z_pts: Current univariate leja sequence (Nz,), start at middle of z_bds if None
         :param wt_fcn: Weighting function, uses a constant weight if None, callable as wt_fcn(z)
         """
-        if wt_fcn is None:
-            wt_fcn = lambda z: 1
+        # if wt_fcn is None:
+        wt_fcn = lambda z: 1  # UPDATE: ignore RV weighting, unbounded pdfs like Gaussian cause problems
         if z_pts is None:
             z_pts = (z_bds[1] + z_bds[0]) / 2
             N = N - 1

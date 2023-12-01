@@ -43,7 +43,7 @@ def predict_ion_velocity(x, surr=None, root_dir=None, truth=False):
     z, uion_hat = uion_reconstruct(yr_hat)  # Reconstructs to z=np.linspace(0, 0.08, 202), uion = (..., 202) in m/s
 
     if truth:
-        yr_true = surr(x, ground_truth=True)
+        yr_true = surr(x, use_model='best')
         zt, uion_truth = uion_reconstruct(yr_true)
         return z, uion_hat, zt, uion_truth
 

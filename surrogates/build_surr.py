@@ -28,7 +28,7 @@ def gen_svd_data(N=500, r_pct=0.999):
     xt = surr.sample_inputs((N,), comp='Thruster', use_pdf=True)
     comp = surr['Thruster']
     comp._model_kwargs['compress'] = False
-    yt = comp(xt, ground_truth=True)
+    yt = comp(xt, use_model='best', model_dir=comp._model_kwargs.get('output_dir'))
     nan_idx = np.any(np.isnan(yt), axis=-1)
     yt = yt[~nan_idx, :]
     A = yt[:, 6:]       # Data matrix, uion (N x M)
@@ -64,7 +64,7 @@ def gen_svd_data(N=500, r_pct=0.999):
     xt = surr.sample_inputs((N,), comp='Plume', use_pdf=True)
     comp = surr['Plume']
     comp._model_kwargs['compress'] = False
-    yt = comp(xt, ground_truth=True)
+    yt = comp(xt, use_model='best')
     idx = ~np.isnan(yt[:, 0]) & (np.nanmax(yt, axis=-1) <= 1000)    # Remove some outliers above 1000 A/m^2
     yt = yt[idx, :]
     A = yt[:, 1:]  # Data matrix, jion (N x M)
@@ -107,7 +107,7 @@ def gen_test_set(N=1000):
     os.mkdir(root_dir)
     sys = pem_system(executor=None, init=False, root_dir=root_dir)
     xt = sys.sample_inputs((N,), use_pdf=True)     # (N, xdim)
-    yt = sys(xt, ground_truth=True, training=False)
+    yt = sys(xt, use_model='best', training=False, model_dir=sys['Thruster']._model_kwargs.get('output_dir'))
     nan_idx = np.any(np.isnan(yt), axis=-1)
     xt = xt[~nan_idx, :]
     yt = yt[~nan_idx, :]

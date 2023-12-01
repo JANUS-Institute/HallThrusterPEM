@@ -1,5 +1,4 @@
 """Module for system-level adaptive multidisciplinary, multi-fidelity surrogate implementation"""
-import logging
 import numpy as np
 import networkx as nx
 import itertools
@@ -15,8 +14,11 @@ from datetime import timezone
 from pathlib import Path
 import shutil
 import matplotlib.pyplot as plt
-from joblib import Parallel, delayed, cpu_count
+from joblib import Parallel, delayed
 from joblib.externals.loky import set_loky_pickler
+import random
+import string
+import pickle
 
 sys.path.append('..')
 
@@ -350,16 +352,17 @@ class SystemSurrogate:
         max_iter = self.refine_level + max_iter
         curr_error = np.inf
         t_start = time.time()
+        test_stats, xt, yt, t_fig, t_ax, Nqoi = None, None, None, None, None, 0
 
         # Record of (error indicator, component, alpha, beta, num_evals, total added cost (s)) for each iteration
         train_record = self.build_metrics.get('train_record', [])
+        if test_set is not None:
+            xt, yt = test_set['xt'], test_set['yt']
+        xt, yt = self.build_metrics.get('xt', xt), self.build_metrics.get('yt', yt)  # Overrides test set param
 
         # Track convergence progress on a test set and on the max error indicator
         err_fig, err_ax = plt.subplots()
-        test_stats, xt, yt, t_fig, t_ax, Nqoi = None, None, None, None, None, 0
-        if test_set is not None:
-            xt = test_set['xt']
-            yt = test_set['yt']
+        if xt is not None and yt is not None:
             self.build_metrics['xt'] = xt
             self.build_metrics['yt'] = yt
             if self.build_metrics.get('test_stats') is not None:
@@ -401,12 +404,12 @@ class SystemSurrogate:
                 error_record = [res[0] for res in train_record]
                 self.build_metrics['train_record'] = train_record
                 err_ax.clear(); err_ax.grid(); err_ax.plot(error_record, '-k')
-                ax_default(err_ax, 'Iteration', 'Relative L2 error indicator', legend=False)
+                ax_default(err_ax, 'Iteration', r'Relative $L_2$ error indicator', legend=False)
                 err_ax.set_yscale('log')
                 err_fig.savefig(str(Path(self.root_dir) / 'error_indicator.png'), dpi=300, format='png')
 
                 # Plot progress on test set
-                if test_set is not None:
+                if xt is not None and yt is not None:
                     stats = self.get_test_metrics(xt, yt, qoi_ind=qoi_ind)
                     test_stats = np.concatenate((test_stats, stats[np.newaxis, ...]), axis=0)
                     ind_use = qoi_ind if qoi_ind is not None else [int(i) for i in np.arange(Nqoi)]
@@ -591,14 +594,16 @@ class SystemSurrogate:
 
         return l2_star, node_star, alpha_star, beta_star, num_evals, cost_star
 
-    def __call__(self, x, max_fpi_iter=100, anderson_mem=10, fpi_tol=1e-10, ground_truth=False, verbose=False,
-                 training=False, index_set=None, qois=None):
+    def __call__(self, x, max_fpi_iter=100, anderson_mem=10, fpi_tol=1e-10, use_model=None, model_dir=None,
+                 verbose=False, training=False, index_set=None, qois=None):
         """Evaluate the system surrogate at exogenous inputs x
         :param x: (..., xdim) the points to be interpolated
         :param max_fpi_iter: the limit on convergence for the fixed-point iteration routine
         :param anderson_mem: hyperparameter for tuning the convergence of FPI with anderson acceleration
         :param fpi_tol: tolerance limit for convergence of fixed-point iteration
-        :param ground_truth: whether to evaluate with the surrogates or the highest-fidelity 'ground truth' model
+        :param use_model: 'best'=highest-fidelity, 'worst'=lowest-fidelity, tuple()=specific fidelity, None=surrogate,
+                           specify a dict() of the above to assign diff model fidelities for diff components
+        :param model_dir: Path to directory to save model outputs if use_model is specified
         :param verbose: whether to print out iteration progress during execution
         :param training: whether to call the system surrogate in training or evaluation mode
         :param index_set: dict() of {node:[indices]} to override default index set for a node (only useful for parallel)
@@ -611,6 +616,15 @@ class SystemSurrogate:
         y = np.zeros(x.shape[:-1] + (ydim,))
         valid_idx = ~np.isnan(x[..., 0])  # Keep track of valid samples (set to False if FPI fails)
         t1 = 0
+        output_dir = None
+
+        # Interpret which model fidelities to use for each component (if specified)
+        if use_model is not None:
+            if not isinstance(use_model, dict):
+                use_model = {node: use_model for node in self.graph.nodes}  # use same for each component
+        else:
+            use_model = {node: None for node in self.graph.nodes}
+        use_model = {node: use_model.get(node, None) for node in self.graph.nodes}
 
         # Initialize all components
         for node, node_obj in self.graph.nodes.items():
@@ -639,8 +653,11 @@ class SystemSurrogate:
 
                 # Compute outputs
                 indices = index_set.get(scc[0], None) if index_set is not None else None
-                comp_output = node_obj['surrogate'](comp_input[valid_idx, :], ground_truth=ground_truth,
-                                                    training=training, index_set=indices)
+                if model_dir is not None:
+                    output_dir = Path(model_dir) / scc[0]
+                    os.mkdir(output_dir)
+                comp_output = node_obj['surrogate'](comp_input[valid_idx, :], use_model=use_model.get(scc[0]),
+                                                    model_dir=output_dir, training=training, index_set=indices)
                 for local_i, global_i in enumerate(node_obj['global_out']):
                     y[valid_idx, global_i] = comp_output[..., local_i]
                 node_obj['is_computed'] = True
@@ -687,10 +704,10 @@ class SystemSurrogate:
                         coupling_inputs = x_couple[..., node_obj['global_in']]
                         comp_input = np.concatenate((exo_inputs, coupling_inputs), axis=-1)     # (..., xdim)
 
-                        # Compute component outputs
+                        # Compute component outputs (just don't do this FPI with the real models, please..)
                         indices = index_set.get(node, None) if index_set is not None else None
-                        comp_output = node_obj['surrogate'](comp_input[valid_idx, :], ground_truth=ground_truth,
-                                                            training=training, index_set=indices)
+                        comp_output = node_obj['surrogate'](comp_input[valid_idx, :], use_model=use_model.get(node),
+                                                            model_dir=None, training=training, index_set=indices)
                         global_idx = node_obj['global_out']
                         for local_i, global_i in enumerate(global_idx):
                             x_couple_next[valid_idx, global_i] = comp_output[..., local_i]
@@ -762,7 +779,7 @@ class SystemSurrogate:
         """
         self.print_title_str('Estimating coupling variable bounds')
         x = self.sample_inputs((N_est,))
-        y = self(x, ground_truth=True, verbose=True, anderson_mem=anderson_mem, fpi_tol=fpi_tol,
+        y = self(x, use_model='best', verbose=True, anderson_mem=anderson_mem, fpi_tol=fpi_tol,
                  max_fpi_iter=max_fpi_iter)
         for i in range(len(self.coupling_vars)):
             lb = np.nanmin(y[:, i])
@@ -805,70 +822,109 @@ class SystemSurrogate:
             nominal = dict()
         if constants is None:
             constants = set()
-        vars = self.exo_vars if comp == 'System' else self[comp].x_vars
-        xdim = len(vars)
-        x = np.empty((*shape, xdim))
-        for i, var in enumerate(vars):
+        x_vars = self.exo_vars if comp == 'System' else self[comp].x_vars
+        x = np.empty((*shape, len(x_vars)))
+        for i, var in enumerate(x_vars):
             # Set a constant value for this variable
             if var.param_type in constants or str(var) in constants:
                 x[..., i] = nominal.get(str(var), var.nominal)  # Defaults to variable's nominal value if not specified
 
-            # Sample from this variable's pdf or randomly within its domain bounds
+            # Sample from this variable's pdf or randomly within its domain bounds (reject if outside bounds)
             else:
-                x[..., i] = var.sample(shape, nominal=nominal.get(str(var), None)) if use_pdf \
+                lb, ub = var.bounds()
+                x_sample = var.sample(shape, nominal=nominal.get(str(var), None)) if use_pdf \
                     else var.sample_domain(shape)
+                good_idx = (x_sample < ub) & (x_sample > lb)
+                num_reject = np.sum(~good_idx)
+
+                while num_reject > 0:
+                    new_sample = var.sample((num_reject,), nominal=nominal.get(str(var), None)) if use_pdf \
+                        else var.sample_domain((num_reject,))
+                    x_sample[~good_idx] = new_sample
+                    good_idx = (x_sample < ub) & (x_sample > lb)
+                    num_reject = np.sum(~good_idx)
+
+                x[..., i] = x_sample
 
         return x
 
-    def plot_slice(self, slice_idx, qoi_idx, show_surr=True, show_model=False, N=50, nominal=None, random=False):
+    def plot_slice(self, slice_idx=None, qoi_idx=None, show_surr=True, show_model=None, model_dir=None, N=50,
+                   nominal=None, random_walk=False, from_file=None):
         """Helper function to plot 1d slices over the inputs (all other inputs set to nominal)
         :param slice_idx: list of exogenous input variables or indices to take 1d slices of
         :param qoi_idx: list of model output variables or indices to plot 1d slices of
         :param show_surr: whether to show the surrogate prediction
-        :param show_model: whether to also plot the ground truth model
+        :param show_model: also plot model predictions, list() of ['best', 'worst', tuple(alpha), etc.]
+        :param model_dir: base directory to save model outputs (if specified)
         :param N: the number of points to take the 1d slice
         :param nominal: dict() of str(var)->nominal value to use as constant value for all non-sliced variables
-        :param random: whether to slice in a random d-dimensional direction or hold all params constant while slicing
+        :param random_walk: whether to slice in a random d-dimensional direction or hold all params const while slicing
+        :param from_file: Path/str filename of a .pkl to load a saved slice from disk
         :returns fig, ax with num_slice by num_qoi subplots
         """
+        # Manage loading important quantities from file (if provided)
+        xs, ys_model, ys_surr = None, None, None
+        if from_file is not None:
+            with open(from_file, 'rb') as fd:
+                slice_data = pickle.load(fd)
+                slice_idx = slice_data['slice_idx']     # Must use same input slices as save file
+                show_model = slice_data['show_model']   # Must use same model data as save file
+                qoi_idx = slice_data['qoi_idx'] if qoi_idx is None else qoi_idx
+                xs = slice_data['xs']
+                model_dir = None  # Don't run or save any models if loading from file
+
+        # Set default values (take up to the first 3 slices by default)
+        rand_id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
+        if model_dir is not None:
+            os.mkdir(Path(model_dir) / f'sweep_{rand_id}')
         if nominal is None:
             nominal = dict()
         if isinstance(slice_idx[0], str):
             slice_idx = [self.exo_vars.index(str(var)) for var in slice_idx]
         if isinstance(qoi_idx[0], str):
             qoi_idx = [self.coupling_vars.index(str(var)) for var in qoi_idx]
+        slice_idx = list(np.arange(0, min(3, len(self.exo_vars)))) if slice_idx is None else slice_idx
+        qoi_idx = list(np.arange(0, min(3, len(self.coupling_vars)))) if qoi_idx is None else qoi_idx
 
         exo_bds = [var.bounds() for var in self.exo_vars]
-        ub = [bds[1] for bds in exo_bds]
         xlabels = [self.exo_vars[idx].to_tex(units=True) for idx in slice_idx]
         ylabels = [self.coupling_vars[idx].to_tex(units=True) for idx in qoi_idx]
 
-        xs = np.zeros((N, len(slice_idx), len(self.exo_vars)))
-        for i in range(len(slice_idx)):
-            xi_slice = np.linspace(exo_bds[slice_idx[i]][0], exo_bds[slice_idx[i]][1], N)
+        # Construct slice model inputs (if not provided)
+        if xs is None:
+            xs = np.zeros((N, len(slice_idx), len(self.exo_vars)))
+            for i in range(len(slice_idx)):
+                if random_walk:
+                    # Make a random straight-line walk across d-cube
+                    r0 = np.array([bds[0] for bds in exo_bds])
+                    rf = np.squeeze(self.sample_inputs((1,), use_pdf=False), axis=0)
+                    rf[slice_idx[i]] = exo_bds[slice_idx[i]][1]             # Slice up to this upper bound
+                    xs[0, i, :] = r0                                        # Start at lower left corner of domain
+                    for k in range(1, N):
+                        xs[k, i, :] = xs[k-1, i, :] + (rf-r0)/(N-1)
+                else:
+                    # Otherwise, only slice one variable
+                    for j in range(len(self.exo_vars)):
+                        if j == slice_idx[i]:
+                            xs[:, i, j] = np.linspace(exo_bds[slice_idx[i]][0], exo_bds[slice_idx[i]][1], N)
+                        else:
+                            xs[:, i, j] = nominal.get(str(self.exo_vars[j]), self.exo_vars[j].nominal)
 
-            if random:
-                # Make a random walk across d-cube (threshold at domain maximums)
-                vec = np.random.rand(len(self.exo_vars))
-                vhat = vec / np.linalg.norm(vec)            # Random "positive" unit vector in d dimensions
-                dxi = xi_slice[1] - xi_slice[0]             # Increment in the slice variable
-                M = dxi / vhat[slice_idx[i]]                # Step size of the walk (or slice)
-                dx = vhat * M                               # Increment for all directions
-                xs[0, i, :] = np.array([bds[0] for bds in exo_bds])     # Start at lower left corner of domain
-                for k in range(1, N):
-                    xs[k, i, :] = np.minimum(xs[k-1, i, :] + dx, ub)
+        # Walk through each model that is requested by show_model
+        if show_model is not None:
+            if from_file is not None:
+                ys_model = slice_data['ys_model']
             else:
-                # Otherwise, only slice one variable
-                for j in range(len(self.exo_vars)):
-                    if j == slice_idx[i]:
-                        xs[:, i, j] = xi_slice              # 1d slice of input param of interest
-                    else:
-                        xs[:, i, j] = nominal.get(str(self.exo_vars[j]), self.exo_vars[j].nominal)
-
-        if show_model:
-            ys_model = self(xs, ground_truth=True)
+                ys_model = list()
+                for model in show_model:
+                    output_dir = None
+                    if model_dir is not None:
+                        output_dir = (Path(model_dir) / f'sweep_{rand_id}' /
+                                      str(model).replace('{', '').replace('}', '').replace(':', '=').replace("'", ''))
+                        os.mkdir(output_dir)
+                    ys_model.append(self(xs, use_model=model, model_dir=output_dir))
         if show_surr:
-            ys_surr = self(xs)
+            ys_surr = self(xs) if from_file is None else slice_data['ys_surr']
 
         # Make len(qoi) by len(inputs) grid of subplots
         fig, axs = plt.subplots(len(qoi_idx), len(slice_idx), sharex='col', sharey='row')
@@ -881,20 +937,39 @@ class SystemSurrogate:
                 else:
                     ax = axs[i, j]
                 x = xs[:, j, slice_idx[j]]
+                if show_model is not None:
+                    c = np.array([[0, 0, 0, 1], [0.5, 0.5, 0.5, 1]]) if len(show_model) <= 2 else (
+                        plt.get_cmap('jet')(np.linspace(0, 1, len(show_model))))
+                    for k in range(len(show_model)):
+                        model_str = str(show_model[k]).replace('{', '').replace('}', '').replace(':', '=').replace("'", '')
+                        model_ret = ys_model[k]
+                        y_model = model_ret[:, j, qoi_idx[i]]
+                        label = {'best': 'High-fidelity' if len(show_model) > 1 else 'Model',
+                                 'worst': 'Low-fidelity'}.get(model_str, model_str)
+                        ax.plot(x, y_model, ls='-', c=c[k, :], label=label)
                 if show_surr:
                     y_surr = ys_surr[:, j, qoi_idx[i]]
                     ax.plot(x, y_surr, '--r', label='Surrogate')
-                if show_model:
-                    y_model = ys_model[:, j, qoi_idx[i]]
-                    ax.plot(x, y_model, '-k', label='Model')
                 ylabel = ylabels[i] if j == 0 else ''
                 xlabel = xlabels[j] if i == len(qoi_idx) - 1 else ''
                 legend = (i == 0 and j == len(slice_idx) - 1)
                 ax_default(ax, xlabel, ylabel, legend=legend)
         fig.set_size_inches(3 * len(slice_idx), 3 * len(qoi_idx))
         fig.tight_layout()
-        fig.savefig(Path(self.root_dir) / 'sweep.png', dpi=300, format='png')
         plt.show()
+
+        # Save results (unless we were already loading from a save file)
+        if from_file is None:
+            fname = f's{",".join([str(i) for i in slice_idx])}_q{",".join([str(i) for i in qoi_idx])}'
+            fname = f'sweep_rand{rand_id}_' + fname if random_walk else f'sweep_nom{rand_id}_' + fname
+            fdir = Path(self.root_dir) if model_dir is None else Path(model_dir) / f'sweep_{rand_id}'
+            fig.savefig(fdir / f'{fname}.png', dpi=300, format='png')
+            save_dict = {'slice_idx': slice_idx, 'qoi_idx': qoi_idx, 'show_model': show_model, 'show_surr': show_surr,
+                         'nominal': nominal, 'random_walk': random_walk, 'xs': xs, 'ys_model': ys_model,
+                         'ys_surr': ys_surr}
+            with open(fdir / f'{fname}.pkl', 'wb') as fd:
+                pickle.dump(save_dict, fd)
+
         return fig, axs
 
     def get_component(self, comp_name):
@@ -1190,22 +1265,23 @@ class ComponentSurrogate(ABC):
             yield alpha, beta
             del self.index_set[-1]
 
-    def __call__(self, x, ground_truth=False, truth_dir=None, training=False, index_set=None):
+    def __call__(self, x, use_model=None, model_dir=None, training=False, index_set=None):
         """Evaluate the surrogate at points x
         :param x: (..., xdim) the points to be interpolated, must be within domain of x bounds
-        :param ground_truth: whether to use the highest fidelity model or the surrogate (default)
-        :param truth_dir: directory to save output files if ground_truth=True, ignored otherwise
+        :param use_model: 'best'=HF, 'worst'=LF, tuple=specific alpha, none=surrogate
+        :param model_dir: directory to save output files if use_model is specified, ignored otherwise
         :param training: if True, then only compute with active index set, otherwise use all candidates as well
         :param index_set: a list() of (alpha, beta) to override self.index_set if given, else ignore
         :returns y: (..., ydim) the surrogate approximation of the qois
         """
-        if ground_truth:
-            # Bypass surrogate evaluation (don't save output)
+        if use_model is not None:
+            # Bypass surrogate evaluation and use the specified model
             output_dir = self._model_kwargs.get('output_dir')
             if self.save_enabled():
-                self._model_kwargs['output_dir'] = truth_dir
+                self._model_kwargs['output_dir'] = model_dir
 
-            ret = self._model(x, self.truth_alpha, *self._model_args, **self._model_kwargs)
+            alpha_use = {'best': self.truth_alpha, 'worst': (0,) * len(self.truth_alpha)}.get(use_model, use_model)
+            ret = self._model(x, alpha_use, *self._model_args, **self._model_kwargs)
 
             if output_dir is not None:
                 self._model_kwargs['output_dir'] = output_dir
