@@ -26,15 +26,15 @@ def hallthruster_jl_input(thruster_input):
     json_data = dict()
     data_dir = Path(__file__).parent / 'data'
     vAN1 = 10 ** thruster_input['vAN1']
-    vAN2 = vAN1 * thruster_input['vAN2']
+    vAN2 = 10 ** thruster_input['vAN2']
     json_data['parameters'] = {'neutral_temp_K': thruster_input['neutral_temp_K'],
                                'neutral_velocity_m_s': thruster_input['u_n'],
                                'ion_temp_K': thruster_input['ion_temp_K'],
                                'cathode_electron_temp_eV': thruster_input['T_ec'],
                                'sheath_loss_coefficient': thruster_input['c_w'],
                                'inner_outer_transition_length_m': thruster_input['l_t'] * 1e-3,
-                               'anom_model_coeffs': [vAN1, vAN2],
-                               'background_pressure_Torr': 10 ** thruster_input['PB'],
+                               'anom_model_coeffs': [thruster_input['z_start'],thruster_input['z_end'],vAN1, vAN2],
+                               'background_pressure_Torr': thruster_input['background_pressure_Torr'],
                                'background_temperature_K': thruster_input['background_temperature_K'],
                                }
     if thruster_input['anom_model'] == 'ShiftedTwoZone':
