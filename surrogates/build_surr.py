@@ -15,6 +15,7 @@ import shutil
 sys.path.append('..')
 
 from models.pem import pem_system
+from sandbox.madison.madison import config_surrogate
 from utils import ax_default, load_variables
 
 
@@ -22,9 +23,9 @@ def gen_svd_data(N=500, r_pct=0.999):
     """Generate data matrices for SVD dimension reduction"""
     # Thruster svd dataset for uion velocity profile
     timestamp = datetime.datetime.now(tz=timezone.utc).isoformat().split('.')[0].replace(':', '.')
-    root_dir = Path('../results/svd') / f'svd_{timestamp}'
+    root_dir = Path('../models/data') / f'svd_{timestamp}'
     os.mkdir(root_dir)
-    surr = pem_system(executor=None, init=False, root_dir=root_dir)
+    surr = config_surrogate(executor=None, root_dir=root_dir)
     xt = surr.sample_inputs((N,), comp='Thruster', use_pdf=True)
     comp = surr['Thruster']
     comp._model_kwargs['compress'] = False
