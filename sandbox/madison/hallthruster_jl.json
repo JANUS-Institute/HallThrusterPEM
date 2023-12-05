@@ -1,6 +1,6 @@
 {
-    "all_inputs": ["PB", "Va", "mdot_a", "T_ec", "u_n", "c_w", "l_t", "vAN1", "vAN2", "l_c", "V_cc"],
-    "inputs": ["PB", "vAN1", "vAN2"],
+    "all_inputs": ["PB", "Va", "mdot_a", "T_ec", "u_n", "c_w", "l_t","z_start","z_end", "vAN1", "vAN2", "l_c", "V_cc"],
+    "inputs": ["z_start","z_end", "vAN1", "vAN2"],
     "outputs": ["uion"],
     "SPT-100": {
         "channel_length": 0.025,
@@ -27,6 +27,7 @@
         "neutral_temp_K": 300,
         "ion_temp_K": 1000,
         "background_temperature_K": 300,
+        "background_pressure_Torr":1.7e-05,
         "mdot_a": 5.16
     }
 }
