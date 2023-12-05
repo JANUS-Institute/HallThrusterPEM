@@ -98,27 +98,49 @@
         "rv_type": "uniform_bds",
         "rv_params": [1, 20]
     },
+    "z_start": {
+        "id": "z_start",
+        "tex": "$z_{st}$",
+        "description": "zone 1",
+        "units": "m",
+        "param_type": "calibration",
+        "nominal": 0.01,
+        "domain": [0.001, 0.025],
+        "rv_type": "uniform_bds",
+        "rv_params": [0.001, 0.025]
+    },
+    "z_end": {
+        "id": "z_end",
+        "tex": "$z_{end}$",
+        "description": "zone 2",
+        "units": "m",
+        "param_type": "calibration",
+        "nominal": 0.03,
+        "domain": [0.025, 0.079],
+        "rv_type": "uniform_bds",
+        "rv_params": [0.025, 0.079]
+    },
     "vAN1": {
         "id": "vAN1",
-        "tex": "$\\nu_1$",
+        "tex": "$\\nu_{AN,1}$",
         "description": "Anomalous transport coefficient 1",
         "units": "-",
         "param_type": "calibration",
-        "nominal": -2,
-        "domain": [-2, -1],
+        "nominal": -2.111,
+        "domain": [-4, -1],
         "rv_type": "uniform_bds",
-        "rv_params": [-2, -1]
+        "rv_params": [-4, -1]
     },
     "vAN2": {
         "id": "vAN2",
-        "tex": "$\\nu_2$",
+        "tex": "$\\nu_{AN,2}$",
         "description": "Anomalous transport coefficient 2",
         "units": "-",
         "param_type": "calibration",
-        "nominal": 30,
-        "domain": [25, 100],
+        "nominal": -1.111,
+        "domain": [-2, 2],
         "rv_type": "uniform_bds",
-        "rv_params": [25, 100]
+        "rv_params": [-2, 2]
     },
     "delta_z": {
         "id": "delta_z",
