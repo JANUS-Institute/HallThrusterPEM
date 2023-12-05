@@ -68,7 +68,7 @@ def train_surrogate(executor=None):
 def config_surrogate(executor=None, root_dir=None):
     """Return a SystemSurrogate object for hallthruster.jl"""
     # Load surrogate input variables
-    exo_vars = load_variables(['PB', 'vAN1', 'vAN2'])
+    exo_vars = load_variables([ 'z_start', 'z_end', 'vAN1', 'vAN2'])
 
     # Get number of latent coefficients for ion velocity profile
     with open(Path(__file__).parent / '..' / '..' / 'models' / 'data' / 'thruster_svd.pkl', 'rb') as fd:
@@ -80,8 +80,8 @@ def config_surrogate(executor=None, root_dir=None):
 
     # Models must be specified at global scope
     thruster = {'name': 'Thruster', 'model': thruster_pem, 'truth_alpha': (2, 2), 'max_alpha': (2, 2),
-                'exo_in': ['PB', 'vAN1', 'vAN2'], 'coupling_in': [], 'coupling_out': [f'uion{i}' for i in range(r1)],
-                'type': 'lagrange', 'max_beta': (3, 3, 3), 'save_output': True, 'model_args': (),
+                'exo_in': ['z_start', 'z_end', 'vAN1', 'vAN2'], 'coupling_in': [], 'coupling_out': [f'uion{i}' for i in range(r1)],
+                'type': 'lagrange', 'max_beta': (3, 3, 3, 3), 'save_output': True, 'model_args': (),
                 'model_kwargs': {'n_jobs': -1, 'compress': True, 'config': Path('hallthruster_jl.json')}}
     surr = SystemSurrogate([thruster], exo_vars, coupling_vars, executor=executor, stdout=False,
                            root_dir=root_dir)
@@ -97,13 +97,15 @@ if __name__ == '__main__':
     #
     #         # Plot some 1d slices to check how training went
     #         surr.set_output_dir({'Thruster': None})  # Don't save outputs for testing
-    #         surr.plot_slice([0, 1, 2], [0, 1, 2], compare_truth=True)
+    #         surr.plot_slice([0, 1, 2, 3], [0, 1, 2, 3], compare_truth=True)
 
     # Test surrogate prediction of full reconstructed ion velocity field
     PB = -5     # log10 torr
+    zs=0.015
+    ze=0.035
     vAN1 = -2   # vAN1 -> [-3, -1]
     vAN2 = 20   # vAN2 -> [10, 100]
-    x = np.array([PB, vAN1, vAN2])
+    x = np.array([zs, ze, vAN1, vAN2])
     zh, uion_hat, zt, uion_truth = predict_ion_velocity(x, truth=True)
     fig, ax = plt.subplots()
     ax.plot(zt, uion_truth, '-k', label='Model')
