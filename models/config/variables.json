@@ -137,10 +137,10 @@
         "description": "Anomalous transport coefficient 2",
         "units": "-",
         "param_type": "calibration",
-        "nominal": -1.111,
-        "domain": [-2, 2],
+        "nominal": 20,
+        "domain": [10, 100],
         "rv_type": "uniform_bds",
-        "rv_params": [-2, 2]
+        "rv_params": [10, 100]
     },
     "delta_z": {
         "id": "delta_z",
