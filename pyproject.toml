@@ -1,0 +1,80 @@
+[project]
+name = "hallmd"
+dynamic = ["version"]
+description = "Prototype of a multidisciplinary predictive engineering model (PEM) for a Hall thruster."
+authors = [
+    {name = "Joshua Eckels", email = "eckelsjd@umich.edu"},
+    {name = "Madison Allen", email = "mgallen@umich.edu"},
+    {name = "Thomas Marks", email = "marksta@umich.edu"},
+    {name = "Declan Brick", email = "brickd@umich.edu"},
+    {name = "Alex Gorodetsky", email = "goroda@umich.edu"},
+    {name = "Benjamin Jorns", email = "bjorns@umich.edu"}
+]
+dependencies = [
+    "numpy>=1.26.2",
+    "juliacall>=0.9.15",
+    "mpi4py>=3.1.5",
+    "joblib>=1.3.2",
+    "dill>=0.3.7",
+    "matplotlib>=3.8.2",
+    "scikit-optimize>=0.9.0",
+    "scipy>=1.11.4",
+]
+requires-python = ">=3.11"
+readme = "docs/README.md"
+license = {file = "LICENSE"}
+keywords = ["multidisciplinary", "Hall thruster", "modeling", "facility effects", "anomalous transport"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Intended Audience :: Science/Research"
+]
+
+[project.urls]
+Repository = "https://github.com/JANUS-Institute/HallThrusterPEM.git"
+
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
+[tool.pylint.MASTER]
+ignore-paths = [ "^.venv/.*$", "^docs/*" ]
+
+[tool.pylint."MESSAGES CONTROL"]
+disable = '''
+missing-module-docstring,
+missing-class-docstring,
+missing-function-docstring
+'''
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    "ignore::DeprecationWarning"
+]
+
+[tool.pdm.version]
+source = "file"
+path = "src/hallmd/__init__.py"
+
+[tool.pdm.scripts]
+test = "pytest --cov=hallmd tests"
+docs = "mkdocs serve"
+gen_data.cmd = "JOBID1=$(sbatch scripts/{args}/gen_data.sh | awk '{print $4}')"
+gen_data.help = "Usage: pdm run gen_data [scripts_folder]. For example: pdm run gen_data pem_v0"
+fit.cmd = "sbatch scripts/{args}/fit_surr.sh --dependency=afterok:${JOBID1}"
+fit.help = "Usage: pdm run fit [scripts_folder]. For example: pdm run fit pem_v0"
+train.cmd = {composite = ["gen_data {args}", "fit {args}"]}
+train.help = "Usage: pdm run train [scripts_folder]. For example: pdm run train pem_v0"
+
+[tool.pdm.dev-dependencies]
+dev = [
+    "pytest>=7.4.3",
+    "pytest-cov>=4.1.0",
+    "mkdocs>=1.5.3",
+    "mkdocs-material>=9.5.2",
+    "mkdocstrings[python]>=0.24.0",
+    "-e file:///${PROJECT_ROOT}/../amisc#egg=amisc",
+]

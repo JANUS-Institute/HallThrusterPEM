@@ -1,0 +1,96 @@
+site_name: Multidisciplinary Hall thruster modeling
+#site_url: https://eckelsjd.github.io/amisc/
+site_author: Joshua Eckels
+repo_name: JANUS-Institute/HallThrusterPEM
+repo_url: https://github.com/JANUS-Institute/HallThrusterPEM.git
+copyright: Copyright &copy 2023 Joshua Eckels
+
+theme:
+  name: material
+  logo: assets/hallmd_logo.svg
+  favicon: assets/hallmd_logo.svg
+  palette:
+    primary: cyan
+    accent: indigo
+  font:
+    text: Roboto
+    code: Roboto Mono
+  features:
+    - content.code.annotate
+    - content.code.copy
+    - navigation.footer
+    - navigation.instant
+    - navigation.tabs
+    - navigation.top
+    - navigation.tracking
+    - search.highlight
+    - search.share
+    - search.suggest
+    - toc.follow
+
+plugins:
+  - search:
+      separator: '[\s\u200b\-_,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            docstring_style: sphinx
+            docstring_section_style: spacy
+            merge_init_into_class: true
+            filters: ["!^_"]
+            show_symbol_type_heading: true  # not available to public right now
+            group_by_category: true
+
+nav:
+  - Home:
+      - Getting started: README.md
+      - Tutorials: tutorials.md
+      - How-to Guides: how-to-guides.md
+      - Contributing: CONTRIBUTING.md
+  - API Reference:
+      - Overview: reference/overview.md
+      - Experimental data:
+          - Summary: reference/data.md
+          - SPT-100: reference/spt100.md
+      - Models:
+          - Summary: reference/models.md
+          - Cathode: reference/cathode.md
+          - Thruster: reference/thruster.md
+          - Plume: reference/plume.md
+          - PEM: reference/pem.md
+      - Utilities: reference/utils.md
+  - Theory:
+      - Overview: theory.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/eckelsjd
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://polyfill.io/v3/polyfill.min.js?features=es6
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+
+#extra_css:
+#  - css/extra.css
+
+markdown_extensions:
+  - admonition
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      dedent_subsections: true
+      base_path: ['.', './src']
