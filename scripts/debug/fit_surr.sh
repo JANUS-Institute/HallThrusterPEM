@@ -4,9 +4,9 @@
 #SBATCH --job-name=fit_surr_debug
 #SBATCH --account=goroda0
 #SBATCH --partition=debug
-#SBATCH --time=00-00:01:00
+#SBATCH --time=00-00:03:00
 #SBATCH --nodes=1
-#SBATCH --mem-per-cpu=10m
+#SBATCH --mem-per-cpu=1g
 #SBATCH --ntasks-per-node=3
 #SBATCH --cpus-per-task=2
 #SBATCH --export=ALL
@@ -22,7 +22,7 @@ module load openmpi/4.1.6
 export MPICC=$(which mpicc)
 module list
 
-#export PYTHON_JULIAPKG_OFFLINE=yes
+export PYTHON_JULIAPKG_OFFLINE=yes
 srun --cpus-per-task=$SLURM_CPUS_PER_TASK pdm run python -m mpi4py.futures scripts/debug/fit_surr.py
 
 echo "Finishing job script..."

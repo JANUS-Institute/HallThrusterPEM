@@ -22,7 +22,7 @@ module load openmpi/4.1.6
 export MPICC=$(which mpicc)
 module list
 
-#export PYTHON_JULIAPKG_OFFLINE=yes
+export PYTHON_JULIAPKG_OFFLINE=yes
 srun --cpus-per-task=$SLURM_CPUS_PER_TASK pdm run python -m mpi4py.futures scripts/pem_v0/fit_surr.py
 
 echo "Finishing job script..."

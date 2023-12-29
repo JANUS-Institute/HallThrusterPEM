@@ -18,7 +18,7 @@ echo "Starting job script..."
 
 module load python/3.11.5
 
-# export PYTHON_JULIAPKG_OFFLINE=yes
+export PYTHON_JULIAPKG_OFFLINE=yes
 pdm run python scripts/pem_v0/gen_data.py
 
 echo "Finishing job script..."
