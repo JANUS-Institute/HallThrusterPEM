@@ -1,12 +1,12 @@
 """Helper functions for loading data from Sankovic 1993 for the SPT-100."""
-from pathlib import Path
 from importlib import resources
 
 import numpy as np
 
 from hallmd import ExpData
+from hallmd.data.spt100 import sankovic1993 as base_package
 
-BASE_DIR = resources.files()
+BASE_DIR = resources.files(base_package)
 
 
 def load_thrust() -> ExpData:

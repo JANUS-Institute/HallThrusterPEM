@@ -13,7 +13,6 @@ pip install --user pdm
 git clone https://github.com/JANUS-Institute/HallThrusterPEM.git
 cd HallThrusterPEM
 pdm install
-pdm add amisc
 ```
 
 ## Quickstart

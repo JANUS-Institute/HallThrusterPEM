@@ -1,12 +1,12 @@
 """Helper functions for loading Diamant 2014 datasets for the SPT-100."""
-from pathlib import Path
 from importlib import resources
 
 import numpy as np
 
 from hallmd import ExpData
+from hallmd.data.spt100 import diamant2014 as base_package
 
-BASE_DIR = resources.files()
+BASE_DIR = resources.files(base_package)
 
 
 def load_thrust() -> ExpData:
