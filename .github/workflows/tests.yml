@@ -1,0 +1,23 @@
+name: Run PR test matrix
+on:
+  pull_request:
+    branches: [ main ]
+permissions:
+  contents: write
+jobs:
+  pr-tests:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12']
+        os: [ ubuntu-latest, macOS-latest, windows-latest ]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up PDM
+        uses: pdm-project/setup-pdm@v3
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: pdm install
+      - name: Run tests
+        run: pdm run -v test
