@@ -2,7 +2,6 @@
 # JOB HEADERS HERE
 
 #SBATCH --job-name=fit_surr_v0
-#SBATCH --account=goroda0
 #SBATCH --partition=standard
 #SBATCH --time=00-08:00:00
 #SBATCH --nodes=1
@@ -12,7 +11,6 @@
 #SBATCH --export=ALL
 #SBATCH --output=./scripts/pem_v0/logs/%x-%j.log
 #SBATCH --mail-type=BEGIN,END,FAIL
-#SBATCH --mail-user=eckelsjd@umich.edu
 
 echo "Starting job script..."
 

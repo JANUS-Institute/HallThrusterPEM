@@ -6,5 +6,5 @@ from hallmd.models.pem import pem_v0
 
 if __name__ == "__main__":
     print('Generating data...')
-    time.sleep(10)
+    time.sleep(60)
     print('Data generation complete!')

@@ -1,8 +1,7 @@
 #!/bin/bash
 
 #SBATCH --job-name=gen_data_debug
-#SBATCH --account=goroda0
-#SBATCH --partition=debug
+#SBATCH --partition=standard
 #SBATCH --time=00-00:03:00
 #SBATCH --nodes=1
 #SBATCH --mem-per-cpu=1g
@@ -11,7 +10,6 @@
 #SBATCH --output=./scripts/debug/logs/%x-%j.log
 #SBATCH --export=ALL
 #SBATCH --mail-type=BEGIN,END,FAIL
-#SBATCH --mail-user=eckelsjd@umich.edu
 
 # Run this script from the project root directory
 echo "Starting job script..."

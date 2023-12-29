@@ -1,7 +1,6 @@
 #!/bin/bash
 
 #SBATCH --job-name=gen_data_v0
-#SBATCH --account=goroda0
 #SBATCH --partition=standard
 #SBATCH --time=00-04:00:00
 #SBATCH --nodes=1
@@ -11,7 +10,6 @@
 #SBATCH --output=./scripts/pem_v0/logs/%x-%j.log
 #SBATCH --export=ALL
 #SBATCH --mail-type=BEGIN,END,FAIL
-#SBATCH --mail-user=eckelsjd@umich.edu
 
 # Run this script from the project root directory
 echo "Starting job script..."

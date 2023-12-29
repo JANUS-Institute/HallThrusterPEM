@@ -63,8 +63,8 @@ path = "src/hallmd/__init__.py"
 [tool.pdm.scripts]
 test = "pytest --cov=hallmd tests"
 docs = "mkdocs serve"
-gen_data = {shell = "echo JOBID1=$(sbatch ./scripts/{args}/gen_data.sh | awk '{print $4}') > .env", help = "Usage: pdm run gen_data <scripts_folder>"}
-fit = {shell = "export $(cat .env | xargs) && sbatch ./scripts/{args}/fit_surr.sh --dependency=afterok:${JOBID1}", help = "Usage: pdm run fit <scripts_folder>"}
+gen_data = {shell = "echo JOBID1=$(sbatch --account=${SLURM_ACCOUNT} --mail-user=${SLURM_MAIL} ./scripts/{args}/gen_data.sh | awk '{print $4}') > .env", help = "Usage: pdm run gen_data <scripts_folder>"}
+fit = {shell = "export $(cat .env | xargs) && sbatch --account=${SLURM_ACCOUNT} --mail-user=${SLURM_MAIL} --dependency=afterok:${JOBID1} ./scripts/{args}/fit_surr.sh", help = "Usage: pdm run fit <scripts_folder>"}
 train = {composite = ["gen_data {args}", "fit {args}"], help = "Usage: pdm run train <scripts_folder>. For example: pdm run train pem_v0"}
 
 [tool.pdm.dev-dependencies]

@@ -10,9 +10,9 @@ export MPICC=$(which mpicc)
 module list
 
 # Make sure no conda environment is activated
-if command -v conda &> /dev/null
+if command -v conda deactivate &> /dev/null
 then
-    conda deactivate
+    conda deactivate &> /dev/null
 fi
 
 # Install PDM and setup local venv
@@ -34,6 +34,28 @@ if [ -d "../amisc" ]; then
 fi
 
 # Run juliacall update (can't do in sbatch for some GitError)
+echo "Initializing juliacall..."
 pdm run python -c "import juliacall"
+
+# Add slurm user account info to .bashrc
+if [[ -z "${SLURM_ACCOUNT}" || -z "${SLURM_MAIL}" ]]; then
+    case $(whoami) in
+        eckelsjd)
+            export SLURM_ACCOUNT='goroda0'
+	    export SLURM_MAIL='eckelsjd@umich.edu'
+	    ;;
+        mgallen)
+	    export SLURM_ACCOUNT='bjorns0'
+	    export SLURM_MAIL='mgallen@umich.edu'
+	    ;;
+        *)
+	    export SLURM_ACCOUNT='goroda0'
+	    export SLURM_MAIL='eckelsjd@umich.edu'
+	    ;;
+    esac
+
+    echo "export SLURM_ACCOUNT=${SLURM_ACCOUNT}" >> ~/.bashrc
+    echo "export SLURM_MAIL=${SLURM_MAIL}" >> ~/.bashrc
+fi
 
 echo "Environment setup complete! Use 'pdm train <scripts_folder>' to build a surrogate."

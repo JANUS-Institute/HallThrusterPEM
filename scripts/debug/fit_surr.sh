@@ -2,8 +2,7 @@
 # JOB HEADERS HERE
 
 #SBATCH --job-name=fit_surr_debug
-#SBATCH --account=goroda0
-#SBATCH --partition=debug
+#SBATCH --partition=standard
 #SBATCH --time=00-00:03:00
 #SBATCH --nodes=1
 #SBATCH --mem-per-cpu=1g
@@ -12,7 +11,6 @@
 #SBATCH --export=ALL
 #SBATCH --output=./scripts/debug/logs/%x-%j.log
 #SBATCH --mail-type=BEGIN,END,FAIL
-#SBATCH --mail-user=eckelsjd@umich.edu
 
 echo "Starting job script..."
 
