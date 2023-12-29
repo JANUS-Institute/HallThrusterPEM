@@ -21,10 +21,6 @@ if [ -d "../amisc" ]; then
     echo "Adding ../amisc in editable mode..."
     pdm remove amisc
     pdm add -e ../amisc --dev
-else
-    echo "Adding amisc from PyPI..."
-    pdm remove -d amisc
-    pdm add amisc
 fi
 
-echo "Environment setup complete! Use 'pdm run
+echo "Environment setup complete! Use 'pdm train <scripts_folder>' to build a surrogate."

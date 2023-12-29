@@ -5,14 +5,12 @@
 groups = ["default", "dev"]
 strategy = ["cross_platform"]
 lock_version = "4.4.1"
-content_hash = "sha256:6fe8ae82f1d8be14b82b449f8b38e3709585927569058c9f5819eade3984e09c"
+content_hash = "sha256:8668ea0f1ccc47b71ceead5a847f375f2f37b3a086038031564b68b3dd85d5a6"
 
 [[package]]
 name = "amisc"
-version = "0.1.3+editable"
+version = "0.1.3"
 requires_python = ">=3.11"
-editable = true
-path = "../amisc"
 summary = "Adaptive multi-index stochastic collocation (surrogates) for metamodeling of multidisciplinary systems"
 dependencies = [
     "dill>=0.3.7",
@@ -21,6 +19,10 @@ dependencies = [
     "numpy>=1.26.2",
     "scikit-learn>=1.3.2",
     "scipy>=1.11.4",
+]
+files = [
+    {file = "amisc-0.1.3-py3-none-any.whl", hash = "sha256:014b9025a9744416740f04904be93bbc187d2daa4528315377ef19685cd5adf5"},
+    {file = "amisc-0.1.3.tar.gz", hash = "sha256:811971ae060c67797abdbe605b1e38035e0f4ff5d04b0dc950802a39487b2946"},
 ]
 
 [[package]]

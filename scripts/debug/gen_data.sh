@@ -5,7 +5,7 @@
 #SBATCH --partition=debug
 #SBATCH --time=00-00:01:00
 #SBATCH --nodes=1
-#SBATCH --mem-per-cpu=100m
+#SBATCH --mem-per-cpu=1m
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=1
 #SBATCH --output=./scripts/debug/logs/%x-%j.log
