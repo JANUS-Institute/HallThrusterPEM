@@ -162,7 +162,7 @@ def hallthruster_jl_wrapper(x: np.ndarray, alpha: tuple, *, compress: bool = Fal
                             n_jobs: int = -1, config: str | Path = CONFIG_DIR / 'hallthruster_jl.json',
                             variables: str | Path = CONFIG_DIR / 'variables_v0.json',
                             svd_file: str | Path = CONFIG_DIR / 'thruster_svd.pkl',
-                            hf_override: tuple = None, thruster: str = 'SPT-100'):
+                            hf_override: tuple | bool = None, thruster: str = 'SPT-100'):
     """Wrapper function for Hallthruster.jl.
 
     !!! Note "Defining input variables"
@@ -191,8 +191,10 @@ def hallthruster_jl_wrapper(x: np.ndarray, alpha: tuple, *, compress: bool = Fal
     """
     x = np.atleast_1d(x)
     # Check for a single-fidelity override of alpha
-    if hf_override is not None:
+    if isinstance(hf_override, tuple) and len(hf_override) == 2:
         alpha = hf_override
+    elif hf_override:
+        alpha = (2, 2)
 
     # Set model fidelity quantities from alpha
     Ncells = 50 * (alpha[0] + 2)
