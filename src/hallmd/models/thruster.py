@@ -158,8 +158,9 @@ def hallthruster_jl_model(thruster_input: dict, jl=None) -> dict:
     return thruster_output[0]
 
 
-def hallthruster_jl_wrapper(x: np.ndarray, alpha: tuple, *, compress: bool = False, output_dir: str | Path = None,
-                            n_jobs: int = -1, config: str | Path = CONFIG_DIR / 'hallthruster_jl.json',
+def hallthruster_jl_wrapper(x: np.ndarray, alpha: tuple = (2, 2), *, compress: bool = False,
+                            output_dir: str | Path = None, n_jobs: int = -1,
+                            config: str | Path = CONFIG_DIR / 'hallthruster_jl.json',
                             variables: str | Path = CONFIG_DIR / 'variables_v0.json',
                             svd_file: str | Path = CONFIG_DIR / 'thruster_svd.pkl',
                             hf_override: tuple | bool = None, thruster: str = 'SPT-100'):
