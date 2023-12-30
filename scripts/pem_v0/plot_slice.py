@@ -41,5 +41,5 @@ if __name__ == '__main__':
             if (Path('results')/f).is_dir() and f.startswith('mf_') and f > mf_timestamp:
                 mf_timestamp = f
 
-    base_dir = Path('results')/mf_timestamp/'multi-fidelity'
+    base_dir = list((Path('results')/mf_timestamp/'multi-fidelity').glob('amisc_*'))[0]
     slice_1d(base_dir)
