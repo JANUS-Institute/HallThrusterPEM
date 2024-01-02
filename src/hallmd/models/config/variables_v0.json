@@ -105,7 +105,7 @@
         "units": "-",
         "param_type": "calibration",
         "nominal": -2,
-        "domain": [-3, -1],
+        "domain": [-2, -1],
         "rv_type": "uniform_bds",
         "rv_params": [-2, -1]
     },
