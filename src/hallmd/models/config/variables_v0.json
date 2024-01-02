@@ -107,7 +107,7 @@
         "nominal": -2,
         "domain": [-3, -1],
         "rv_type": "uniform_bds",
-        "rv_params": [-3, -1]
+        "rv_params": [-2, -1]
     },
     "vAN2": {
         "id": "vAN2",
