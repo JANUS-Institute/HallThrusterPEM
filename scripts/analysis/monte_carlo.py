@@ -16,8 +16,9 @@ PROJECT_ROOT = Path('../..')
 def spt100_monte_carlo(Ns=100, surr_dir='mf_2023-11-02T17.57.44'):
     """Plot `[V_cc, T, uion, jion]` against SPT-100 experimental data with UQ bounds."""
     exp_data = spt100_data()
-    model = SystemSurrogate.load_from_file(PROJECT_ROOT / 'results' / surr_dir / 'multi-fidelity'
-                                           / 'sys' / 'sys_final.pkl')
+    surr_dir = list((PROJECT_ROOT / 'results' / surr_dir / 'multi-fidelity').glob('amisc_*'))[0]
+    model = SystemSurrogate.load_from_file(surr_dir / 'sys' / 'sys_final.pkl')
+    
     # Cathode coupling voltage
     data = exp_data['V_cc'][0]
     pb = data['x'][:, 0]

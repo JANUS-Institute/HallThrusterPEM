@@ -116,9 +116,9 @@
         "units": "-",
         "param_type": "calibration",
         "nominal": 30,
-        "domain": [25, 100],
+        "domain": [10, 100],
         "rv_type": "uniform_bds",
-        "rv_params": [25, 100]
+        "rv_params": [10, 100]
     },
     "delta_z": {
         "id": "delta_z",

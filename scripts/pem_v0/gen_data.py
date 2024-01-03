@@ -126,7 +126,7 @@ def gen_test_set(N=1000):
     yt = yt[~nan_idx, :]
     data = {'xt': xt, 'yt': yt}
 
-    with open(Path(surr.root_dir) / 'test_set.pkl', 'wb') as fd:
+    with open(Path(root_dir) / 'test_set.pkl', 'wb') as fd:
         pickle.dump(data, fd)
 
     return root_dir

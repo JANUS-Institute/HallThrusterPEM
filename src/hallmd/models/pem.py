@@ -77,7 +77,8 @@ def pem_v0(save_dir: str | Path = None, executor: Executor = None, init: bool = 
     plume = ComponentSpec(plume_feedforward, name='Plume', exo_in=plume_exo, coupling_in='I_B0', surrogate='analytical',
                           coupling_out=['theta_d'] + [f'jion{i}' for i in range(r2)], model_kwargs={'compress': True})
 
+    logger_name = 'SF-surrogate' if hf_override else 'MF-surrogate'
     surr = SystemSurrogate([cathode, thruster, plume], exo_vars, coupling_vars, executor=executor, init_surr=init,
-                           stdout=False, save_dir=save_dir)
+                           stdout=False, save_dir=save_dir, logger_name=logger_name)
 
     return surr

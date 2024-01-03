@@ -12,6 +12,7 @@
 #SBATCH --mail-type=BEGIN,END,FAIL
 
 # Run this script from the project root directory
+set -e
 echo "Starting job script..."
 
 module load python/3.11.5

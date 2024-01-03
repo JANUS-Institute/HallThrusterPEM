@@ -12,6 +12,7 @@
 #SBATCH --output=./scripts/pem_v0/logs/%x-%j.log
 #SBATCH --mail-type=BEGIN,END,FAIL
 
+set -e
 echo "Starting job script..."
 
 module load python/3.11.5
