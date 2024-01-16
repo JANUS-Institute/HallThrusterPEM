@@ -3,21 +3,32 @@ from pathlib import Path
 
 import numpy as np
 import matplotlib.pyplot as plt
-from amisc.system import SystemSurrogate
 
 from hallmd.data.loader import spt100_data
 from hallmd.models.plume import jion_reconstruct
 from hallmd.models.thruster import uion_reconstruct
+from hallmd.models.pem import pem_v0
 from hallmd.utils import plot_qoi
 
 PROJECT_ROOT = Path('../..')
 
 
-def spt100_monte_carlo(Ns=100, surr_dir='mf_2023-11-02T17.57.44'):
+def spt100_monte_carlo(Ns=1000, surr_dir='mf_2024-01-03T02.35.53', uncertainty='aleatoric'):
     """Plot `[V_cc, T, uion, jion]` against SPT-100 experimental data with UQ bounds."""
     exp_data = spt100_data()
     surr_dir = list((PROJECT_ROOT / 'results' / surr_dir / 'multi-fidelity').glob('amisc_*'))[0]
-    model = SystemSurrogate.load_from_file(surr_dir / 'sys' / 'sys_final.pkl')
+    model = pem_v0(from_file=surr_dir / 'sys' / 'sys_final.pkl')
+
+    constants = set()
+    match uncertainty:
+        case 'aleatoric':
+            constants.add('calibration')
+        case 'epistemic':
+            constants.update(['design', 'operating', 'other'])
+        case 'all':
+            pass
+        case other:
+            pass
     
     # Cathode coupling voltage
     data = exp_data['V_cc'][0]
@@ -27,13 +38,14 @@ def spt100_monte_carlo(Ns=100, surr_dir='mf_2023-11-02T17.57.44'):
     xs = np.empty((Nx, Ns, len(model.exo_vars)))
     for i in range(Nx):
         nominal = {'PB': pb[i], 'Va': data['x'][i, 1], 'mdot_a': data['x'][i, 2]}
-        xs[i, :, :] = model.sample_inputs((Ns,), use_pdf=True, nominal=nominal)
-    ys = np.squeeze(model(xs, qois=['V_cc'], training=True), axis=-1)
+        xs[i, :, :] = model.sample_inputs((Ns,), use_pdf=True, nominal=nominal, constants=constants)
+    ys = np.squeeze(model(xs, qoi_ind=['V_cc'], training=True), axis=-1)
     fig, ax = plt.subplots()
     yerr = np.squeeze(2 * np.sqrt(data['var_y']))
     ax.errorbar(10 ** pb, np.squeeze(data['y']), yerr=yerr, fmt='or', capsize=3, markerfacecolor='none',
                 label='Experiment', markersize=4)
     plot_qoi(ax, 10 ** pb[idx], ys[idx, :], 'Background pressure (Torr)', 'Cathode coupling voltage (V)', legend=True)
+    ax.set_xscale('log')
     fig.tight_layout()
     plt.show()
 
@@ -46,7 +58,7 @@ def spt100_monte_carlo(Ns=100, surr_dir='mf_2023-11-02T17.57.44'):
     for i in range(Nx):
         nominal = {'PB': pb[i], 'Va': data['x'][i, 1], 'mdot_a': data['x'][i, 2]}
         xs[i, :, :] = model.sample_inputs((Ns,), use_pdf=True, nominal=nominal)
-    ys = np.squeeze(model(xs, qois=['T'], training=True), axis=-1)
+    ys = np.squeeze(model(xs, qoi_ind=['T'], training=True), axis=-1)
     fig, ax = plt.subplots()
     yerr = np.squeeze(2 * np.sqrt(data['var_y']))
     ax.errorbar(10**pb, np.squeeze(data['y'])*1000, yerr=yerr*1000, fmt='or', capsize=3, markerfacecolor='none',
@@ -64,7 +76,7 @@ def spt100_monte_carlo(Ns=100, surr_dir='mf_2023-11-02T17.57.44'):
         nominal = {'PB': pb[i], 'Va': data['x'][i, 1], 'mdot_a': data['x'][i, 2]}
         xs[i, :, :] = model.sample_inputs((Ns,), use_pdf=True, nominal=nominal)
     qois = [var for var in model.coupling_vars if str(var).startswith('uion')]
-    ys = model(xs, qois=qois, training=True)
+    ys = model(xs, qoi_ind=qois, training=True)
     zg, uion_g = uion_reconstruct(ys)
 
     fig, ax = plt.subplots(1, Nx, sharey='row')
@@ -89,7 +101,7 @@ def spt100_monte_carlo(Ns=100, surr_dir='mf_2023-11-02T17.57.44'):
         nominal = {'PB': pb[i], 'Va': data['x'][i, 1], 'mdot_a': data['x'][i, 2], 'r_m': data['loc'][i, 0, 0]}
         xs[i, :, :] = model.sample_inputs((Ns,), use_pdf=True, nominal=nominal)
     qois = [var for var in model.coupling_vars if str(var).startswith('jion')]
-    ys = model(xs, qois=qois, training=True)
+    ys = model(xs, qoi_ind=qois, training=True)
     alpha_g = data['loc'][0, :, 1]
     keep_idx = np.where(np.abs(alpha_g) < np.pi/2)[0]
     alpha_g = alpha_g[keep_idx]

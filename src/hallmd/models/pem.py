@@ -29,7 +29,8 @@ CONFIG_DIR = resources.files(model_config_dir)
 
 
 def pem_v0(save_dir: str | Path = None, executor: Executor = None, init: bool = True,
-           hf_override: bool = False, var_file: str | Path = CONFIG_DIR / 'variables_v0.json') -> SystemSurrogate:
+           hf_override: bool = False, var_file: str | Path = CONFIG_DIR / 'variables_v0.json',
+           from_file: str | Path = None) -> SystemSurrogate:
     """Return a `SystemSurrogate` object for the feedforward v0 PEM system.
 
     :param save_dir: where to save surrogate and model outputs
@@ -37,12 +38,23 @@ def pem_v0(save_dir: str | Path = None, executor: Executor = None, init: bool = 
     :param init: whether to initialize the surrogate (will evaluate all component models)
     :param hf_override: whether to use only highest-fidelity for all models
     :param var_file: the path to the `.json` config file storing information about all variables
+    :param from_file: the `.pkl` save file to load the surrogate from, (instead of building from scratch)
     :returns: the `SystemSurrogate` object
     """
     exo_vars = load_variables(['PB', 'Va', 'mdot_a', 'T_ec', 'V_vac', 'P*', 'PT', 'u_n', 'l_t', 'vAN1', 'vAN2',
                                'delta_z', 'z0*', 'p_u', 'c0', 'c1', 'c2', 'c3', 'c4', 'c5', 'sigma_cex', 'r_m'],
                               var_file)
     coupling_vars = load_variables(['V_cc', 'I_B0', 'T', 'eta_v', 'eta_c', 'eta_m', 'ui_avg', 'theta_d'], var_file)
+
+    if from_file is not None:
+        surr = SystemSurrogate.load_from_file(Path(from_file), stdout=False, executor=executor)
+        for v in exo_vars:
+            # Make sure nominal values are up to date with the current config file
+            j = surr.exo_vars.index(v)
+            surr.exo_vars[j].nominal = v.nominal
+            surr.exo_vars[j].param_type = v.param_type
+
+        return surr
 
     # Get number of reconstruction coefficients for ion velocity and ion current density profiles
     try:

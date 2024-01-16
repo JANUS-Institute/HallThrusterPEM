@@ -4,8 +4,8 @@
         "tex": "$T_{e,c}$",
         "description": "Cathode electron temperature",
         "units": "eV",
-        "param_type": "calibration",
-        "nominal": 1.99,
+        "param_type": "other",
+        "nominal": 4.5,
         "domain": [1, 5],
         "rv_type": "uniform_bds",
         "rv_params": [1, 5]
@@ -16,7 +16,7 @@
         "description": "Coupling voltage in vacuum",
         "units": "V",
         "param_type": "calibration",
-        "nominal": 30.39,
+        "nominal": 30.7,
         "domain": [0, 60],
         "rv_type": "uniform_bds",
         "rv_params": [0, 60]
@@ -27,7 +27,7 @@
         "description": "Turning point pressure",
         "units": "$\\mu$-Torr",
         "param_type": "calibration",
-        "nominal": 28.7,
+        "nominal": 29,
         "domain": [10, 100],
         "rv_type": "uniform_bds",
         "rv_params": [10, 100]
@@ -38,7 +38,7 @@
         "description": "Thruster to facility plasma density ratio",
         "units": "$\\mu$-Torr",
         "param_type": "calibration",
-        "nominal": 10,
+        "nominal": 11.6,
         "domain": [10, 100],
         "rv_type": "uniform_bds",
         "rv_params": [10, 100]

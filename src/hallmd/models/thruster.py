@@ -359,7 +359,7 @@ def hallthruster_jl_wrapper(x: np.ndarray, alpha: tuple = (2, 2), *, compress: b
     return {'y': y_ret, 'files': files, 'cost': avg_model_cpu_time}
 
 
-def uion_reconstruct(xr: np.ndarray, z: np.ndarray = None, L: float = 0.08,
+def uion_reconstruct(xr: np.ndarray, z: np.ndarray = None, L: float | np.ndarray = 0.08,
                      svd_file: str | Path = CONFIG_DIR / 'thruster_svd.pkl') -> tuple[np.ndarray, np.ndarray]:
     """Reconstruct an ion velocity profile, interpolate to `z` if provided.
 
@@ -369,11 +369,13 @@ def uion_reconstruct(xr: np.ndarray, z: np.ndarray = None, L: float = 0.08,
 
     :param xr: `(... r)` The reduced dimension output of `hallthruster_jl_wrapper` (just the ion velocity profile)
     :param z: `(Nz,)` The axial `z` grid points to interpolate to (in meters, between 0 and `L`)
-    :param L: The full domain length of the reconstructed grid
+    :param L: `(...,)` The full domain length of the reconstructed grid(s)
     :param svd_file: path to a `.pkl` file that is used to compress/reconstruct the ion velocity profile
     :returns: `z, uion_interp` - `(..., Nz or M)` The reconstructed (and potentially interpolated) ion velocity
               profile(s), corresponds to `z=(0, 0.08)` m with `M=202` points by default
     """
+    L = np.atleast_1d(L)
+    interp_normal = len(L.shape) == 1 and L.shape[0] == 1
     with open(svd_file, 'rb') as fd:
         svd_data = pickle.load(fd)
         vtr = svd_data['vtr']       # (r x M)
@@ -383,17 +385,47 @@ def uion_reconstruct(xr: np.ndarray, z: np.ndarray = None, L: float = 0.08,
         r, M = vtr.shape
     n_cells = M - 2
     dz = L / n_cells
-    zg = np.zeros(M)  # zg is the axial z grid points for the reconstructed field (of size M)
-    zg[0] = 0
-    zg[1] = dz / 2
-    zg[2:-1] = zg[1] + np.arange(1, n_cells) * dz
-    zg[-1] = L
-    uion_g = np.squeeze(vtr.T @ xr[..., np.newaxis], axis=-1) * A_std + A_mu  # (..., M)
+    zg = np.zeros(L.shape + (M,))  # zg is the axial z grid points for the reconstructed field (of size M)
+    zg[..., 1] = dz / 2
+    zg[..., 2:-1] = zg[..., 1, np.newaxis] + np.arange(1, n_cells) * dz[..., np.newaxis]
+    zg[..., -1] = L
+    uion_g = np.squeeze(vtr.T @ xr[..., np.newaxis], axis=-1) * A_std + A_mu        # (..., M)
+    zg = np.squeeze(zg, axis=0) if interp_normal else zg    # (..., M)
 
-    # Do interpolation
+    # Do vectorized 1d linear interpolation
     if z is not None:
-        f = interp1d(zg, uion_g, axis=-1)
-        uion_interp = f(z)  # (..., Nz)
+        diff = zg[..., np.newaxis] - z                          # (..., M, Nz)
+        lower_idx = np.argmin(np.abs(diff), axis=-2)            # (..., Nz)
+        diff = np.take_along_axis(zg, lower_idx, axis=-1) - z
+        lower_idx[diff > 0] -= 1
+        upper_idx = lower_idx + 1
+        lower_idx[lower_idx < 0] = 0
+        upper_idx[upper_idx >= zg.shape[-1]] = zg.shape[-1] - 1
+        x_lower = np.take_along_axis(zg, lower_idx, axis=-1)
+        x_upper = np.take_along_axis(zg, upper_idx, axis=-1)
+        if interp_normal:
+            y_lower = uion_g[..., lower_idx]
+            y_upper = uion_g[..., upper_idx]
+        else:
+            # Vectorized 1d interpolation
+            y_lower = np.take_along_axis(uion_g, lower_idx, axis=-1)
+            y_upper = np.take_along_axis(uion_g, upper_idx, axis=-1)
+
+        with np.errstate(divide='ignore', invalid='ignore'):
+            uion_interp = y_lower + (z - x_lower) * (y_upper-y_lower) / (x_upper-x_lower)       # (..., Nz)
+
+        # Set points outside grid equal to outer values
+        lower_idx = z < zg[..., 0, np.newaxis]      # (..., Nz)
+        upper_idx = z > zg[..., -1, np.newaxis]     # (..., Nz)
+        if interp_normal:
+            if np.any(lower_idx):
+                uion_interp[..., lower_idx] = uion_g[..., 0, np.newaxis]
+            if np.any(upper_idx):
+                uion_interp[..., upper_idx] = uion_g[..., -1, np.newaxis]
+        else:
+            uion_interp[lower_idx] = uion_g[np.any(lower_idx, axis=-1), 0]
+            uion_interp[upper_idx] = uion_g[np.any(upper_idx, axis=-1), -1]
+
         return z, uion_interp
     else:
         return zg, uion_g

@@ -69,4 +69,10 @@ def load_jion() -> ExpData:
     y = data[..., 6, np.newaxis]*10         # Ion current density (A/m^2)
     var_y = (data[..., 7, np.newaxis] * y / 2) ** 2
 
+    # Only keep less than 90 deg data
+    keep_idx = loc[..., 1] < np.pi / 2
+    y = y[keep_idx, :].reshape((N, -1, 1))
+    var_y = var_y[keep_idx, :].reshape((N, -1, 1))
+    loc = loc[keep_idx, :].reshape((N, -1, 2))
+
     return dict(x=x, loc=loc, y=y, var_y=var_y)
