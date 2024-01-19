@@ -65,7 +65,7 @@ def plume_feedforward(x: np.ndarray, compress: bool = False,
 
     # Compute model prediction
     alpha_rad = np.reshape(np.linspace(0, np.pi/2, M), (1,)*len(x.shape[:-1]) + (M,))
-    y = np.zeros(x.shape[:-1] + (ydim,))
+    y = np.zeros(x.shape[:-1] + (ydim,), dtype=x.dtype)
     try:
         # Neutral density
         n = c4 * P_B + c5  # m^-3
@@ -133,8 +133,8 @@ def jion_reconstruct(xr: np.ndarray, alpha: np.ndarray = None,
         A_mu = np.mean(A, axis=0)
         A_std = np.std(A, axis=0)
         r, M = vtr.shape
-    alpha_g = np.linspace(0, np.pi/2, M)
-    jion_g = np.squeeze(vtr.T @ xr[..., np.newaxis], axis=-1) * A_std + A_mu  # (..., M)
+    alpha_g = np.linspace(0, np.pi/2, M, dtype=xr.dtype)
+    jion_g = (np.squeeze(vtr.T @ xr[..., np.newaxis], axis=-1) * A_std + A_mu).astype(xr.dtype)  # (..., M)
 
     # Do interpolation
     if alpha is not None:

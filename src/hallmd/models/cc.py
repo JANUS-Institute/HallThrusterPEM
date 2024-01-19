@@ -14,7 +14,7 @@ kB = 1.380649e-23       # Boltzmann constant (J/K)
 TORR_2_PA = 133.322
 
 
-def cc_feedforward(x: np.ndarray) -> np.ndarray:
+def cc_feedforward(x: np.ndarray):
     """Compute cathode coupling model with no feedback interactions.
 
     :param x: `(..., xdim)`, Cathode model inputs

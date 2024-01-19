@@ -18,14 +18,14 @@ def load_uion() -> ExpData:
     # Load operating conditions
     pb = np.log10(data[:, 0, 2, np.newaxis])
     Va = data[:, 0, 0, np.newaxis]
-    mdot_a = data[:, 0, 1, np.newaxis]      # Anode flow rate (mg/s)
+    mdot_a = data[:, 0, 1, np.newaxis]  # Anode flow rate (mg/s)
     x = np.concatenate((pb, Va, mdot_a), axis=1)
 
     # Load coordinates of data
-    loc = np.zeros((data.shape[:2] + (1,)))
-    loc[..., 0] = data[..., 3]              # Axial location from anode along channel centerline (m)
+    loc = np.zeros((data.shape[1], ))
+    loc[:] = data[0, :, 3]              # Axial location from anode along channel centerline (m)
 
-    y = data[..., 4, np.newaxis]            # Time-avg peak Xe+ velocity (m/s)
-    var_y = (data[..., 5, np.newaxis] / 2) ** 2
+    y = data[..., 4]                    # Time-avg peak Xe+ velocity (m/s)
+    var_y = (data[..., 5] / 2) ** 2
 
     return dict(x=x, loc=loc, y=y, var_y=var_y)

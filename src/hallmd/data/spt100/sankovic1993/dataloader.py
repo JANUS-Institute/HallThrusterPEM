@@ -14,9 +14,9 @@ def load_thrust() -> ExpData:
     data = np.loadtxt(BASE_DIR / 'thrust.csv', delimiter=',', skiprows=1)
     pb = np.log10(data[:, 2, np.newaxis])
     Va = data[:, 0, np.newaxis]
-    mdot_a = data[:, 1, np.newaxis]           # Anode flow rate (mg/s)
+    mdot_a = data[:, 1, np.newaxis]             # Anode flow rate (mg/s)
     x = np.concatenate((pb, Va, mdot_a), axis=1)
-    y = data[:, 3, np.newaxis]/1000           # Thrust (N)
-    var_y = (data[:, 4, np.newaxis]*y / 2)**2
+    y = data[:, 3]/1000                         # Thrust (N)
+    var_y = (data[:, 4]*y / 2)**2
 
     return dict(x=x, y=y, var_y=var_y)

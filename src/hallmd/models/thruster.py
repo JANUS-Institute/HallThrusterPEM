@@ -374,6 +374,8 @@ def uion_reconstruct(xr: np.ndarray, z: np.ndarray = None, L: float | np.ndarray
     :returns: `z, uion_interp` - `(..., Nz or M)` The reconstructed (and potentially interpolated) ion velocity
               profile(s), corresponds to `z=(0, 0.08)` m with `M=202` points by default
     """
+    if z is not None:
+        z = z.astype(xr.dtype)
     L = np.atleast_1d(L)
     interp_normal = len(L.shape) == 1 and L.shape[0] == 1
     with open(svd_file, 'rb') as fd:
@@ -389,8 +391,8 @@ def uion_reconstruct(xr: np.ndarray, z: np.ndarray = None, L: float | np.ndarray
     zg[..., 1] = dz / 2
     zg[..., 2:-1] = zg[..., 1, np.newaxis] + np.arange(1, n_cells) * dz[..., np.newaxis]
     zg[..., -1] = L
-    uion_g = np.squeeze(vtr.T @ xr[..., np.newaxis], axis=-1) * A_std + A_mu        # (..., M)
-    zg = np.squeeze(zg, axis=0) if interp_normal else zg    # (..., M)
+    uion_g = (np.squeeze(vtr.T @ xr[..., np.newaxis], axis=-1) * A_std + A_mu).astype(xr.dtype)      # (..., M)
+    zg = (np.squeeze(zg, axis=0) if interp_normal else zg).astype(xr.dtype)    # (..., M)
 
     # Do vectorized 1d linear interpolation
     if z is not None:

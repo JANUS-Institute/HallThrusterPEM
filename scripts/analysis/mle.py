@@ -4,8 +4,9 @@ import pickle
 import time
 
 import numpy as np
+import matplotlib.pyplot as plt
 from joblib import Parallel
-from scipy.optimize import direct, minimize
+from scipy.optimize import direct, minimize, differential_evolution, OptimizeResult
 from amisc.utils import approx_hess
 import skopt
 
@@ -13,119 +14,164 @@ from hallmd.data.loader import spt100_data
 from hallmd.models.thruster import uion_reconstruct
 from hallmd.models.plume import jion_reconstruct
 from hallmd.models.pem import pem_v0
+from hallmd.utils import plot_slice
 
-PROJECT_ROOT = Path('../..')
 OPTIMIZER_ITER = 1
 START_TIME = 0
+PROJECT_ROOT = Path('../..')
+surr_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-01-03T02.35.53' / 'multi-fidelity').glob('amisc_*'))[0]
+SURR = pem_v0(from_file=surr_dir / 'sys' / 'sys_final.pkl')
+DATA = spt100_data()
 
 
-def spt100_log_likelihood(theta, data, surr, model='System', M=100):
+def spt100_log_likelihood(theta, data, surr, comp='System', M=100):
     """Compute the log likelihood for the SPT-100 dataset."""
-    qoi_map = {'Cathode': ['V_cc'], 'Thruster': ['T', 'uion'], 'Plume': ['jion']}
-    global START_TIME
-    global OPTIMIZER_ITER
     theta = np.atleast_1d(theta)
+    qoi_map = {'Cathode': ['V_cc'], 'Thruster': ['T', 'uion'], 'Plume': ['jion'], 'System': ['V_cc', 'T', 'uion', 'jion']}
+    theta_vars = [v for v in surr[comp].x_vars if v.param_type == 'calibration']
+    qois = qoi_map.get(comp)
 
-    if model == 'System':
-        theta_vars = [v for v in surr.exo_vars if v.param_type == 'calibration']
-        qois = ['V_cc', 'T', 'uion', 'jion']
-    else:
-        theta_vars = [v for v in surr[model].x_vars if v.param_type == 'calibration']
-        qois = qoi_map.get(model)
-
-    if OPTIMIZER_ITER == 1:
-        print_str = f'{"TIME (min)":>10} {"ITERATION":>10} {"f(X)":>12} ' + ' '.join([f"{str(v):>10}" for v in theta_vars])
-        print(print_str)
-
-    nominal = {str(v): theta[..., i, np.newaxis] for i, v in enumerate(theta_vars)}
-    constants = {'calibration', 'r_m'}
-    sample_shape = theta.shape[:-1] + (M,)
-    log_likelihood = np.empty((*theta.shape[:-1], len(qois)))
-
-    for q, qoi in enumerate(qois):
-        # Get experimental data
+    # Parse experimental data
+    qois_use, qoi_cnt = [], []
+    xe_array = np.zeros((0, 3))  # (PB, Va, mdot_a)
+    sigma_y = np.zeros((0,))
+    Ny = np.zeros((0,))
+    for qoi in qois:
         exp_data = data.get(qoi)[0]
-        xe, ye, var_y, loc = exp_data.get('x'), exp_data.get('y'), exp_data.get('var_y'), exp_data.get('loc', None)
+        xe_array = np.concatenate((xe_array, exp_data.get('x')), axis=0)
+        sigma_y = np.hstack((sigma_y, np.sqrt(exp_data.get('var_y').flatten())))
+        Ny = np.hstack((Ny, np.prod(exp_data.get('y').shape)))
+        qoi_add = [qoi] if exp_data.get('loc', None) is None else \
+            [str(v) for v in surr.coupling_vars if str(v).startswith(qoi)]
+        qois_use.extend(qoi_add)
+        qoi_cnt.append(len(qoi_add))
 
-        if loc is not None:
-            qoi = [str(v) for v in surr.coupling_vars if str(v).startswith(qoi)]  # SVD coeffs for spatial quantities
+    # Sample inputs and compute model
+    Nx = xe_array.shape[0]
+    sample_shape = theta.shape[:-1] + (M, Nx)
+    nominal = {str(v): theta[..., i, np.newaxis, np.newaxis] for i, v in enumerate(theta_vars)}
+    nominal.update({'r_m': 1, 'PB': xe_array[:, 0], 'Va': xe_array[:, 1], 'mdot_a': xe_array[:, 2]})
+    constants = {'calibration', 'r_m'}
+    xs = surr.sample_inputs(sample_shape, use_pdf=True, nominal=nominal, constants=constants).astype(theta.dtype)
+    ys = surr.predict(xs, qoi_ind=qois_use, training=True)
 
-        # Sample inputs and compute model
-        Nx = xe.shape[0]
-        xs = np.empty((*sample_shape, Nx, len(surr.exo_vars)))
-        for i in range(Nx):
-            nominal.update({'PB': xe[i, 0], 'Va': xe[i, 1], 'mdot_a': xe[i, 2]})
-            if loc is not None and qoi[0].startswith('jion'):
-                nominal.update({'r_m': loc[i, 0, 0]})
-            xs[..., i, :] = surr.sample_inputs(sample_shape, use_pdf=True, nominal=nominal, constants=constants)
-        ys = surr.predict(xs, qoi_ind=qoi, training=True)             # (..., M, Nx, ydim)
+    # Initialize the constant part of the likelihood
+    const = -np.sum(Ny) * np.log(M) - (1/2) * np.sum(Ny) * np.log(2*np.pi) - np.sum(np.log(sigma_y))
+    log_likelihood = np.ones((*theta.shape[:-1], len(qois)), dtype=theta.dtype) * const
+
+    xe_idx = 0
+    qoi_idx = 0
+    for k, qoi in enumerate(qois):
+        exp_data = data.get(qoi)[0]
+        xe, ye, var_y, loc = [exp_data.get(ele, None) for ele in ('x', 'y', 'var_y', 'loc')]
+        y_curr = ys[..., xe_idx:xe_idx + xe.shape[0], qoi_idx:qoi_idx + qoi_cnt[k]]     # (..., M, Ne, ydim)
         std = np.sqrt(var_y)
 
+        xe_idx += xe.shape[0]
+        qoi_idx += qoi_cnt[k]
+
         # Reconstruct and interpolate spatial qois (case-by-case basis)
-        if loc is not None:
-            std = np.squeeze(std, axis=-1)
-            ye = np.squeeze(ye, axis=-1)
-            if qoi[0].startswith('uion'):
-                # Assumes z is same locations for all Nx
-                _, ys = uion_reconstruct(ys, z=loc[0, :, 0])
-            elif qoi[0].startswith('jion'):
-                # Assumes alpha is same locations for all Nx
-                _, ys = jion_reconstruct(ys, alpha=loc[0, :, 1])
+        match qoi:
+            case 'jion':
+                _, y_curr = jion_reconstruct(y_curr, alpha=loc[:, 1])
+            case 'uion':
+                _, y_curr = uion_reconstruct(y_curr, z=loc)
+
+        ye = ye.reshape(y_curr.shape[-2:]).astype(theta.dtype)
+        std = std.reshape(y_curr.shape[-2:]).astype(theta.dtype)
 
         # Evaluate the log likelihood for this qoi
-        const = np.squeeze(-np.sum(np.log(np.sqrt(2 * np.pi) * std), axis=(-1, -2))) - np.log(M)
-        log_like = np.sum(-0.5 * ((ye - ys) / std) ** 2, axis=(-1, -2))  # (..., M)
-        max_log_like = np.max(log_like, axis=-1, keepdims=True)
-        log_likelihood[..., q] = (const + np.squeeze(max_log_like, axis=-1) +
-                                  np.log(np.sum(np.exp(log_like - max_log_like), axis=-1)))
+        log_like = -0.5 * ((ye - y_curr) / std) ** 2
+        max_log_like = np.max(log_like, axis=-3, keepdims=True)
+        log_like = np.squeeze(max_log_like, axis=-3) + np.log(np.sum(np.exp(log_like - max_log_like), axis=-3))
+        log_likelihood[..., k] += np.sum(log_like, axis=(-1, -2))
 
-    ret = np.sum(log_likelihood, axis=-1)  # (...,)
-    print_str = (f'{(time.time() - START_TIME)/60:>10.2f} {OPTIMIZER_ITER:>10} {float(np.mean(ret)):>12.3E} ' +
-                 ' '.join([f"{float(np.mean(theta[..., i])):>10.2E}" for i in range(theta.shape[-1])]))
+    return np.sum(log_likelihood, axis=-1)  # (...,)
+
+
+def likelihood_slice(comp='System', M=1000):
+    """Plot 1d slices of the likelihood function"""
+    theta_vars = [v for v in SURR[comp].x_vars if v.param_type == 'calibration']
+    bds = [v.bounds() for v in theta_vars]
+    x0 = [v.nominal for v in theta_vars]
+    fun = lambda theta: spt100_log_likelihood(theta.astype(np.float32), DATA, SURR, comp=comp, M=M)
+    fig, ax = plot_slice(fun, bds, x0=x0, N=20, random_walk=True, xlabels=[v.to_tex(units=True) for v in theta_vars],
+                         ylabels=['Log likelihood'], x_idx=list(np.arange(0, len(bds))))
+    plt.show()
+
+
+def mle_callback(xk, **kwargs):
+    """Callback function for Scipy optimizers"""
+    global OPTIMIZER_ITER
+    global START_TIME
+    if isinstance(xk, OptimizeResult):
+        x = xk.x
+        res = xk.fun
+    else:
+        x = xk
+        res = kwargs.get('convergence', 0)
+
+    x = np.atleast_1d(x)
+    print_str = (f'{(time.time() - START_TIME)/60:>10.2f} {OPTIMIZER_ITER:>10} {float(res):>12.3E} ' +
+                 ' '.join([f"{float(x[i]):>10.2E}" for i in range(x.shape[0])]))
     print(print_str)
     OPTIMIZER_ITER += 1
 
-    return ret
 
-
-def run_mle(optimizer='nelder-mead', surr_dir='mf_2024-01-03T02.35.53', model='System'):
+def run_mle(optimizer='nelder-mead', comp='System', M=100):
     """Compute maximum likelihood estimate for the PEM."""
     global START_TIME
-    data = spt100_data()
-    surr_dir = list((PROJECT_ROOT / 'results' / surr_dir / 'multi-fidelity').glob('amisc_*'))[0]
-    surr = pem_v0(from_file=surr_dir / 'sys' / 'sys_final.pkl')
-    theta_vars = [v for v in surr.exo_vars if v.param_type == 'calibration'] if model == 'System' else \
-        [v for v in surr[model].x_vars if v.param_type == 'calibration']
+    theta_vars = [v for v in SURR[comp].x_vars if v.param_type == 'calibration']
+    # nominal = {'u_n': 102.5, 'l_t': 19.9, 'vAN1': -1.66, 'vAN2': 29.44, 'delta_z': 2.47e-3, 'z0*': -0.205, 'p_u': 44.5}
+    # nominal = {'T_ec': 4.707, 'u_n': 100.4, 'l_t': 3.497, 'vAN1': -1.088, 'vAN2': 10.78, 'delta_z': 0.38, 'z0*': -2.172e-2, 'p_u': 29.19}  # f(x)=3965
+    # nominal = {'T_ec': 4.1, 'u_n': 101, 'l_t': 20, 'vAN1': -1.97, 'vAN2': 31, 'delta_z': 4.35e-4, 'z0*': -0.2, 'p_u': 54}  # f(x)=5470
+    # nominal = {'c0': 0.5938, 'c1': 0.4363, 'c2': -8.55, 'c3': 0.2812, 'c4': 20.13, 'c5': 16.64}  # f(x) = 526
+    nominal = {}
     bds = [v.bounds() for v in theta_vars]
-    x0 = [v.nominal for v in theta_vars]
-    obj_fun = lambda theta: float(-spt100_log_likelihood(theta, data, surr, model=model))
+    x0 = [nominal.get(str(v), v.nominal) for v in theta_vars]
+    obj_fun = lambda theta: float(-spt100_log_likelihood(theta.astype(np.float32), DATA, SURR, comp=comp, M=M))
+
+    print_str = f'{"TIME (min)":>10} {"ITERATION":>10} {"f(X)":>12} ' + ' '.join([f"{str(v):>10}" for v in theta_vars])
+    print(print_str)
+
+    # Scipy requires this function signature for `minimize`
+    def minimize_callback(*, intermediate_result):
+        return mle_callback(intermediate_result)
 
     res = None
-    tol = 0.01
+    tol = 1e-4
     maxfev = 100
     START_TIME = time.time()
-    if optimizer == 'nelder-mead':
-        res = minimize(obj_fun, np.array(x0), method='Nelder-Mead', bounds=bds, tol=tol,
-                       options={'maxfev': maxfev, 'adaptive': True})
-    elif optimizer == 'bfgs':
-        res = minimize(obj_fun, np.array(x0), method='L-BFGS-B', jac='2-point', bounds=bds, tol=tol)
-    elif optimizer == 'brute':
-        Ns = 5
-        x_grids = [np.linspace(b[0], b[1], Ns) for b in bds]
-        grids = np.meshgrid(*x_grids)
-        pts = np.vstack(list(map(np.ravel, grids))).T
-        res = -spt100_log_likelihood(pts, data, surr, model=model)
-        i = np.argmin(res)
-        res = {'fun': res[i], 'x': pts[i, :]}
-    elif optimizer == 'bopt':
-        res = skopt.gp_minimize(obj_fun, bds, x0=x0, n_calls=100,
-                                acq_func="gp_hedge", acq_optimizer='lbfgs', n_initial_points=50,
-                                initial_point_generator='lhs', verbose=False, xi=0.01, noise=0.001)
-    elif optimizer == 'direct':
-        res = direct(obj_fun, bds, eps=tol, maxfun=maxfev)
-    elif optimizer == 'powell':
-        res = minimize(obj_fun, np.array(x0), method='Powell', bounds=bds, tol=tol,
-                       options={'maxiter': maxfev, 'tol': tol})
+    match optimizer:
+        case 'nelder-mead':
+            res = minimize(obj_fun, np.array(x0), method='Nelder-Mead', bounds=bds, tol=tol,
+                           options={'maxfev': maxfev, 'adaptive': True}, callback=minimize_callback)
+        case 'evolution':
+            popsize = 15
+            obj_fun = lambda theta: -spt100_log_likelihood(theta.T.astype(np.float32), DATA, SURR, comp=comp, M=M)
+            res = differential_evolution(obj_fun, bds, popsize=popsize, maxiter=maxfev, init='sobol',
+                                         vectorized=True, polish=True, updating='deferred', callback=mle_callback)
+        case 'direct':
+            res = direct(obj_fun, bds, eps=1, maxiter=maxfev, callback=mle_callback, locally_biased=False)
+        case 'powell':
+            res = minimize(obj_fun, np.array(x0), method='Powell', bounds=bds,
+                           options={'maxiter': maxfev, 'ftol': tol}, callback=mle_callback)
+        # case 'bfgs':
+        #     res = minimize(obj_fun, np.array(x0), method='L-BFGS-B', bounds=bds, tol=tol,
+        #                    options={'maxfun': maxfev, 'ftol': tol, 'gtol': tol, 'finite_diff_rel_step': 0.01},
+        #                    callback=minimize_callback)
+        # case 'brute':
+        #     Ns = 4
+        #     x_grids = [np.linspace(b[0], b[1], Ns) for b in bds]
+        #     grids = np.meshgrid(*x_grids)
+        #     pts = np.vstack(list(map(np.ravel, grids))).T
+        #     res = -spt100_log_likelihood(pts, DATA, SURR, comp=comp)
+        #     i = np.argmin(res)
+        #     res = {'fun': res[i], 'x': pts[i, :]}
+        # case 'bopt':
+        #     res = skopt.gp_minimize(obj_fun, bds, x0=x0, n_calls=100,
+        #                             acq_func="gp_hedge", acq_optimizer='lbfgs', n_initial_points=50,
+        #                             initial_point_generator='lhs', verbose=False, xi=0.01, noise=0.001)
 
     # res_dict = {'x0': x0, 'bds': bds, 'res': res}
     # with open(Path(surr_dir) / 'mle-result.pkl', 'wb') as fd:
@@ -161,8 +207,15 @@ def run_laplace():
 
 
 if __name__ == '__main__':
+    M = 10
+    comp = 'Plume'
+    optimizer = 'nelder-mead'
+
+    # Plot slices of likelihood
+    # likelihood_slice(comp, M)
+
     # Compute MLE
-    run_mle(optimizer='brute', model='Thruster')
+    run_mle(optimizer, comp, M)
 
     # Obtain Laplace approximation at the MLE point
     # run_laplace()
