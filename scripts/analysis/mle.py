@@ -5,16 +5,16 @@ import time
 
 import numpy as np
 import matplotlib.pyplot as plt
-from joblib import Parallel
 from scipy.optimize import direct, minimize, differential_evolution, OptimizeResult
-from amisc.utils import approx_hess
+from amisc.utils import approx_hess, ndscatter, batch_normal_sample, ax_default
 import skopt
+import h5py
 
 from hallmd.data.loader import spt100_data
 from hallmd.models.thruster import uion_reconstruct
 from hallmd.models.plume import jion_reconstruct
 from hallmd.models.pem import pem_v0
-from hallmd.utils import plot_slice
+from hallmd.utils import plot_slice, is_positive_definite, nearest_positive_definite, batch_normal_pdf, dram, autocorrelation
 
 OPTIMIZER_ITER = 1
 START_TIME = 0
@@ -22,53 +22,54 @@ PROJECT_ROOT = Path('../..')
 surr_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-01-03T02.35.53' / 'multi-fidelity').glob('amisc_*'))[0]
 SURR = pem_v0(from_file=surr_dir / 'sys' / 'sys_final.pkl')
 DATA = spt100_data()
+COMP = 'System'
+THETA_VARS = [v for v in SURR[COMP].x_vars if v.param_type == 'calibration']
+QOI_MAP = {'Cathode': ['V_cc'], 'Thruster': ['T', 'uion'], 'Plume': ['jion'], 'System': ['V_cc', 'T', 'uion', 'jion']}
+QOIS = QOI_MAP.get(COMP)
+
+# Parse experimental data
+QOI_USE, QOI_CNT = [], []
+XE_ARRAY = np.zeros((0, 3))  # (PB, Va, mdot_a)
+# sigma_y = np.zeros((0,))
+# Ny = np.zeros((0,))
+for qoi in QOIS:
+    exp_data = DATA.get(qoi)[0]
+    XE_ARRAY = np.concatenate((XE_ARRAY, exp_data.get('x')), axis=0)
+    # sigma_y = np.hstack((sigma_y, np.sqrt(exp_data.get('var_y').flatten())))
+    # Ny = np.hstack((Ny, np.prod(exp_data.get('y').shape)))
+    qoi_add = [qoi] if exp_data.get('loc', None) is None else \
+        [str(v) for v in SURR.coupling_vars if str(v).startswith(qoi)]
+    QOI_USE.extend(qoi_add)
+    QOI_CNT.append(len(qoi_add))
 
 
-def spt100_log_likelihood(theta, data, surr, comp='System', M=100):
+def spt100_log_likelihood(theta, M=100):
     """Compute the log likelihood for the SPT-100 dataset."""
-    theta = np.atleast_1d(theta)
-    qoi_map = {'Cathode': ['V_cc'], 'Thruster': ['T', 'uion'], 'Plume': ['jion'], 'System': ['V_cc', 'T', 'uion', 'jion']}
-    theta_vars = [v for v in surr[comp].x_vars if v.param_type == 'calibration']
-    qois = qoi_map.get(comp)
-
-    # Parse experimental data
-    qois_use, qoi_cnt = [], []
-    xe_array = np.zeros((0, 3))  # (PB, Va, mdot_a)
-    sigma_y = np.zeros((0,))
-    Ny = np.zeros((0,))
-    for qoi in qois:
-        exp_data = data.get(qoi)[0]
-        xe_array = np.concatenate((xe_array, exp_data.get('x')), axis=0)
-        sigma_y = np.hstack((sigma_y, np.sqrt(exp_data.get('var_y').flatten())))
-        Ny = np.hstack((Ny, np.prod(exp_data.get('y').shape)))
-        qoi_add = [qoi] if exp_data.get('loc', None) is None else \
-            [str(v) for v in surr.coupling_vars if str(v).startswith(qoi)]
-        qois_use.extend(qoi_add)
-        qoi_cnt.append(len(qoi_add))
-
     # Sample inputs and compute model
-    Nx = xe_array.shape[0]
+    theta = np.atleast_1d(theta)
+    Nx = XE_ARRAY.shape[0]
     sample_shape = theta.shape[:-1] + (M, Nx)
-    nominal = {str(v): theta[..., i, np.newaxis, np.newaxis] for i, v in enumerate(theta_vars)}
-    nominal.update({'r_m': 1, 'PB': xe_array[:, 0], 'Va': xe_array[:, 1], 'mdot_a': xe_array[:, 2]})
+    nominal = {str(v): theta[..., i, np.newaxis, np.newaxis] for i, v in enumerate(THETA_VARS)}
+    nominal.update({'r_m': 1, 'PB': XE_ARRAY[:, 0], 'Va': XE_ARRAY[:, 1], 'mdot_a': XE_ARRAY[:, 2]})
     constants = {'calibration', 'r_m'}
-    xs = surr.sample_inputs(sample_shape, use_pdf=True, nominal=nominal, constants=constants).astype(theta.dtype)
-    ys = surr.predict(xs, qoi_ind=qois_use, training=True)
+    xs = SURR.sample_inputs(sample_shape, use_pdf=True, nominal=nominal, constants=constants).astype(theta.dtype)
+    ys = SURR.predict(xs, qoi_ind=QOI_USE, training=True)
 
-    # Initialize the constant part of the likelihood
-    const = -np.sum(Ny) * np.log(M) - (1/2) * np.sum(Ny) * np.log(2*np.pi) - np.sum(np.log(sigma_y))
-    log_likelihood = np.ones((*theta.shape[:-1], len(qois)), dtype=theta.dtype) * const
+    # Initialize/ignore the constant part of the likelihood
+    # const = -np.sum(Ny) * np.log(M) - (1/2) * np.sum(Ny) * np.log(2*np.pi) - np.sum(np.log(sigma_y))
+    # log_likelihood = np.ones((*theta.shape[:-1], len(qois)), dtype=theta.dtype) * const
+    log_likelihood = np.zeros((*theta.shape[:-1], len(QOIS)), dtype=theta.dtype)
 
     xe_idx = 0
     qoi_idx = 0
-    for k, qoi in enumerate(qois):
-        exp_data = data.get(qoi)[0]
+    for k, qoi in enumerate(QOIS):
+        exp_data = DATA.get(qoi)[0]
         xe, ye, var_y, loc = [exp_data.get(ele, None) for ele in ('x', 'y', 'var_y', 'loc')]
-        y_curr = ys[..., xe_idx:xe_idx + xe.shape[0], qoi_idx:qoi_idx + qoi_cnt[k]]     # (..., M, Ne, ydim)
+        y_curr = ys[..., xe_idx:xe_idx + xe.shape[0], qoi_idx:qoi_idx + QOI_CNT[k]]     # (..., M, Ne, ydim)
         std = np.sqrt(var_y)
 
         xe_idx += xe.shape[0]
-        qoi_idx += qoi_cnt[k]
+        qoi_idx += QOI_CNT[k]
 
         # Reconstruct and interpolate spatial qois (case-by-case basis)
         match qoi:
@@ -86,17 +87,36 @@ def spt100_log_likelihood(theta, data, surr, comp='System', M=100):
         log_like = np.squeeze(max_log_like, axis=-3) + np.log(np.sum(np.exp(log_like - max_log_like), axis=-3))
         log_likelihood[..., k] += np.sum(log_like, axis=(-1, -2))
 
-    return np.sum(log_likelihood, axis=-1)  # (...,)
+    return np.atleast_1d(np.sum(log_likelihood, axis=-1))  # (...,)
 
 
-def likelihood_slice(comp='System', M=1000):
-    """Plot 1d slices of the likelihood function"""
+def spt100_log_prior(theta):
+    """Compute the log prior of the calibration parameters"""
+    theta = np.atleast_1d(theta)
+    with np.errstate(invalid='ignore', divide='ignore'):
+        return np.atleast_1d(np.sum([np.log(v.pdf(theta[..., i])) for i, v in enumerate(THETA_VARS)], axis=0))  # (...,)
+
+
+def spt100_log_posterior(theta, M=10):
+    """Compute the un-normalized log posterior of PEM v0 calibration params given the SPT-100 dataset"""
+    return spt100_log_likelihood(theta, M=M) + spt100_log_prior(theta)
+
+
+def pdf_slice(pdfs=None, comp='System', M=1000):
+    """Plot 1d slices of the likelihood/prior/posterior function(s)"""
+    pdf_map = {'Prior': lambda theta: spt100_log_prior(theta, SURR, comp=comp),
+               'Likelihood': lambda theta: spt100_log_likelihood(theta, DATA, SURR, comp=comp, M=M),
+               'Posterior': lambda theta: spt100_log_posterior(theta, DATA, SURR, comp=comp, M=M)}
+    if pdfs is None:
+        pdfs = ['Prior', 'Likelihood', 'Posterior']
+    pdfs = [pdfs] if isinstance(pdfs, str) else pdfs
     theta_vars = [v for v in SURR[comp].x_vars if v.param_type == 'calibration']
     bds = [v.bounds() for v in theta_vars]
     x0 = [v.nominal for v in theta_vars]
-    fun = lambda theta: spt100_log_likelihood(theta.astype(np.float32), DATA, SURR, comp=comp, M=M)
-    fig, ax = plot_slice(fun, bds, x0=x0, N=20, random_walk=True, xlabels=[v.to_tex(units=True) for v in theta_vars],
-                         ylabels=['Log likelihood'], x_idx=list(np.arange(0, len(bds))))
+    funcs = [pdf_map.get(pdf) for pdf in pdfs]
+    fig, ax = plot_slice(funcs, bds, x0=x0, N=15, random_walk=False, xlabels=[v.to_tex(units=True) for v in theta_vars],
+                         ylabels=['Log PDF'], fun_labels=pdfs,
+                         x_idx=list(np.arange(0, len(bds))))
     plt.show()
 
 
@@ -180,42 +200,120 @@ def run_mle(optimizer='nelder-mead', comp='System', M=100):
     print(f'Opimization result: {res}')
 
 
-def run_laplace():
-    # Load experimental data
-    base_path, opt_params = None, None  # TODO: Write laplace function using surrogate
-    data = spt100_data()
-
-    with Parallel(n_jobs=-1, verbose=0) as ppool:
-        # Form log likelihood function
-        obj_fun = lambda theta: -spt100_log_likelihood(theta, data, base_path=str(base_path), ppool=ppool)
-
-        # Evaluate the hessian at the MLE point
-        hess = approx_hess(obj_fun, opt_params)
+def run_laplace(M=100):
+    mle_pt = np.array([v.nominal for v in SURR.exo_vars if v.param_type == 'calibration'])
+    obj_fun = lambda theta: spt100_log_posterior(theta, DATA, SURR, comp='System', M=M)
+    hess = np.squeeze(approx_hess(obj_fun, mle_pt), axis=0)
 
     # Try to compute hess_inv and save
-    res_dict = {'mle': opt_params, 'hess': hess}
+    res_dict = {'mle': mle_pt, 'hess': hess}
     try:
-        hess_inv = np.linalg.pinv(hess)
+        hess_inv = np.linalg.pinv(-hess)
         res_dict['hess_inv'] = hess_inv
+        if not is_positive_definite(hess_inv):
+            res_dict['hess_inv_psd'] = nearest_positive_definite(hess_inv)
     except Exception as e:
         print(f'Exception when computing hess_inv: {e}')
     finally:
-        with open(base_path / 'laplace-result.pkl', 'wb') as fd:
+        with open('laplace-result.pkl', 'wb') as fd:
             pickle.dump(res_dict, fd)
 
     print(f'Laplace approximation finished!')
 
 
+def show_laplace():
+    with open('laplace-result.pkl', 'rb') as fd:
+        res_dict = pickle.load(fd)
+    map = res_dict['mle']
+    cov = res_dict['hess_inv_psd']
+    samples = batch_normal_sample(map, cov, size=100)
+    dim = 6
+    labels = [v.to_tex(units=True) for v in SURR.x_vars if v.param_type == 'calibration']
+    z = spt100_log_posterior(samples, DATA, SURR, comp='System', M=10)
+    ndscatter(samples[:, :dim], subplot_size=2, labels=labels[:dim], z=z)
+    plt.show()
+
+
+def run_mcmc(file='dram-result.h5', clean=False):
+    if clean:
+        with h5py.File(file, 'a') as fd:
+            group = fd.get('mcmc', None)
+            if group is not None:
+                del fd['mcmc']
+
+    nwalk, ndim, niter = 16, 4, 30
+    means = np.random.rand(ndim)
+    cov = np.random.rand(ndim, ndim)
+    cov = cov.T @ cov
+    p0 = np.random.rand(nwalk, ndim)
+    cov0 = np.eye(ndim)
+
+    def log_gaussian(theta):
+        return batch_normal_pdf(theta, means, cov, logpdf=True)
+
+    def log_banana(theta):
+        x1p = theta[..., 0]
+        x2p = theta[..., 1] + (x1p**2 + 1)
+        xp = np.concatenate((x1p[..., np.newaxis], x2p[..., np.newaxis]), axis=-1)
+        sigma = np.array([[1, 0.9], [0.9, 1]])
+        return batch_normal_pdf(xp, [0, 0], sigma, logpdf=True)
+
+    with open('laplace-result.pkl', 'rb') as fd:
+        data = pickle.load(fd)
+        cov0 = data['hess_inv_psd']
+        p0 = batch_normal_sample(data['mle'], cov0, nwalk)
+
+    dram(spt100_log_posterior, p0, cov0, niter=niter, filename=file)
+
+
+def show_mcmc(file='dram-result.h5', burnin=0.1):
+    with h5py.File(file, 'r') as fd:
+        samples = fd['mcmc/chain']
+        accepted = fd['mcmc/accepted']
+        niter, nwalk, ndim = samples.shape
+        samples = samples[int(burnin*niter):, ...]
+        colors = ['r', 'g', 'b', 'k']
+        # labels = [f'x{i}' for i in range(ndim)]
+        labels = [str(v) for v in SURR.exo_vars if v.param_type == 'calibration']
+
+        lags, autos, iac, ess = autocorrelation(samples, step=5)
+        print(f'Average acceptance ratio: {np.mean(accepted)/niter:.4f}')
+        print(f'Average IAC: {np.mean(iac):.4f}')
+        print(f'Average ESS: {np.mean(ess):.4f}')
+
+        nchains = min(4, nwalk)
+        nshow = min(4, ndim)
+
+        # Integrated auto-correlation plot
+        fig, ax = plt.subplots()
+        for i in range(nshow):
+            ax.plot(lags, np.mean(autos[:, :, i], axis=1), c=colors[i], ls='-', label=labels[i])
+        ax_default(ax, 'Lag', 'Auto-correlation', legend=True)
+
+        # Mixing plots
+        fig, axs = plt.subplots(nshow, 1, sharex=True)
+        for i in range(nshow):
+            ax = axs[i]
+            for k in range(nchains):
+                ax.plot(samples[:, k, i], colors[k], alpha=0.4, ls='-')
+            ax.set_ylabel(labels[i])
+        axs[-1].set_xlabel('Iterations')
+        fig.set_size_inches(7, nshow*2)
+        fig.tight_layout()
+
+        # Marginal corner plot
+        fig, ax = ndscatter(samples[..., :nshow].reshape((-1, nshow)), subplot_size=3, labels=labels, plot='hist')
+        plt.show()
+
+
 if __name__ == '__main__':
     M = 10
-    comp = 'Plume'
+    comp = 'Thruster'
     optimizer = 'nelder-mead'
 
-    # Plot slices of likelihood
-    # likelihood_slice(comp, M)
-
-    # Compute MLE
-    run_mle(optimizer, comp, M)
-
-    # Obtain Laplace approximation at the MLE point
-    # run_laplace()
+    # pdf_slice(pdfs='Prior', comp=comp, M=M)
+    # run_mle(optimizer, comp, M)
+    # run_laplace(M=M)
+    # show_laplace()
+    run_mcmc()
+    show_mcmc()

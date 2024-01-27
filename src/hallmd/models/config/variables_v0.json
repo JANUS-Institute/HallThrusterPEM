@@ -5,7 +5,7 @@
         "description": "Cathode electron temperature",
         "units": "eV",
         "param_type": "calibration",
-        "nominal": 4.93,
+        "nominal": 4.9,
         "domain": [1, 5],
         "rv_type": "uniform_bds",
         "rv_params": [1, 5]
@@ -71,7 +71,7 @@
         "description": "Neutral velocity",
         "units": "m/s",
         "param_type": "calibration",
-        "nominal": 100,
+        "nominal": 103,
         "domain": [100, 500],
         "rv_type": "uniform_bds",
         "rv_params": [100, 500]

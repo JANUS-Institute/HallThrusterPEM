@@ -19,6 +19,9 @@ dependencies = [
     "scikit-optimize>=0.9.0",
     "scipy>=1.11.4",
     "amisc>=0.2.0",
+    "emcee>=3.1.4",
+    "tqdm>=4.66.1",
+    "h5py>=3.10.0",
 ]
 requires-python = ">=3.11"
 readme = "docs/README.md"
