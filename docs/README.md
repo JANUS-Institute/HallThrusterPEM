@@ -37,9 +37,9 @@ for i in range(Nx):
     nominal = dict(PB=inputs[i, 0], Va=inputs[i, 1], mdot_a=inputs[i, 2])
     xs[i, :, :] = system.sample_inputs(num_samples, use_pdf=True, nominal=nominal)
     
-ys = system.predict(xs, qoi_ind='T')*1000               # Predicted thrust [mN]
-y = np.squeeze(data['y'])*1000                          # Experimental thrust [mN]
-y_err = np.squeeze(2 * np.sqrt(data['var_y']))*1000     # Experimental noise [mN]
+ys = system.predict(xs, qoi_ind='T')*1000       # Predicted thrust [mN]
+y = data['y']*1000                              # Experimental thrust [mN]
+y_err = 2 * np.sqrt(data['var_y'])*1000         # Experimental noise [mN]
 
 fig, ax = plt.subplots()
 pressure = 10 ** data[:, 0]

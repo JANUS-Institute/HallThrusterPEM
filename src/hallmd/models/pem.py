@@ -14,7 +14,6 @@ Includes
 from pathlib import Path
 import pickle
 from concurrent.futures import Executor
-from importlib import resources
 
 from amisc.system import ComponentSpec, SystemSurrogate
 from amisc.rv import UniformRV
@@ -23,9 +22,9 @@ from amisc.utils import load_variables
 from hallmd.models.cc import cc_feedforward
 from hallmd.models.thruster import hallthruster_jl_wrapper
 from hallmd.models.plume import plume_feedforward
-from hallmd.models import config as model_config_dir
+from hallmd.utils import model_config_dir
 
-CONFIG_DIR = resources.files(model_config_dir)
+CONFIG_DIR = model_config_dir()
 
 
 def pem_v0(save_dir: str | Path = None, executor: Executor = None, init: bool = True,

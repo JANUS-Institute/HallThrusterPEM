@@ -1,18 +1,17 @@
 """Testing for wrapper models."""
-from importlib import resources
-
-from amisc.utils import load_variables, ax_default
+from amisc.utils import load_variables
 import numpy as np
 import matplotlib.pyplot as plt
+from uqtils import ax_default
 
 from hallmd.models.examples import chatgpt_system
 from hallmd.models.thruster import hallthruster_jl_wrapper
 from hallmd.models.pem import pem_v0
 from hallmd.models.cc import cc_feedforward
 from hallmd.models.plume import plume_feedforward
-from hallmd.models import config as config_dir
+from hallmd.utils import model_config_dir
 
-CONFIG_DIR = resources.files(config_dir)
+CONFIG_DIR = model_config_dir()
 
 
 def test_example():

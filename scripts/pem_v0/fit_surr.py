@@ -15,7 +15,6 @@ from datetime import timezone
 import os
 from pathlib import Path
 import pickle
-from importlib import resources
 
 import dill
 from mpi4py import MPI
@@ -23,12 +22,12 @@ MPI.pickle.__init__(dill.dumps, dill.loads)
 from mpi4py.futures import MPICommExecutor
 import numpy as np
 import matplotlib.pyplot as plt
-from amisc.utils import ax_default
+from uqtils import ax_default
 
 from hallmd.models.pem import pem_v0
-from hallmd.models import config as model_config_dir
+from hallmd.utils import model_config_dir
 
-CONFIG_DIR = resources.files(model_config_dir)
+CONFIG_DIR = model_config_dir()
 
 
 def train_mf(max_runtime_hr=3):

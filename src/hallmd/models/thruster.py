@@ -21,7 +21,6 @@ import copy
 import json
 import tempfile
 import os
-from importlib import resources
 import random
 import string
 
@@ -29,14 +28,12 @@ import juliacall
 import numpy as np
 from joblib import Parallel, delayed, cpu_count
 from joblib.externals.loky import set_loky_pickler
-from scipy.interpolate import interp1d
 from amisc.utils import load_variables, get_logger
 
-import hallmd.models.config as model_config_dir
-from hallmd.utils import ModelRunException, data_write
+from hallmd.utils import ModelRunException, data_write, model_config_dir
 
 Q_E = 1.602176634e-19   # Fundamental charge (C)
-CONFIG_DIR = resources.files(model_config_dir)
+CONFIG_DIR = model_config_dir()
 
 
 def hallthruster_jl_input(thruster_input: dict) -> dict:
@@ -162,7 +159,7 @@ def hallthruster_jl_wrapper(x: np.ndarray, alpha: tuple = (2, 2), *, compress: b
                             output_dir: str | Path = None, n_jobs: int = -1,
                             config: str | Path = CONFIG_DIR / 'hallthruster_jl.json',
                             variables: str | Path = CONFIG_DIR / 'variables_v0.json',
-                            svd_file: str | Path = CONFIG_DIR / 'thruster_svd.pkl',
+                            svd_data: dict | str | Path = CONFIG_DIR / 'thruster_svd.pkl',
                             hf_override: tuple | bool = None, thruster: str = 'SPT-100'):
     """Wrapper function for Hallthruster.jl.
 
@@ -172,7 +169,7 @@ def hallthruster_jl_wrapper(x: np.ndarray, alpha: tuple = (2, 2), *, compress: b
         definitions of the variables or add new variables, or you can specify a different file.
 
     !!! Info "Dimension reduction"
-        If you specify `compress=True`, then the `svd_file` will be used to compress the ion velocity profile. The
+        If you specify `compress=True`, then the `svd_data` will be used to compress the ion velocity profile. The
         default is a file named `thruster_svd.pkl` in the `config` directory. The format of the `svd_file` is a Python
         `.pkl` save file with the fields `A` &rarr; $N\\times M$ SVD data matrix and `vtr` &rarr; $r\\times M$ the
         linear projection matrix from high dimension $M$ to low dimension $r$. See the theory page for more details.
@@ -184,7 +181,8 @@ def hallthruster_jl_wrapper(x: np.ndarray, alpha: tuple = (2, 2), *, compress: b
     :param n_jobs: number of jobs to run in parallel, use all available cpus if -1
     :param config: path to .json config file to load static thruster simulation configs (.json)
     :param variables: path to .json file that specifies all input variables
-    :param svd_file: path to a .pkl file that is used to compress the ion velocity profile
+    :param svd_data: path to a .pkl file that is used to compress the ion velocity profile, can also directly pass in
+                     the `dict` data from the .pkl file
     :param hf_override: the fidelity indices to override `alpha`
     :param thruster: the name of the thruster to simulate (must be defined in `config`)
     :returns: `dict(y, files, cost)`, the model outputs `y=(..., ydim)`, list of output files, and avg model cpu time;
@@ -216,14 +214,15 @@ def hallthruster_jl_wrapper(x: np.ndarray, alpha: tuple = (2, 2), *, compress: b
 
     # Load svd params for dimension reduction of ion velocity profile
     if compress:
-        with open(svd_file, 'rb') as fd:
-            svd_data = pickle.load(fd)
-            vtr = svd_data['vtr']  # (r x M)
-            A = svd_data['A']
-            A_mu = np.mean(A, axis=0)
-            A_std = np.std(A, axis=0)
-            r, M = vtr.shape
-            ydim = r + len(output_list) - 1
+        if not isinstance(svd_data, dict):
+            with open(svd_data, 'rb') as fd:
+                svd_data = pickle.load(fd)
+        vtr = svd_data['vtr']  # (r x M)
+        A = svd_data['A']
+        A_mu = np.mean(A, axis=0)
+        A_std = np.std(A, axis=0)
+        r, M = vtr.shape
+        ydim = r + len(output_list) - 1
     else:
         M = Ncells + 2
         ydim = M + len(output_list) - 1
@@ -360,17 +359,18 @@ def hallthruster_jl_wrapper(x: np.ndarray, alpha: tuple = (2, 2), *, compress: b
 
 
 def uion_reconstruct(xr: np.ndarray, z: np.ndarray = None, L: float | np.ndarray = 0.08,
-                     svd_file: str | Path = CONFIG_DIR / 'thruster_svd.pkl') -> tuple[np.ndarray, np.ndarray]:
+                     svd_data: dict | str | Path = CONFIG_DIR / 'thruster_svd.pkl') -> tuple[np.ndarray, np.ndarray]:
     """Reconstruct an ion velocity profile, interpolate to `z` if provided.
 
     !!! Warning
-        The `svd_file` must be the **same** as was used with `hallthruster_jl_wrapper` when compressing the data, i.e.
+        The `svd_data` must be the **same** as was used with `hallthruster_jl_wrapper` when compressing the data, i.e.
         the same SVD data must be used to reconstruct here.
 
     :param xr: `(... r)` The reduced dimension output of `hallthruster_jl_wrapper` (just the ion velocity profile)
     :param z: `(Nz,)` The axial `z` grid points to interpolate to (in meters, between 0 and `L`)
     :param L: `(...,)` The full domain length of the reconstructed grid(s)
-    :param svd_file: path to a `.pkl` file that is used to compress/reconstruct the ion velocity profile
+    :param svd_data: path to a `.pkl` file that is used to compress/reconstruct the ion velocity profile, can also pass
+                     the `dict` of svd data directly in
     :returns: `z, uion_interp` - `(..., Nz or M)` The reconstructed (and potentially interpolated) ion velocity
               profile(s), corresponds to `z=(0, 0.08)` m with `M=202` points by default
     """
@@ -378,13 +378,17 @@ def uion_reconstruct(xr: np.ndarray, z: np.ndarray = None, L: float | np.ndarray
         z = z.astype(xr.dtype)
     L = np.atleast_1d(L)
     interp_normal = len(L.shape) == 1 and L.shape[0] == 1
-    with open(svd_file, 'rb') as fd:
-        svd_data = pickle.load(fd)
-        vtr = svd_data['vtr']       # (r x M)
-        A = svd_data['A']
-        A_mu = np.mean(A, axis=0)
-        A_std = np.std(A, axis=0)
-        r, M = vtr.shape
+
+    # Load SVD data from file
+    if not isinstance(svd_data, dict):
+        with open(svd_data, 'rb') as fd:
+            svd_data = pickle.load(fd)
+    vtr = svd_data['vtr']       # (r x M)
+    A = svd_data['A']
+    A_mu = np.mean(A, axis=0)
+    A_std = np.std(A, axis=0)
+    r, M = vtr.shape
+
     n_cells = M - 2
     dz = L / n_cells
     zg = np.zeros(L.shape + (M,))  # zg is the axial z grid points for the reconstructed field (of size M)

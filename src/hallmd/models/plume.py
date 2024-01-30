@@ -9,7 +9,6 @@ Includes
 """
 import pickle
 from pathlib import Path
-from importlib import resources
 
 from amisc.utils import get_logger
 import numpy as np
@@ -17,23 +16,23 @@ from scipy.special import erfi
 from scipy.integrate import simps
 from scipy.interpolate import interp1d
 
-from hallmd.utils import ModelRunException
-from hallmd.models import config as model_config_dir
+from hallmd.utils import ModelRunException, model_config_dir
 
 Q_E = 1.602176634e-19   # Fundamental charge (C)
 kB = 1.380649e-23       # Boltzmann constant (J/K)
 TORR_2_PA = 133.322
 LOGGER = get_logger(__name__)
-CONFIG_DIR = resources.files(model_config_dir)
+CONFIG_DIR = model_config_dir()
 
 
 def plume_feedforward(x: np.ndarray, compress: bool = False,
-                      svd_file: str | Path = CONFIG_DIR / 'plume_svd.pkl'):
+                      svd_data: dict | str | Path = CONFIG_DIR / 'plume_svd.pkl'):
     """Compute the semi-empirical ion current density ($j_{ion}$) plume model.
 
     :param x: `(..., xdim)` Plume inputs
     :param compress: Whether to return the dimension-reduced $j_{ion}$ profile
-    :param svd_file: Path to `.pkl` SVD data file for compressing the ion current density profile
+    :param svd_data: Path to `.pkl` SVD data file for compressing the ion current density profile, or can directly
+                     pass in the svd data as a `dict`
     :raises ModelRunException: if anything fails
     :returns: `y` - `(..., ydim)` Plume outputs
     """
@@ -51,14 +50,15 @@ def plume_feedforward(x: np.ndarray, compress: bool = False,
 
     # Load svd params for dimension reduction
     if compress:
-        with open(svd_file, 'rb') as fd:
-            svd_data = pickle.load(fd)
-            vtr = svd_data['vtr']       # (r x M)
-            A = svd_data['A']
-            A_mu = np.mean(A, axis=0)
-            A_std = np.std(A, axis=0)
-            r, M = vtr.shape
-            ydim = r + 1
+        if not isinstance(svd_data, dict):
+            with open(svd_data, 'rb') as fd:
+                svd_data = pickle.load(fd)
+        vtr = svd_data['vtr']       # (r x M)
+        A = svd_data['A']
+        A_mu = np.mean(A, axis=0)
+        A_std = np.std(A, axis=0)
+        r, M = vtr.shape
+        ydim = r + 1
     else:
         M = 100
         ydim = M + 1
@@ -114,7 +114,7 @@ def plume_feedforward(x: np.ndarray, compress: bool = False,
 
 
 def jion_reconstruct(xr: np.ndarray, alpha: np.ndarray = None,
-                     svd_file: str | Path = CONFIG_DIR / 'plume_svd.pkl') -> tuple[np.ndarray, np.ndarray]:
+                     svd_data: dict | str | Path = CONFIG_DIR / 'plume_svd.pkl') -> tuple[np.ndarray, np.ndarray]:
     """Reconstruct an ion current density profile, interpolate to `alpha` if provided.
 
     !!! Warning
@@ -122,17 +122,20 @@ def jion_reconstruct(xr: np.ndarray, alpha: np.ndarray = None,
 
     :param xr: `(... r)` The reduced dimension output of `plume_feedforward()`, (just the ion current density)
     :param alpha: `(Nx,)` The alpha grid points to interpolate to (in radians, between -pi/2 and pi/2)
-    :param svd_file: Path to `.pkl` SVD data file for compressing the ion current density profile
+    :param svd_data: Path to `.pkl` SVD data file for compressing the ion current density profile, can also pass the
+                     `dict` of svd data directly in
     :returns: `alpha`, `jion_interp` - `(..., Nx or M)` The reconstructed (and optionally interpolated) jion profile(s),
                     corresponds to `alpha=(0, 90)` deg with `M=100` points by default
     """
-    with open(svd_file, 'rb') as fd:
-        svd_data = pickle.load(fd)
-        vtr = svd_data['vtr']       # (r x M)
-        A = svd_data['A']
-        A_mu = np.mean(A, axis=0)
-        A_std = np.std(A, axis=0)
-        r, M = vtr.shape
+    if not isinstance(svd_data, dict):
+        with open(svd_data, 'rb') as fd:
+            svd_data = pickle.load(fd)
+    vtr = svd_data['vtr']       # (r x M)
+    A = svd_data['A']
+    A_mu = np.mean(A, axis=0)
+    A_std = np.std(A, axis=0)
+    r, M = vtr.shape
+
     alpha_g = np.linspace(0, np.pi/2, M, dtype=xr.dtype)
     jion_g = (np.squeeze(vtr.T @ xr[..., np.newaxis], axis=-1) * A_std + A_mu).astype(xr.dtype)  # (..., M)
 

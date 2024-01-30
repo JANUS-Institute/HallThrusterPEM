@@ -19,16 +19,15 @@ import os
 from pathlib import Path
 import pickle
 import shutil
-from importlib import resources
 
 import numpy as np
 import matplotlib.pyplot as plt
-from amisc.utils import ax_default
+from uqtils import ax_default
 
 from hallmd.models.pem import pem_v0
-from hallmd.models import config as model_config_dir
+from hallmd.utils import model_config_dir
 
-CONFIG_DIR = resources.files(model_config_dir)
+CONFIG_DIR = model_config_dir()
 
 
 def gen_svd_data(N=500, r_pct=0.999):
