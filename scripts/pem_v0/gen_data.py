@@ -112,7 +112,7 @@ def gen_svd_data(N=500, r_pct=0.999):
     return root_dir
 
 
-def gen_test_set(N=1000):
+def gen_test_set(N=500):
     """Generate a test set of high-fidelity model solves."""
     timestamp = datetime.datetime.now(tz=timezone.utc).isoformat().split('.')[0].replace(':', '.')
     root_dir = Path('results') / f'test_{timestamp}'

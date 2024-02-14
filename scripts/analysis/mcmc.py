@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 from scipy.optimize import direct, minimize, differential_evolution, OptimizeResult
 import skopt
 import h5py
+from joblib import Parallel
 
 from hallmd.data.loader import spt100_data
 from hallmd.models.thruster import uion_reconstruct
@@ -19,8 +20,9 @@ from hallmd.utils import model_config_dir
 OPTIMIZER_ITER = 1
 START_TIME = 0
 PROJECT_ROOT = Path('../..')
+TRAINING = False
 surr_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-01-03T02.35.53' / 'multi-fidelity').glob('amisc_*'))[0]
-SURR = pem_v0(from_file=surr_dir / 'sys' / 'sys_final.pkl')
+SURR = pem_v0(from_file=surr_dir / 'sys' / f'sys_final{"_train" if TRAINING else ""}.pkl')
 DATA = spt100_data()
 COMP = 'System'
 THETA_VARS = [v for v in SURR[COMP].x_vars if v.param_type == 'calibration']
@@ -42,7 +44,7 @@ for qoi in QOIS:
     QOI_USE.extend(qoi_add)
     QOI_CNT.append(len(qoi_add))
 NOMINAL = {'r_m': 1, 'PB': XE_ARRAY[:, 0], 'Va': XE_ARRAY[:, 1], 'mdot_a': XE_ARRAY[:, 2]}
-CONSTANTS = {'calibration', 'r_m'}
+CONSTANTS = {'calibration', 'other', 'operating'}
 
 with open(model_config_dir() / 'plume_svd.pkl', 'rb') as fd:
     PLUME_SVD = pickle.load(fd)
@@ -50,19 +52,20 @@ with open(model_config_dir() / 'thruster_svd.pkl', 'rb') as fd:
     THRUSTER_SVD = pickle.load(fd)
 
 
-def spt100_log_likelihood(theta, M=100):
+def spt100_log_likelihood(theta, M=100, ppool=None):
     """Compute the log likelihood for the SPT-100 dataset."""
     # Sample inputs and compute model
     theta = np.atleast_1d(theta)
     sample_shape = theta.shape[:-1] + (M, XE_ARRAY.shape[0])
     NOMINAL.update({str(v): theta[..., i, np.newaxis, np.newaxis] for i, v in enumerate(THETA_VARS)})
     xs = SURR.sample_inputs(sample_shape, use_pdf=True, nominal=NOMINAL, constants=CONSTANTS).astype(theta.dtype)
-    ys = SURR.predict(xs, qoi_ind=QOI_USE, training=True)
+    ys = SURR.predict(xs, qoi_ind=QOI_USE, training=TRAINING, ppool=ppool)
 
     # Initialize/ignore the constant part of the likelihood
     # const = -np.sum(Ny) * np.log(M) - (1/2) * np.sum(Ny) * np.log(2*np.pi) - np.sum(np.log(sigma_y))
+    # const = -np.log(M) - (1/2) * np.sum(Ny) * np.log(2*np.pi) - np.sum(np.log(sigma_y))
     # log_likelihood = np.ones((*theta.shape[:-1], len(qois)), dtype=theta.dtype) * const
-    log_likelihood = np.zeros((*theta.shape[:-1], len(QOIS)), dtype=theta.dtype)
+    log_likelihood = np.empty((*theta.shape[:-1], M, len(QOIS)), dtype=theta.dtype)
 
     xe_idx = 0
     qoi_idx = 0
@@ -86,40 +89,55 @@ def spt100_log_likelihood(theta, M=100):
         std = std.reshape(y_curr.shape[-2:]).astype(theta.dtype)
 
         # Evaluate the log likelihood for this qoi
-        log_like = -0.5 * ((ye - y_curr) / std) ** 2
-        max_log_like = np.max(log_like, axis=-3, keepdims=True)
-        log_like = np.squeeze(max_log_like, axis=-3) + np.log(np.sum(np.exp(log_like - max_log_like), axis=-3))
-        log_likelihood[..., k] += np.sum(log_like, axis=(-1, -2))
+        log_likelihood[..., k] = np.sum(-0.5 * ((ye - y_curr) / std) ** 2, axis=(-1, -2))
 
-    return np.atleast_1d(np.sum(log_likelihood, axis=-1))  # (...,)
+    # Reduce and combine
+    log_likelihood = np.sum(log_likelihood, axis=-1)    # (..., M)
+    max_log_like = np.max(log_likelihood, axis=-1, keepdims=True)
+    log_likelihood = np.squeeze(max_log_like, axis=-1) + np.log(np.sum(np.exp(log_likelihood - max_log_like), axis=-1))
+
+    return np.atleast_1d(log_likelihood)  # (...,)
 
 
 def spt100_log_prior(theta):
     """Compute the log prior of the calibration parameters"""
     theta = np.atleast_1d(theta)
     with np.errstate(invalid='ignore', divide='ignore'):
-        return np.atleast_1d(np.sum([np.log(v.pdf(theta[..., i])) for i, v in enumerate(THETA_VARS)], axis=0))  # (...,)
+        l = []
+        for i, v in enumerate(THETA_VARS):
+            bds = v.bounds()
+            prior = np.log(v.pdf(theta[..., i]))
+            bds_idx = np.logical_or(theta[..., i] < bds[0], theta[..., i] > bds[1])
+            prior[bds_idx] = -np.inf
+            l.append(prior)
+        return np.atleast_1d(np.sum(l, axis=0)).astype(theta.dtype)  # (...,)
 
 
-def spt100_log_posterior(theta, M=10):
+def spt100_log_posterior(theta, M=200, ppool=None):
     """Compute the un-normalized log posterior of PEM v0 calibration params given the SPT-100 dataset"""
-    return spt100_log_likelihood(theta, M=M) + spt100_log_prior(theta)
+    post = spt100_log_prior(theta)
+    inf_idx = post > -np.inf
+    if np.any(inf_idx):
+        post[inf_idx] += spt100_log_likelihood(theta[inf_idx, :], M=M, ppool=ppool)
+    return post
 
 
-def pdf_slice(pdfs=None, M=1000):
+def pdf_slice(pdfs=None, M=200, n_jobs=-1):
     """Plot 1d slices of the likelihood/prior/posterior function(s)"""
-    pdf_map = {'Prior': lambda theta: spt100_log_prior(theta),
-               'Likelihood': lambda theta: spt100_log_likelihood(theta, M=M),
-               'Posterior': lambda theta: spt100_log_posterior(theta, M=M)}
-    if pdfs is None:
-        pdfs = ['Prior', 'Likelihood', 'Posterior']
-    pdfs = [pdfs] if isinstance(pdfs, str) else pdfs
-    bds = [v.bounds() for v in THETA_VARS]
-    x0 = [v.nominal for v in THETA_VARS]
-    funcs = [pdf_map.get(pdf) for pdf in pdfs]
-    fig, ax = uq.plot_slice(funcs, bds, x0=x0, N=15, random_walk=False,
-                            xlabels=[v.to_tex(units=True) for v in THETA_VARS], ylabels=['Log PDF'], fun_labels=pdfs,
-                            x_idx=list(np.arange(0, len(bds))))
+    with Parallel(n_jobs=n_jobs, verbose=0) as ppool:
+        pdf_map = {'Prior': lambda theta: spt100_log_prior(theta),
+                   'Likelihood': lambda theta: spt100_log_likelihood(theta, M=M, ppool=ppool),
+                   'Posterior': lambda theta: spt100_log_posterior(theta, M=M, ppool=ppool)}
+        if pdfs is None:
+            pdfs = ['Prior', 'Likelihood', 'Posterior']
+        pdfs = [pdfs] if isinstance(pdfs, str) else pdfs
+        # bds = [v.bounds() for v in THETA_VARS]
+        x0 = [v.nominal for v in THETA_VARS]
+        bds = [(val - 0.01*np.abs(val), val + 0.01*np.abs(val)) for val in x0]
+        funcs = [pdf_map.get(pdf) for pdf in pdfs]
+        fig, ax = uq.plot_slice(funcs, bds, x0=x0, N=15, random_walk=True,
+                                xlabels=[v.to_tex(units=True) for v in THETA_VARS], ylabels=['Log PDF'], fun_labels=pdfs,
+                                x_idx=list(np.arange(0, 4)))
     plt.show()
 
 
@@ -236,47 +254,43 @@ def show_laplace():
     plt.show()
 
 
-def run_mcmc(file='dram-result.h5', clean=True):
+def run_mcmc(file='dram-system.h5', clean=False, n_jobs=1, M=100):
     if clean:
         with h5py.File(file, 'a') as fd:
             group = fd.get('mcmc', None)
             if group is not None:
                 del fd['mcmc']
 
-    nwalk, ndim, niter = 16, 4, 1000
-    means = np.random.rand(ndim)
-    cov = np.random.rand(ndim, ndim)
-    cov = cov.T @ cov
-    p0 = np.random.rand(nwalk, ndim)
-    cov0 = np.eye(ndim)
+    nwalk, niter = 1, 10000
 
-    def log_gaussian(theta):
-        return uq.normal_pdf(theta, means, cov, logpdf=True)
+    cov_pct = {'T_ec': 0.15, 'PT': 0.2, 'P*': 0.08, 'V_vac': 0.01, 'vAN1': 0.01, 'z0*': 0.15, 'p_u': 0.2, 'c0': 0.05,
+               'c1': 0.02, 'c2': 0.15, 'c3': 0.04, 'c4': 0.01, 'c5': 0.02} if TRAINING else \
+        {'T_ec': 0.1, 'PT': 0.2, 'P*': 0.08, 'V_vac': 0.01, 'vAN1': 0.01, 'z0*': 0.05, 'p_u': 0.2, 'c0': 0.03,
+         'c1': 0.02, 'c2': 0.15, 'c3': 0.04, 'c4': 0.01, 'c5': 0.01, 'vAN2': 0.01, 'l_t': 0.05, 'delta_z': 0.005,
+         'u_n': 0.005}
+    # p0 = np.array([(v.bounds()[0] + v.bounds()[1])/2 for v in THETA_VARS]).astype(np.float32)
+    p0 = np.array([v.nominal for v in THETA_VARS]).astype(np.float32)
+    p0[np.isclose(p0, 0)] = 1
+    cov0 = np.eye(p0.shape[0]) * np.array([(cov_pct.get(str(v), 0.08) * np.abs(p0[i]) / 2)**2 for i, v in enumerate(THETA_VARS)])
+    cov0 *= 0.7
+    # p0 = uq.normal_sample(p0, cov0, nwalk).astype(np.float32)
 
-    def log_banana(theta):
-        x1p = theta[..., 0]
-        x2p = theta[..., 1] + (x1p**2 + 1)
-        xp = np.concatenate((x1p[..., np.newaxis], x2p[..., np.newaxis]), axis=-1)
-        sigma = np.array([[1, 0.9], [0.9, 1]])
-        return uq.normal_pdf(xp, [0, 0], sigma, logpdf=True)
-
-    # with open('laplace-result.pkl', 'rb') as fd:
-    #     data = pickle.load(fd)
-    #     cov0 = data['hess_inv_psd']
-    #     p0 = uq.normal_sample(data['mle'], cov0, nwalk)
-
-    uq.dram(log_gaussian, p0, cov0, niter=niter, filename=file)
+    with Parallel(n_jobs=n_jobs, verbose=0) as ppool:
+        fun = lambda theta: spt100_log_posterior(theta, M=M, ppool=ppool)
+        uq.dram(fun, p0, niter, cov0=cov0.astype(np.float32), filename=file, adapt_after=500, adapt_interval=50,
+                eps=1e-6, gamma=0.1)
 
 
-def show_mcmc(file='dram-result.h5', burnin=0.1):
+def show_mcmc(file='dram-system.h5', burnin=0.1):
     with h5py.File(file, 'r') as fd:
         samples = fd['mcmc/chain']
         accepted = fd['mcmc/accepted']
+        cov = np.mean(np.array(fd['mcmc/cov']), axis=0)
         niter, nwalk, ndim = samples.shape
         samples = samples[int(burnin*niter):, ...]
-        colors = ['r', 'g', 'b', 'k']
-        labels = [f'x{i}' for i in range(ndim)]
-        # labels = [str(v) for v in SURR.exo_vars if v.param_type == 'calibration']
+        colors = ['r', 'g', 'b', 'k', 'c', 'm', 'y', 'lime', 'fuchsia', 'royalblue', 'sienna']
+        # labels = [f'x{i}' for i in range(ndim)]
+        labels = [str(v) for v in THETA_VARS]
 
         lags, autos, iac, ess = uq.autocorrelation(samples, step=5)
         print(f'Average acceptance ratio: {np.mean(accepted)/niter:.4f}')
@@ -284,7 +298,7 @@ def show_mcmc(file='dram-result.h5', burnin=0.1):
         print(f'Average ESS: {np.mean(ess):.4f}')
 
         nchains = min(4, nwalk)
-        nshow = min(4, ndim)
+        nshow = min(10, ndim)
 
         # Integrated auto-correlation plot
         fig, ax = plt.subplots()
@@ -304,17 +318,19 @@ def show_mcmc(file='dram-result.h5', burnin=0.1):
         fig.tight_layout()
 
         # Marginal corner plot
-        fig, ax = uq.ndscatter(samples[..., :nshow].reshape((-1, nshow)), subplot_size=3, labels=labels, plot='hist')
+        fig, ax = uq.ndscatter(samples[..., :nshow].reshape((-1, nshow)), subplot_size=2, labels=labels[:nshow], plot='hist',
+                               cov_overlay=cov[:nshow, :nshow])
         plt.show()
 
 
 if __name__ == '__main__':
-    M = 10
+    M = 1
     optimizer = 'nelder-mead'
+    file = f'dram-{COMP.lower()}-{"train" if TRAINING else "test"}.h5'
 
-    # pdf_slice(pdfs='Prior', M=M)
+    # pdf_slice(pdfs=['Posterior'], M=M)
     # run_mle(optimizer, M)
     # run_laplace(M=M)
     # show_laplace()
-    run_mcmc()
-    show_mcmc()
+    run_mcmc(M=M, file=file)
+    show_mcmc(file=file)

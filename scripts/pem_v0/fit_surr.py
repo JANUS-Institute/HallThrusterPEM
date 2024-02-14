@@ -55,7 +55,7 @@ def train_mf(max_runtime_hr=3):
             sf_sys.init_system()
             mf_sys.init_system()
 
-            qoi_ind = ['I_B0', 'T', 'uion0', 'uion1']
+            qoi_ind = ['I_B0', 'T', 'uion0']
             sf_sys.fit(qoi_ind=qoi_ind, num_refine=1000, max_iter=200, max_runtime=max_runtime_hr,
                        save_interval=50, test_set=test_set, n_jobs=-1)
             mf_sys.fit(qoi_ind=qoi_ind, num_refine=1000, max_iter=200, max_runtime=max_runtime_hr,
@@ -75,8 +75,8 @@ def train_mf(max_runtime_hr=3):
             fig, axs = plt.subplots(1, len(qoi_ind), sharey='row')
             for i in range(len(qoi_ind)):
                 ax = axs[i] if len(qoi_ind) > 1 else axs
-                ax.plot(mf_cum / hf_model_cost, mf_test[:, 1, i], '-k', label='MF')
-                ax.plot(sf_cum / hf_model_cost, sf_test[:, 1, i], '--k', label='SF')
+                ax.plot(mf_cum / hf_model_cost, mf_test[:, 1, i], '-k', label='Multi-fidelity')
+                ax.plot(sf_cum / hf_model_cost, sf_test[:, 1, i], '--k', label='Single-fidelity')
                 ax.set_yscale('log')
                 ax.set_xscale('log')
                 ax.grid()
