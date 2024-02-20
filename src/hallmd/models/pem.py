@@ -52,6 +52,8 @@ def pem_v0(save_dir: str | Path = None, executor: Executor = None, init: bool = 
             j = surr.exo_vars.index(v)
             surr.exo_vars[j].nominal = v.nominal
             surr.exo_vars[j].param_type = v.param_type
+            surr.exo_vars[j].tex = v.tex
+            surr.exo_vars[j].update_bounds(*v.bounds())
 
         return surr
 

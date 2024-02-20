@@ -72,6 +72,7 @@ def plume_feedforward(x: np.ndarray, compress: bool = False,
 
         # Divergence angles
         alpha1 = c2 * P_B + c3  # Main beam divergence (rad)
+        alpha1[alpha1 > np.pi/2] = np.pi/2
         alpha2 = alpha1 / c1    # Scattered beam divergence (rad)
 
         with np.errstate(invalid='ignore', divide='ignore'):

@@ -21,7 +21,7 @@ OPTIMIZER_ITER = 1
 START_TIME = 0
 PROJECT_ROOT = Path('../..')
 TRAINING = False
-surr_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-01-03T02.35.53' / 'multi-fidelity').glob('amisc_*'))[0]
+surr_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-02-14T06.54.13' / 'multi-fidelity').glob('amisc_*'))[0]
 SURR = pem_v0(from_file=surr_dir / 'sys' / f'sys_final{"_train" if TRAINING else ""}.pkl')
 DATA = spt100_data()
 COMP = 'System'
@@ -261,24 +261,24 @@ def run_mcmc(file='dram-system.h5', clean=False, n_jobs=1, M=100):
             if group is not None:
                 del fd['mcmc']
 
-    nwalk, niter = 1, 10000
+    nwalk, niter = 1, 24000
 
     cov_pct = {'T_ec': 0.15, 'PT': 0.2, 'P*': 0.08, 'V_vac': 0.01, 'vAN1': 0.01, 'z0*': 0.15, 'p_u': 0.2, 'c0': 0.05,
                'c1': 0.02, 'c2': 0.15, 'c3': 0.04, 'c4': 0.01, 'c5': 0.02} if TRAINING else \
-        {'T_ec': 0.1, 'PT': 0.2, 'P*': 0.08, 'V_vac': 0.01, 'vAN1': 0.01, 'z0*': 0.05, 'p_u': 0.2, 'c0': 0.03,
-         'c1': 0.02, 'c2': 0.15, 'c3': 0.04, 'c4': 0.01, 'c5': 0.01, 'vAN2': 0.01, 'l_t': 0.05, 'delta_z': 0.005,
-         'u_n': 0.005}
+        {'T_ec': 0.008, 'PT': 0.05, 'P*': 0.07, 'V_vac': 0.005, 'vAN1': 0.0001, 'z0*': 0.03, 'p_u': 0.04, 'c0': 0.01,
+         'c1': 0.005, 'c2': 0.04, 'c3': 0.01, 'c4': 0.001, 'c5': 0.002, 'vAN2': 0.01, 'l_t': 0.02, 'delta_z': 0.001,
+         'u_n': 0.001}
     # p0 = np.array([(v.bounds()[0] + v.bounds()[1])/2 for v in THETA_VARS]).astype(np.float32)
     p0 = np.array([v.nominal for v in THETA_VARS]).astype(np.float32)
     p0[np.isclose(p0, 0)] = 1
     cov0 = np.eye(p0.shape[0]) * np.array([(cov_pct.get(str(v), 0.08) * np.abs(p0[i]) / 2)**2 for i, v in enumerate(THETA_VARS)])
-    cov0 *= 0.7
+    cov0 *= 1
     # p0 = uq.normal_sample(p0, cov0, nwalk).astype(np.float32)
 
     with Parallel(n_jobs=n_jobs, verbose=0) as ppool:
         fun = lambda theta: spt100_log_posterior(theta, M=M, ppool=ppool)
-        uq.dram(fun, p0, niter, cov0=cov0.astype(np.float32), filename=file, adapt_after=500, adapt_interval=50,
-                eps=1e-6, gamma=0.1)
+        uq.dram(fun, p0, niter, cov0=cov0.astype(np.float32), filename=file, adapt_after=500, adapt_interval=100,
+                eps=1e-9, gamma=0.1)
 
 
 def show_mcmc(file='dram-system.h5', burnin=0.1):
@@ -292,18 +292,21 @@ def show_mcmc(file='dram-system.h5', burnin=0.1):
         # labels = [f'x{i}' for i in range(ndim)]
         labels = [str(v) for v in THETA_VARS]
 
-        lags, autos, iac, ess = uq.autocorrelation(samples, step=5)
+        lags, autos, iac, ess = uq.autocorrelation(samples, step=20, maxlag=500)
         print(f'Average acceptance ratio: {np.mean(accepted)/niter:.4f}')
         print(f'Average IAC: {np.mean(iac):.4f}')
         print(f'Average ESS: {np.mean(ess):.4f}')
 
         nchains = min(4, nwalk)
         nshow = min(10, ndim)
+        offset = 0
+        j = offset*nshow
+        nshow = min(nshow, ndim - j)
 
         # Integrated auto-correlation plot
         fig, ax = plt.subplots()
         for i in range(nshow):
-            ax.plot(lags, np.mean(autos[:, :, i], axis=1), c=colors[i], ls='-', label=labels[i])
+            ax.plot(lags, np.mean(autos[:, :, j+i], axis=1), c=colors[i], ls='-', label=labels[j+i])
         uq.ax_default(ax, 'Lag', 'Auto-correlation', legend=True)
 
         # Mixing plots
@@ -311,16 +314,67 @@ def show_mcmc(file='dram-system.h5', burnin=0.1):
         for i in range(nshow):
             ax = axs[i]
             for k in range(nchains):
-                ax.plot(samples[:, k, i], colors[k], alpha=0.4, ls='-')
-            ax.set_ylabel(labels[i])
+                ax.plot(samples[:, k, j+i], colors[k], alpha=0.4, ls='-')
+            ax.set_ylabel(labels[j+i])
         axs[-1].set_xlabel('Iterations')
         fig.set_size_inches(7, nshow*2)
         fig.tight_layout()
 
         # Marginal corner plot
-        fig, ax = uq.ndscatter(samples[..., :nshow].reshape((-1, nshow)), subplot_size=2, labels=labels[:nshow], plot='hist',
-                               cov_overlay=cov[:nshow, :nshow])
+        fig, ax = uq.ndscatter(samples[..., j:j+nshow].reshape((-1, nshow)), subplot_size=2, labels=labels[j:j+nshow],
+                               plot='hist', cov_overlay=cov[j:j+nshow, j:j+nshow])
         plt.show()
+
+
+def journal_plots(file, burnin=0.1):
+    """Make MCMC plots for journal."""
+    with h5py.File(file, 'r') as fd:
+        samples = fd['mcmc/chain']
+        accepted = fd['mcmc/accepted']
+        cov = np.mean(np.array(fd['mcmc/cov']), axis=0)
+        niter, nwalk, ndim = samples.shape
+        samples = samples[int(burnin*niter):, ...].reshape((-1, ndim))
+
+        # Cathode marginals
+        str_use = ['T_ec', 'V_vac', 'P*', 'PT']
+        idx_use = sorted([THETA_VARS.index(v) for v in str_use])
+        labels = [r'$T_e$ (eV)', r'$V_{vac}$ (V)', r'$P^*$ ($\mu$Torr)', r'$P_T$ ($\mu$Torr)']
+        fig, ax = uq.ndscatter(samples[:, idx_use], subplot_size=2, labels=labels, plot='kde', cmap='viridis')
+        fig.savefig('mcmc-cathode.png', dpi=300, format='png')
+        plt.show()
+
+        # Thruster marginals
+        str_use = ['T_ec', 'u_n', 'l_t', 'vAN2', 'z0*', 'p_u']
+        idx_use = sorted([THETA_VARS.index(v) for v in str_use])
+        labels = [r'$T_e$ (eV)', r'$u_n$ (m/s)', r'$l_t$ (mm)', r'$\nu_2$ (-)', r'$z_0$ (-)', r'$p_0$ ($\mu$Torr)']
+        fig, ax = uq.ndscatter(samples[:, idx_use], subplot_size=2, labels=labels, plot='kde', cmap='viridis')
+        fig.savefig('mcmc-thruster.png', dpi=300, format='png')
+        plt.show()
+
+        # Plume marginals
+        str_use = ['c0', 'c1', 'c2', 'c3', 'c4', 'c5']
+        idx_use = sorted([THETA_VARS.index(v) for v in str_use])
+        labels = [r'$c_0$ (-)', r'$c_1$ (-)', r'$c_2$ (rad/Pa)', r'$c_3$ (rad)', r'$c_4$ $(10^x)$ ($m^{-3}$/Pa)',
+                  r'$c_5$ $(10^x)$ ($m^{-3}$)']
+        fmt = ['{x:.2f}' for i in range(len(str_use))]
+        fig, ax = uq.ndscatter(samples[:, idx_use], subplot_size=2, labels=labels, plot='kde', cmap='viridis',
+                               tick_fmts=fmt)
+        fig.savefig('mcmc-plume.png', dpi=300, format='png')
+        plt.show()
+
+        # Print 1d marginal stats
+        print(f'Average acceptance ratio: {np.mean(accepted) / niter:.4f}')
+        print(f'{"Variable": <10} {"Minimum": <20} {"5th percentile": <20} {"50th percentile": <20} '
+              f'{"95th percentile": <20} {"Maximum": <20} {"Std deviation": <20}')
+        for i in range(ndim):
+            min = np.min(samples[:, i])
+            low = np.percentile(samples[:, i], 5)
+            med = np.percentile(samples[:, i], 50)
+            high = np.percentile(samples[:, i], 95)
+            max = np.max(samples[:, i])
+            std = np.std(samples[:, i])
+            print_str = ' '.join([f"{ele: <20.5f}" for ele in [min, low, med, high, max, std]])
+            print(f'{str(THETA_VARS[i]): <10} ' + print_str)
 
 
 if __name__ == '__main__':
@@ -332,5 +386,6 @@ if __name__ == '__main__':
     # run_mle(optimizer, M)
     # run_laplace(M=M)
     # show_laplace()
-    run_mcmc(M=M, file=file)
-    show_mcmc(file=file)
+    # run_mcmc(M=M, file=file)
+    # show_mcmc(file=file)
+    journal_plots(file)

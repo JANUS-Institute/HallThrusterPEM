@@ -1,11 +1,11 @@
 {
     "T_ec": {
         "id": "T_ec",
-        "tex": "$T_{e,c}$",
+        "tex": "$T_e$",
         "description": "Cathode electron temperature",
         "units": "eV",
         "param_type": "calibration",
-        "nominal": 3.8,
+        "nominal": 4.93269,
         "domain": [1, 5],
         "rv_type": "uniform_bds",
         "rv_params": [1, 5]
@@ -16,7 +16,7 @@
         "description": "Coupling voltage in vacuum",
         "units": "V",
         "param_type": "calibration",
-        "nominal": 30.9,
+        "nominal": 31.18733,
         "domain": [0, 60],
         "rv_type": "uniform_bds",
         "rv_params": [0, 60]
@@ -27,7 +27,7 @@
         "description": "Turning point pressure",
         "units": "$\\mu$-Torr",
         "param_type": "calibration",
-        "nominal": 29.11,
+        "nominal": 29.14324,
         "domain": [10, 100],
         "rv_type": "uniform_bds",
         "rv_params": [10, 100]
@@ -38,7 +38,7 @@
         "description": "Thruster to facility plasma density ratio",
         "units": "$\\mu$-Torr",
         "param_type": "calibration",
-        "nominal": 11.32,
+        "nominal": 17.68345,
         "domain": [10, 100],
         "rv_type": "uniform_bds",
         "rv_params": [10, 100]
@@ -71,7 +71,7 @@
         "description": "Neutral velocity",
         "units": "m/s",
         "param_type": "calibration",
-        "nominal": 100.4,
+        "nominal": 100.1441,
         "domain": [100, 500],
         "rv_type": "uniform_bds",
         "rv_params": [100, 500]
@@ -93,7 +93,7 @@
         "description": "Inner-outer transition length",
         "units": "mm",
         "param_type": "calibration",
-        "nominal": 3.5,
+        "nominal": 2.73336,
         "domain": [1, 20],
         "rv_type": "uniform_bds",
         "rv_params": [1, 20]
@@ -103,11 +103,11 @@
         "tex": "$\\nu_1$",
         "description": "Anomalous transport coefficient 1",
         "units": "-",
-        "param_type": "calibration",
-        "nominal": -1.1,
+        "param_type": "other",
+        "nominal": -1.0,
         "domain": [-2, -1],
-        "rv_type": "uniform_bds",
-        "rv_params": [-2, -1]
+        "rv_type": "none",
+        "rv_params": []
     },
     "vAN2": {
         "id": "vAN2",
@@ -115,7 +115,7 @@
         "description": "Anomalous transport coefficient 2",
         "units": "-",
         "param_type": "calibration",
-        "nominal": 10.15,
+        "nominal": 10.12937,
         "domain": [10, 100],
         "rv_type": "uniform_bds",
         "rv_params": [10, 100]
@@ -126,29 +126,29 @@
         "description": "Anomalous transport profile shift",
         "units": "-",
         "param_type": "other",
-        "nominal": 0.4,
+        "nominal": 0.3935,
         "domain": [0, 0.4],
         "rv_type": "none",
         "rv_params": []
     },
     "z0*": {
         "id": "z0*",
-        "tex": "$z_0^*$",
+        "tex": "$z_0$",
         "description": "Anomalous transport profile max shift",
         "units": "-",
         "param_type": "calibration",
-        "nominal": -0.04,
+        "nominal": -0.04471,
         "domain": [-0.25, 0],
         "rv_type": "normal",
         "rv_params": [-0.12, 0.04]
     },
     "p_u": {
         "id": "p_u",
-        "tex": "$p_u$",
+        "tex": "$p_0$",
         "description": "Anomalous transport pressure shift upper bound",
         "units": "$\\mu$-Torr",
         "param_type": "calibration",
-        "nominal": 41,
+        "nominal": 44.11757,
         "domain": [25, 65],
         "rv_type": "normal",
         "rv_params": [45, 7]
@@ -203,7 +203,7 @@
         "description": "Plume fit coefficient 0",
         "units": "-",
         "param_type": "calibration",
-        "nominal": 0.63,
+        "nominal": 0.64135,
         "domain": [0, 1],
         "rv_type": "uniform_bds",
         "rv_params": [0, 1]
@@ -214,7 +214,7 @@
         "description": "Plume fit coefficient 1",
         "units": "-",
         "param_type": "calibration",
-        "nominal": 0.425,
+        "nominal": 0.38718,
         "domain": [0.1, 0.9],
         "rv_type": "uniform_bds",
         "rv_params": [0.1, 0.9]
@@ -225,7 +225,7 @@
         "description": "Plume fit coefficient 2",
         "units": "-",
         "param_type": "calibration",
-        "nominal": -5,
+        "nominal": -4.04572,
         "domain": [-15, 15],
         "rv_type": "uniform_bds",
         "rv_params": [-15, 15]
@@ -236,10 +236,10 @@
         "description": "Plume fit coefficient 3",
         "units": "rad",
         "param_type": "calibration",
-        "nominal": 0.265,
-        "domain": [0, 1.570796],
+        "nominal": 0.24042,
+        "domain": [0.2, 1.570796],
         "rv_type": "uniform_bds",
-        "rv_params": [0, 1.570796]
+        "rv_params": [0.2, 1.570796]
     },
     "c4": {
         "id": "c4",
@@ -247,7 +247,7 @@
         "description": "Plume fit coefficient 4",
         "units": "-",
         "param_type": "calibration",
-        "nominal": 19.94,
+        "nominal": 19.94658,
         "domain": [18, 22],
         "rv_type": "uniform_bds",
         "rv_params": [18, 22]
@@ -258,7 +258,7 @@
         "description": "Plume fit coefficient 5",
         "units": "-",
         "param_type": "calibration",
-        "nominal": 17,
+        "nominal": 16.95929,
         "domain": [14, 18],
         "rv_type": "uniform_bds",
         "rv_params": [14, 18]
