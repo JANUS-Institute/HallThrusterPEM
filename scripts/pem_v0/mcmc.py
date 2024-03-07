@@ -162,9 +162,9 @@ def mle_callback(xk, **kwargs):
 def run_mle(optimizer='nelder-mead', M=100):
     """Compute maximum likelihood estimate for the PEM."""
     global START_TIME
-    # nominal = {'u_n': 102.5, 'l_t': 19.9, 'vAN1': -1.66, 'vAN2': 29.44, 'delta_z': 2.47e-3, 'z0*': -0.205, 'p_u': 44.5}
-    # nominal = {'T_ec': 4.707, 'u_n': 100.4, 'l_t': 3.497, 'vAN1': -1.088, 'vAN2': 10.78, 'delta_z': 0.38, 'z0*': -2.172e-2, 'p_u': 29.19}  # f(x)=3965
-    # nominal = {'T_ec': 4.1, 'u_n': 101, 'l_t': 20, 'vAN1': -1.97, 'vAN2': 31, 'delta_z': 4.35e-4, 'z0*': -0.2, 'p_u': 54}  # f(x)=5470
+    # nominal = {'u_n': 102.5, 'l_t': 19.9, 'vAN1': -1.66, 'vAN2': 29.44, 'delta_z': 2.47e-3, 'z0': -0.205, 'p0': 44.5}
+    # nominal = {'T_ec': 4.707, 'u_n': 100.4, 'l_t': 3.497, 'vAN1': -1.088, 'vAN2': 10.78, 'delta_z': 0.38, 'z0': -2.172e-2, 'p0': 29.19}  # f(x)=3965
+    # nominal = {'T_ec': 4.1, 'u_n': 101, 'l_t': 20, 'vAN1': -1.97, 'vAN2': 31, 'delta_z': 4.35e-4, 'z0': -0.2, 'p0': 54}  # f(x)=5470
     # nominal = {'c0': 0.5938, 'c1': 0.4363, 'c2': -8.55, 'c3': 0.2812, 'c4': 20.13, 'c5': 16.64}  # f(x) = 526
     nominal = {}
     bds = [v.bounds() for v in THETA_VARS]
@@ -263,9 +263,9 @@ def run_mcmc(file='dram-system.h5', clean=False, n_jobs=1, M=100):
 
     nwalk, niter = 1, 24000
 
-    cov_pct = {'T_ec': 0.15, 'PT': 0.2, 'P*': 0.08, 'V_vac': 0.01, 'vAN1': 0.01, 'z0*': 0.15, 'p_u': 0.2, 'c0': 0.05,
+    cov_pct = {'T_ec': 0.15, 'PT': 0.2, 'P*': 0.08, 'V_vac': 0.01, 'vAN1': 0.01, 'z0': 0.15, 'p0': 0.2, 'c0': 0.05,
                'c1': 0.02, 'c2': 0.15, 'c3': 0.04, 'c4': 0.01, 'c5': 0.02} if TRAINING else \
-        {'T_ec': 0.008, 'PT': 0.05, 'P*': 0.07, 'V_vac': 0.005, 'vAN1': 0.0001, 'z0*': 0.03, 'p_u': 0.04, 'c0': 0.01,
+        {'T_ec': 0.008, 'PT': 0.05, 'P*': 0.07, 'V_vac': 0.005, 'vAN1': 0.0001, 'z0': 0.03, 'p0': 0.04, 'c0': 0.01,
          'c1': 0.005, 'c2': 0.04, 'c3': 0.01, 'c4': 0.001, 'c5': 0.002, 'vAN2': 0.01, 'l_t': 0.02, 'delta_z': 0.001,
          'u_n': 0.001}
     # p0 = np.array([(v.bounds()[0] + v.bounds()[1])/2 for v in THETA_VARS]).astype(np.float32)
@@ -344,7 +344,7 @@ def journal_plots(file, burnin=0.1):
         plt.show()
 
         # Thruster marginals
-        str_use = ['T_ec', 'u_n', 'l_t', 'vAN2', 'z0*', 'p_u']
+        str_use = ['T_ec', 'u_n', 'l_t', 'vAN2', 'z0', 'p0']
         idx_use = sorted([THETA_VARS.index(v) for v in str_use])
         labels = [r'$T_e$ (eV)', r'$u_n$ (m/s)', r'$l_t$ (mm)', r'$\nu_2$ (-)', r'$z_0$ (-)', r'$p_0$ ($\mu$Torr)']
         fig, ax = uq.ndscatter(samples[:, idx_use], subplot_size=2, labels=labels, plot='kde', cmap='viridis')

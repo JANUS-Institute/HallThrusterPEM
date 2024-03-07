@@ -60,7 +60,7 @@ def test_cc(plots=False):
 
 def test_hallthruster_jl(plots=False):
     variables = load_variables(["PB", "Va", "mdot_a", "T_ec", "u_n", "l_t", "vAN1", "vAN2", "delta_z",
-                                "z0*", "p_u", "V_cc"], CONFIG_DIR / 'variables_v0.json')
+                                "z0", "p0", "V_cc"], CONFIG_DIR / 'variables_v0.json')
     x = np.empty((2, len(variables)))
     for i, var in enumerate(variables):
         x[:, i] = var.sample_domain(2)
@@ -69,7 +69,7 @@ def test_hallthruster_jl(plots=False):
 
     if plots:
         fig, ax = plt.subplots()
-        uion = res['y'][:, 6:]
+        uion = res['y'][:, 7:]
         zg = np.linspace(0, 0.08, uion.shape[1])
         for i in range(x.shape[0]):
             ax.plot(zg, uion[i, :], label=f"Sample {i}")

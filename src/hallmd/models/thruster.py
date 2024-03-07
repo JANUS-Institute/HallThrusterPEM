@@ -58,8 +58,8 @@ def hallthruster_jl_input(thruster_input: dict) -> dict:
     if thruster_input['anom_model'] == 'ShiftedTwoZone':
         # Add extra parameters for shifted two zone anomalous model
         json_data['parameters'].update({'pressure_dz': thruster_input['delta_z'] * thruster_input['channel_length'],
-                                        'pressure_z0': thruster_input['z0*'] * thruster_input['channel_length'],
-                                        'pressure_pstar': thruster_input['p_u'] * 1e-6,
+                                        'pressure_z0': thruster_input['z0'] * thruster_input['channel_length'],
+                                        'pressure_pstar': thruster_input['p0'] * 1e-6,
                                         'pressure_alpha': thruster_input['alpha']})
     json_data['design'] = {'thruster_name': thruster_input['thruster_name'],
                            'inner_radius': thruster_input['inner_radius'],
@@ -143,8 +143,9 @@ def hallthruster_jl_model(thruster_input: dict, jl=None) -> dict:
     ui_avg = ui_exit / thruster_input['max_charge']
     I_B0 = j_exit * A           # Total current (A) at thruster exit
     thrust = thruster_output[0]['thrust']
+    discharge_current = thruster_output[0]['discharge_current']
 
-    thruster_output[0].update({'ui_avg': ui_avg / 1000.0, 'I_B0': I_B0, 'T': thrust,
+    thruster_output[0].update({'ui_avg': ui_avg / 1000.0, 'I_B0': I_B0, 'T': thrust, 'I_D': discharge_current,
                                'eta_c': thruster_output[0]['current_eff'], 'eta_m': thruster_output[0]['mass_eff'],
                                'eta_v': thruster_output[0]['voltage_eff']})
 

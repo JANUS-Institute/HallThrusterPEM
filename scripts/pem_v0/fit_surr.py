@@ -30,7 +30,7 @@ from hallmd.utils import model_config_dir
 CONFIG_DIR = model_config_dir()
 
 
-def train_mf(max_runtime_hr=3):
+def train_mf(max_runtime_hr=4):
     """Train and compare MF v. SF surrogates."""
     with MPICommExecutor(MPI.COMM_WORLD, root=0) as executor:
         if executor is not None:
@@ -55,7 +55,7 @@ def train_mf(max_runtime_hr=3):
             sf_sys.init_system()
             mf_sys.init_system()
 
-            qoi_ind = ['I_B0', 'T', 'uion0']
+            qoi_ind = ['I_D', 'T', 'uion0']
             sf_sys.fit(qoi_ind=qoi_ind, num_refine=1000, max_iter=200, max_runtime=max_runtime_hr,
                        save_interval=50, test_set=test_set, n_jobs=-1)
             mf_sys.fit(qoi_ind=qoi_ind, num_refine=1000, max_iter=200, max_runtime=max_runtime_hr,

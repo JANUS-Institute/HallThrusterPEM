@@ -30,7 +30,7 @@ from hallmd.utils import model_config_dir
 CONFIG_DIR = model_config_dir()
 
 
-def gen_svd_data(N=500, r_pct=0.999):
+def gen_svd_data(N=500, r_pct=0.95):
     """Generate data matrices for SVD dimension reduction."""
     # Thruster svd dataset for uion velocity profile
     timestamp = datetime.datetime.now(tz=timezone.utc).isoformat().split('.')[0].replace(':', '.')
@@ -43,7 +43,7 @@ def gen_svd_data(N=500, r_pct=0.999):
     yt = comp(xt, use_model='best', model_dir=comp._model_kwargs.get('output_dir'))
     nan_idx = np.any(np.isnan(yt), axis=-1)
     yt = yt[~nan_idx, :]
-    A = yt[:, 6:]       # Data matrix, uion (N x M)
+    A = yt[:, 7:]       # Data matrix, uion (N x M)
     u, s, vt = np.linalg.svd((A - np.mean(A, axis=0)) / np.std(A, axis=0))
     frac = np.cumsum(s**2 / np.sum(s**2))
     idx = int(np.where(frac >= r_pct)[0][0])
@@ -77,7 +77,7 @@ def gen_svd_data(N=500, r_pct=0.999):
     comp = surr['Plume']
     comp._model_kwargs['compress'] = False
     yt = comp(xt, use_model='best')
-    idx = ~np.isnan(yt[:, 0]) & (np.nanmax(yt, axis=-1) <= 1000)    # Remove some outliers above 1000 A/m^2
+    idx = ~np.isnan(yt[:, 0]) & (np.nanmax(yt, axis=-1) <= 500)    # Remove some outliers above 500 A/m^2
     yt = yt[idx, :]
     A = yt[:, 1:]  # Data matrix, jion (N x M)
     u, s, vt = np.linalg.svd((A - np.mean(A, axis=0)) / np.std(A, axis=0))

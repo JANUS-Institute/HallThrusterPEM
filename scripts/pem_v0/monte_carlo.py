@@ -137,7 +137,7 @@ def run_models(Ns=1000):
         fd.create_dataset('uion/xs', data=xs)
         fd.create_dataset('uion/ys', data=ys)
         fd.create_dataset('uion/xmodel', data=xmodel)
-        fd.create_dataset('uion/ymodel', data=ymodel[..., 6:])
+        fd.create_dataset('uion/ymodel', data=ymodel[..., 7:])
 
         # Ion current density
         data = DATA['jion'][0]

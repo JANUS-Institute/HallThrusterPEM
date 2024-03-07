@@ -104,8 +104,8 @@
         "description": "Anomalous transport coefficient 1",
         "units": "-",
         "param_type": "other",
-        "nominal": -1.0,
-        "domain": [-2, -1],
+        "nominal": -2.0,
+        "domain": [-2.5, -1],
         "rv_type": "none",
         "rv_params": []
     },
@@ -131,8 +131,8 @@
         "rv_type": "none",
         "rv_params": []
     },
-    "z0*": {
-        "id": "z0*",
+    "z0": {
+        "id": "z0",
         "tex": "$z_0$",
         "description": "Anomalous transport profile max shift",
         "units": "-",
@@ -142,8 +142,8 @@
         "rv_type": "normal",
         "rv_params": [-0.12, 0.04]
     },
-    "p_u": {
-        "id": "p_u",
+    "p0": {
+        "id": "p0",
         "tex": "$p_0$",
         "description": "Anomalous transport pressure shift upper bound",
         "units": "$\\mu$-Torr",
@@ -304,6 +304,17 @@
         "param_type": "coupling",
         "nominal": 0.08,
         "domain": [0, 0.2],
+        "rv_type": "none",
+        "rv_params": []
+    },
+    "I_D": {
+        "id": "I_D",
+        "tex": "$I_D$",
+        "description": "Discharge current",
+        "units": "A",
+        "param_type": "coupling",
+        "nominal": 4.5,
+        "domain": [0, 10],
         "rv_type": "none",
         "rv_params": []
     },
