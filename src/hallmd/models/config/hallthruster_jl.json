@@ -22,7 +22,7 @@
         "reconstruct": true,
         "ion_wall_losses": true,
         "electron_ion_collisions": true,
-        "anom_model": "ShiftedTwoZone",
+        "anom_model": "TwoZoneBohm",
         "solve_background_neutrals": true,
         "neutral_temp_K": 300,
         "ion_temp_K": 1000,

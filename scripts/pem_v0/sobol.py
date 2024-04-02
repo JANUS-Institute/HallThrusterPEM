@@ -14,7 +14,7 @@ from hallmd.models.thruster import uion_reconstruct
 PROJECT_ROOT = Path('../..')
 TRAINING = False
 SAMPLER = 'Posterior'  # Or 'Prior'
-surr_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-02-14T06.54.13' / 'multi-fidelity').glob('amisc_*'))[0]
+surr_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-03-07T01.53.07' / 'multi-fidelity').glob('amisc_*'))[0]
 SURR = pem_v0(from_file=surr_dir / 'sys' / f'sys_final{"_train" if TRAINING else ""}.pkl')
 COMP = 'System'
 CONSTANTS = {'Va', 'r_m'}
@@ -134,19 +134,19 @@ def spt100_sobol(Ns=1000):
                 label = str_var if i == 1 else None
                 ax.errorbar(pb, S1_avg[:, j], yerr=z * S1_se[:, j], ls='-', capsize=3, label=label, color=c[j])
                 ax.errorbar(pb, ST_avg[:, j], yerr=z * ST_se[:, j], ls='--', capsize=3, color=c[j])
-            ax.plot(np.nan, np.nan, ls='-', color=(0.5, 0.5, 0.5), label=f'$S_1$' if i==1 else None)
-            ax.plot(np.nan, np.nan, ls='--', color=(0.5, 0.5, 0.5), label=f'$S_T$' if i==1 else None)
+            ax.plot(np.nan, np.nan, ls='-', color=(0.5, 0.5, 0.5), alpha=0.5, label=f'$S_1$' if i==1 else None)
+            ax.plot(np.nan, np.nan, ls='--', color=(0.5, 0.5, 0.5), alpha=0.5, label=f'$S_T$' if i==1 else None)
             ax.grid()
             ax.set_xscale('log')
             ax.set_ylim(bottom=0)
             ax.set_title(title_map.get(qoi))
             uq.ax_default(ax, 'Background pressure (Torr)', "Sobol' index", legend=False)
         leg = axs[1].legend(fancybox=True, facecolor='white', framealpha=1, loc='upper left', ncol=1,
-                            bbox_to_anchor=(1.02, 1.01), labelspacing=0.8)
+                            bbox_to_anchor=(1.02, 1.02), labelspacing=0.8)
         frame = leg.get_frame()
         frame.set_edgecolor('k')
-        fig.set_size_inches(16, 7)
-        fig.tight_layout()
+        fig.set_size_inches(10.5, 5)
+        fig.tight_layout(w_pad=2)
         fig.savefig(f'sobol-thruster.png', dpi=300, format='png')
         plt.show()
 
@@ -164,14 +164,20 @@ def spt100_sobol(Ns=1000):
             for j, str_var in enumerate(xlabels):
                 ax.errorbar(pb, S1_avg[:, j], yerr=z * S1_se[:, j], ls='-', capsize=3, label=str_var, color=c[j])
                 ax.errorbar(pb, ST_avg[:, j], yerr=z * ST_se[:, j], ls='--', capsize=3, color=c[j])
-            ax.plot(np.nan, np.nan, ls='-', color=(0.5, 0.5, 0.5), label=f'$S_1$')
-            ax.plot(np.nan, np.nan, ls='--', color=(0.5, 0.5, 0.5), label=f'$S_T$')
+            ax.plot(np.nan, np.nan, ls='-', color=(0.5, 0.5, 0.5), alpha=0.5, label=f'$S_1$')
+            ax.plot(np.nan, np.nan, ls='--', color=(0.5, 0.5, 0.5), alpha=0.5, label=f'$S_T$')
             ax.grid()
             ax.set_xscale('log')
             ax.set_ylim(bottom=0)
             ax.set_title(title_map.get(qoi))
-            uq.ax_default(ax, 'Background pressure (Torr)', "Sobol' index", legend=True)
-            fig.set_size_inches(9, 8)
+            uq.ax_default(ax, 'Background pressure (Torr)', "Sobol' index", legend=qoi == 'V_cc')
+            if qoi == 'jion':
+                leg = ax.legend(fancybox=True, facecolor='white', framealpha=1, loc='upper left', ncol=1,
+                                bbox_to_anchor=(1.02, 1.02), labelspacing=0.8)
+                leg.get_frame().set_edgecolor('k')
+                fig.set_size_inches(5.5, 4)
+            else:
+                fig.set_size_inches(5, 4)
             fig.tight_layout()
             fig.savefig(f'sobol-{qoi.lower()}.png', dpi=300, format='png')
             plt.show()

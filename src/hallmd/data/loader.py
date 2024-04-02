@@ -39,7 +39,7 @@ def spt100_data(qois: list[str] = None) -> dict[str: list[ExpData]]:
     :returns: map of `qoi->data`, where `data` is a list of experimental data sets
     """
     if qois is None:
-        qois = ['V_cc', 'T', 'uion', 'jion']
+        qois = ['V_cc', 'T', 'uion', 'jion', 'I_D']
     exp_data = dict()
 
     # Load Vcc data
@@ -52,6 +52,11 @@ def spt100_data(qois: list[str] = None) -> dict[str: list[ExpData]]:
         from .spt100.diamant2014.dataloader import load_thrust as thrust1
         from .spt100.sankovic1993.dataloader import load_thrust as thrust2
         exp_data['T'] = [thrust1(), thrust2()]
+
+    # Load discharge current data
+    if 'I_D' in qois:
+        from .spt100.sankovic1993.dataloader import load_discharge_current
+        exp_data['I_D'] = [load_discharge_current()]
 
     # Load ion velocity data
     if 'uion' in qois:

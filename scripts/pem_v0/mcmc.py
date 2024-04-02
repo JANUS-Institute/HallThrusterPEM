@@ -21,7 +21,7 @@ OPTIMIZER_ITER = 1
 START_TIME = 0
 PROJECT_ROOT = Path('../..')
 TRAINING = False
-surr_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-02-14T06.54.13' / 'multi-fidelity').glob('amisc_*'))[0]
+surr_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-03-07T01.53.07' / 'multi-fidelity').glob('amisc_*'))[0]
 SURR = pem_v0(from_file=surr_dir / 'sys' / f'sys_final{"_train" if TRAINING else ""}.pkl')
 DATA = spt100_data()
 COMP = 'System'
@@ -45,6 +45,8 @@ for qoi in QOIS:
     QOI_CNT.append(len(qoi_add))
 NOMINAL = {'r_m': 1, 'PB': XE_ARRAY[:, 0], 'Va': XE_ARRAY[:, 1], 'mdot_a': XE_ARRAY[:, 2]}
 CONSTANTS = {'calibration', 'other', 'operating'}
+DISCHARGE_CURRENT = 4.5     # Experimental discharge current for all cases (A)
+DISCHARGE_SIGMA = 0.2       # Be within this range of the correct value (smaller = more weight in likelihood)
 
 with open(model_config_dir() / 'plume_svd.pkl', 'rb') as fd:
     PLUME_SVD = pickle.load(fd)
@@ -56,10 +58,11 @@ def spt100_log_likelihood(theta, M=100, ppool=None):
     """Compute the log likelihood for the SPT-100 dataset."""
     # Sample inputs and compute model
     theta = np.atleast_1d(theta)
+    qoi_ind = QOI_USE if COMP == 'Cathode' else QOI_USE + ['I_D']
     sample_shape = theta.shape[:-1] + (M, XE_ARRAY.shape[0])
     NOMINAL.update({str(v): theta[..., i, np.newaxis, np.newaxis] for i, v in enumerate(THETA_VARS)})
     xs = SURR.sample_inputs(sample_shape, use_pdf=True, nominal=NOMINAL, constants=CONSTANTS).astype(theta.dtype)
-    ys = SURR.predict(xs, qoi_ind=QOI_USE, training=TRAINING, ppool=ppool)
+    ys = SURR.predict(xs, qoi_ind=qoi_ind, training=TRAINING, ppool=ppool)
 
     # Initialize/ignore the constant part of the likelihood
     # const = -np.sum(Ny) * np.log(M) - (1/2) * np.sum(Ny) * np.log(2*np.pi) - np.sum(np.log(sigma_y))
@@ -91,8 +94,12 @@ def spt100_log_likelihood(theta, M=100, ppool=None):
         # Evaluate the log likelihood for this qoi
         log_likelihood[..., k] = np.sum(-0.5 * ((ye - y_curr) / std) ** 2, axis=(-1, -2))
 
-    # Reduce and combine
-    log_likelihood = np.sum(log_likelihood, axis=-1)    # (..., M)
+    # Combine over QOIs
+    log_likelihood = np.sum(log_likelihood, axis=-1)  # (..., M)
+    if COMP != 'Cathode':
+        # Add extra weight for discharge current
+        log_likelihood += np.sum(-0.5 * ((DISCHARGE_CURRENT - ys[..., -1]) / DISCHARGE_SIGMA) ** 2, axis=-1)
+
     max_log_like = np.max(log_likelihood, axis=-1, keepdims=True)
     log_likelihood = np.squeeze(max_log_like, axis=-1) + np.log(np.sum(np.exp(log_likelihood - max_log_like), axis=-1))
 
@@ -141,7 +148,7 @@ def pdf_slice(pdfs=None, M=200, n_jobs=-1):
     plt.show()
 
 
-def mle_callback(xk, **kwargs):
+def mle_callback(xk, *args, **kwargs):
     """Callback function for Scipy optimizers"""
     global OPTIMIZER_ITER
     global START_TIME
@@ -150,7 +157,8 @@ def mle_callback(xk, **kwargs):
         res = xk.fun
     else:
         x = xk
-        res = kwargs.get('convergence', 0)
+        res = args[0] if len(args) > 0 else 0
+        res = kwargs.get('convergence', res)
 
     x = np.atleast_1d(x)
     print_str = (f'{(time.time() - START_TIME)/60:>10.2f} {OPTIMIZER_ITER:>10} {float(res):>12.3E} ' +
@@ -165,8 +173,15 @@ def run_mle(optimizer='nelder-mead', M=100):
     # nominal = {'u_n': 102.5, 'l_t': 19.9, 'vAN1': -1.66, 'vAN2': 29.44, 'delta_z': 2.47e-3, 'z0': -0.205, 'p0': 44.5}
     # nominal = {'T_ec': 4.707, 'u_n': 100.4, 'l_t': 3.497, 'vAN1': -1.088, 'vAN2': 10.78, 'delta_z': 0.38, 'z0': -2.172e-2, 'p0': 29.19}  # f(x)=3965
     # nominal = {'T_ec': 4.1, 'u_n': 101, 'l_t': 20, 'vAN1': -1.97, 'vAN2': 31, 'delta_z': 4.35e-4, 'z0': -0.2, 'p0': 54}  # f(x)=5470
+    # nominal = {'T_ec': 1.04, 'V_vac': 31.2, 'P*': 29.14, 'PT': 17.7, 'u_n': 102, 'l_t': 1.31, 'vAN1': -2.5,
+    #            'vAN2': 10.3, 'delta_z': 8.12e-4, 'z0': -0.0958, 'p0': 29.3, 'c0': 0.796, 'c1': 0.89, 'c2': 12.8,
+    #            'c3': 0.5, 'c4': 18.4, 'c5': 16}  # f(x)=3500
+    nominal = {'T_ec': 1.024, 'V_vac': 30.8, 'P*': 30.3, 'PT': 10.2, 'u_n': 167.8, 'l_t': 1.16, 'vAN1': -2.185,
+               'vAN2': 10.13, 'delta_z': 5.149e-4, 'z0': -0.0078, 'p0': 51.87, 'c0': 0.997, 'c1': 0.783, 'c2': 13.67,
+               'c3': 0.415, 'c4': 18.04, 'c5': 14.11}  # f(x)=3487
     # nominal = {'c0': 0.5938, 'c1': 0.4363, 'c2': -8.55, 'c3': 0.2812, 'c4': 20.13, 'c5': 16.64}  # f(x) = 526
-    nominal = {}
+    # .744, .8685, 15, .4767, 18.66, 15.01
+    nominal = {str(v): (v.bounds()[0] + v.bounds()[1])/2 for v in THETA_VARS}
     bds = [v.bounds() for v in THETA_VARS]
     x0 = [nominal.get(str(v), v.nominal) for v in THETA_VARS]
     obj_fun = lambda theta: float(-spt100_log_likelihood(theta.astype(np.float32), M=M))
@@ -261,15 +276,19 @@ def run_mcmc(file='dram-system.h5', clean=False, n_jobs=1, M=100):
             if group is not None:
                 del fd['mcmc']
 
-    nwalk, niter = 1, 24000
+    nwalk, niter = 1, 80000
 
     cov_pct = {'T_ec': 0.15, 'PT': 0.2, 'P*': 0.08, 'V_vac': 0.01, 'vAN1': 0.01, 'z0': 0.15, 'p0': 0.2, 'c0': 0.05,
                'c1': 0.02, 'c2': 0.15, 'c3': 0.04, 'c4': 0.01, 'c5': 0.02} if TRAINING else \
-        {'T_ec': 0.008, 'PT': 0.05, 'P*': 0.07, 'V_vac': 0.005, 'vAN1': 0.0001, 'z0': 0.03, 'p0': 0.04, 'c0': 0.01,
-         'c1': 0.005, 'c2': 0.04, 'c3': 0.01, 'c4': 0.001, 'c5': 0.002, 'vAN2': 0.01, 'l_t': 0.02, 'delta_z': 0.001,
-         'u_n': 0.001}
+        {'T_ec': 0.15, 'PT': 0.02, 'P*': 0.15, 'V_vac': 0.005, 'vAN1': 0.005, 'z0': 0.08, 'p0': 0.16, 'c0': 0.07,
+         'c1': 0.2, 'c2': 0.15, 'c3': 0.2, 'c4': 0.04, 'c5': 0.08, 'vAN2': 0.03, 'l_t': 0.1, 'delta_z': 0.01,
+         'u_n': 0.04}
+    # nominal = {'T_ec': 1.45, 'PT': 11, 'P*': 60.7, 'V_vac': 31.2, 'vAN1': 10.1, 'z0': -0.01, 'p0': 56.7, 'c0': 0.62,
+    #      'c1': 0.42, 'c2': -4.0, 'c3': 0.27, 'c4': 20.0, 'c5': 17.4, 'vAN2': -2.0, 'l_t': 1.45, 'delta_z': 0.4,
+    #      'u_n': 159}
+    nominal = {}
     # p0 = np.array([(v.bounds()[0] + v.bounds()[1])/2 for v in THETA_VARS]).astype(np.float32)
-    p0 = np.array([v.nominal for v in THETA_VARS]).astype(np.float32)
+    p0 = np.array([nominal.get(str(v), v.nominal) for v in THETA_VARS]).astype(np.float32)
     p0[np.isclose(p0, 0)] = 1
     cov0 = np.eye(p0.shape[0]) * np.array([(cov_pct.get(str(v), 0.08) * np.abs(p0[i]) / 2)**2 for i, v in enumerate(THETA_VARS)])
     cov0 *= 1
@@ -277,8 +296,8 @@ def run_mcmc(file='dram-system.h5', clean=False, n_jobs=1, M=100):
 
     with Parallel(n_jobs=n_jobs, verbose=0) as ppool:
         fun = lambda theta: spt100_log_posterior(theta, M=M, ppool=ppool)
-        uq.dram(fun, p0, niter, cov0=cov0.astype(np.float32), filename=file, adapt_after=500, adapt_interval=100,
-                eps=1e-9, gamma=0.1)
+        uq.dram(fun, p0, niter, cov0=None, filename=file, adapt_after=5000, adapt_interval=1000,
+                eps=1e-12, gamma=0.1)
 
 
 def show_mcmc(file='dram-system.h5', burnin=0.1):
@@ -322,7 +341,7 @@ def show_mcmc(file='dram-system.h5', burnin=0.1):
 
         # Marginal corner plot
         fig, ax = uq.ndscatter(samples[..., j:j+nshow].reshape((-1, nshow)), subplot_size=2, labels=labels[j:j+nshow],
-                               plot='hist', cov_overlay=cov[j:j+nshow, j:j+nshow])
+                               plot2d='hist', cov_overlay=cov[j:j+nshow, j:j+nshow])
         plt.show()
 
 
@@ -334,20 +353,24 @@ def journal_plots(file, burnin=0.1):
         cov = np.mean(np.array(fd['mcmc/cov']), axis=0)
         niter, nwalk, ndim = samples.shape
         samples = samples[int(burnin*niter):, ...].reshape((-1, ndim))
+        mincnt = int(0.0015 * samples.shape[0])
+        bins = 15
 
         # Cathode marginals
         str_use = ['T_ec', 'V_vac', 'P*', 'PT']
         idx_use = sorted([THETA_VARS.index(v) for v in str_use])
         labels = [r'$T_e$ (eV)', r'$V_{vac}$ (V)', r'$P^*$ ($\mu$Torr)', r'$P_T$ ($\mu$Torr)']
-        fig, ax = uq.ndscatter(samples[:, idx_use], subplot_size=2, labels=labels, plot='kde', cmap='viridis')
+        fig, ax = uq.ndscatter(samples[:, idx_use], subplot_size=2, labels=labels, plot1d='kde', plot2d='hex',
+                               cmap='viridis', cmin=mincnt, bins=bins)
         fig.savefig('mcmc-cathode.png', dpi=300, format='png')
         plt.show()
 
         # Thruster marginals
-        str_use = ['T_ec', 'u_n', 'l_t', 'vAN2', 'z0', 'p0']
+        str_use = ['T_ec', 'u_n', 'l_t', 'vAN1', 'vAN2', 'z0', 'p0']
         idx_use = sorted([THETA_VARS.index(v) for v in str_use])
-        labels = [r'$T_e$ (eV)', r'$u_n$ (m/s)', r'$l_t$ (mm)', r'$\nu_2$ (-)', r'$z_0$ (-)', r'$p_0$ ($\mu$Torr)']
-        fig, ax = uq.ndscatter(samples[:, idx_use], subplot_size=2, labels=labels, plot='kde', cmap='viridis')
+        labels = [r'$T_e$ (eV)', r'$u_n$ (m/s)', r'$l_t$ (mm)', r'$\nu_1$ $(10^x)$ (-)', r'$\nu_2$ (-)', r'$z_0$ (-)', r'$p_0$ ($\mu$Torr)']
+        fig, ax = uq.ndscatter(samples[:, idx_use], subplot_size=2, labels=labels, plot1d='kde', plot2d='hex',
+                               cmap='viridis', cmin=mincnt, bins=bins)
         fig.savefig('mcmc-thruster.png', dpi=300, format='png')
         plt.show()
 
@@ -357,8 +380,8 @@ def journal_plots(file, burnin=0.1):
         labels = [r'$c_0$ (-)', r'$c_1$ (-)', r'$c_2$ (rad/Pa)', r'$c_3$ (rad)', r'$c_4$ $(10^x)$ ($m^{-3}$/Pa)',
                   r'$c_5$ $(10^x)$ ($m^{-3}$)']
         fmt = ['{x:.2f}' for i in range(len(str_use))]
-        fig, ax = uq.ndscatter(samples[:, idx_use], subplot_size=2, labels=labels, plot='kde', cmap='viridis',
-                               tick_fmts=fmt)
+        fig, ax = uq.ndscatter(samples[:, idx_use], subplot_size=2, labels=labels, plot1d='kde', plot2d='hex',
+                               cmap='viridis', tick_fmts=fmt, bins=bins, cmin=mincnt)
         fig.savefig('mcmc-plume.png', dpi=300, format='png')
         plt.show()
 
@@ -379,7 +402,7 @@ def journal_plots(file, burnin=0.1):
 
 if __name__ == '__main__':
     M = 1
-    optimizer = 'nelder-mead'
+    optimizer = 'evolution'
     file = f'dram-{COMP.lower()}-{"train" if TRAINING else "test"}.h5'
 
     # pdf_slice(pdfs=['Posterior'], M=M)

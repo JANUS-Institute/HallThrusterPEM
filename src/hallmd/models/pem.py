@@ -50,10 +50,17 @@ def pem_v0(save_dir: str | Path = None, executor: Executor = None, init: bool = 
         for v in exo_vars:
             # Make sure nominal values are up to date with the current config file
             j = surr.exo_vars.index(v)
-            surr.exo_vars[j].nominal = v.nominal
-            surr.exo_vars[j].param_type = v.param_type
-            surr.exo_vars[j].tex = v.tex
-            surr.exo_vars[j].update_bounds(*v.bounds())
+            surr.exo_vars[j] = v
+            for node, node_obj in surr.graph.nodes.items():
+                try:
+                    j = surr[node].x_vars.index(v)
+                    surr[node].x_vars[j] = v
+                except:
+                    pass
+            # surr.exo_vars[j].nominal = v.nominal
+            # surr.exo_vars[j].param_type = v.param_type
+            # surr.exo_vars[j].tex = v.tex
+            # surr.exo_vars[j].update_bounds(*v.bounds())
 
         return surr
 
@@ -65,8 +72,8 @@ def pem_v0(save_dir: str | Path = None, executor: Executor = None, init: bool = 
             d2 = pickle.load(fd2)
             r2 = d2['vtr'].shape[0]
     except FileNotFoundError:
-        r1 = 11
-        r2 = 6
+        r1 = 4
+        r2 = 2
 
     coupling_vars.extend([UniformRV(-20, 20, id=f'uion{i}', tex=f"$\\tilde{{u}}_{{ion,{i}}}$",
                                     description=f'Ion velocity latent coefficient {i}',
