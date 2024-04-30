@@ -7,6 +7,7 @@ import scipy.stats as st
 import h5py
 import uqtils as uq
 import matplotlib.pyplot as plt
+import matplotlib
 
 from hallmd.models.pem import pem_v0
 from hallmd.models.thruster import uion_reconstruct
@@ -27,6 +28,19 @@ IDX_MAP = {'V_cc': [i for i in SURR.graph.nodes['Cathode']['exo_in'] if i not in
            'jion': [i for i in SURR.graph.nodes['Plume']['exo_in'] if i not in SKIP_IDX]
            }
 QOIS = ['V_cc', 'T', 'uion', 'jion']
+
+MEDIUM_SIZE = 13
+BIGGER_SIZE = 16
+
+plt.rc('font', size=BIGGER_SIZE)          # controls default text sizes
+plt.rc('axes', labelsize=BIGGER_SIZE)     # fontsize of the x and y labels
+plt.rc('xtick', labelsize=MEDIUM_SIZE)    # fontsize of the tick labels
+plt.rc('ytick', labelsize=MEDIUM_SIZE)    # fontsize of the tick labels
+plt.rc('legend', fontsize=MEDIUM_SIZE)    # legend fontsize
+plt.rc('xtick.major', size=6, width=1, pad=6)
+plt.rc('ytick.major', size=6, width=1, pad=6)
+plt.rc('xtick.minor', size=3, width=0.8, visible=True)
+plt.rc('ytick.minor', size=3, width=0.8, visible=True)
 
 
 def compute_indices(Ns=1000):
@@ -111,15 +125,13 @@ def spt100_sobol(Ns=1000):
         compute_indices(Ns)
 
     z = st.norm.ppf(1 - (1 - 0.95) / 2)
+    figsize = (6, 5)
 
-    with h5py.File(file, 'r') as fd:
+    with h5py.File(file, 'r') as fd, plt.style.context('uqtils.default'):
         pb = np.array(fd['PB'])
-        Nx = pb.shape[0]
-
-        title_map = {'V_cc': 'Cathode coupling voltage', 'T': 'Thrust', 'uion': 'Ion velocity at channel exit',
-                     'jion': 'Peak ion current density'}
-
-        fig, axs = plt.subplots(1, 2)
+        fig1, ax1 = plt.subplots(figsize=figsize, layout='tight')
+        fig2, ax2 = plt.subplots(figsize=figsize, layout='tight')
+        axs = [ax1, ax2]
         for i, qoi in enumerate(['T', 'uion']):
             ax = axs[i]
             S1 = np.array(fd[f'{qoi}/S1'])
@@ -129,25 +141,20 @@ def spt100_sobol(Ns=1000):
             ST_avg = np.mean(ST, axis=0)
             ST_se = np.sqrt(np.var(ST, axis=0) / Ns)
             xlabels = [v.to_tex(units=False) for i, v in enumerate(SURR.x_vars) if i in IDX_MAP.get(qoi)]
-            c = plt.get_cmap('jet')(np.linspace(0, 1, len(xlabels)))
+            c = plt.get_cmap('tab10')(np.linspace(0, 1, len(xlabels)))
             for j, str_var in enumerate(xlabels):
                 label = str_var if i == 1 else None
                 ax.errorbar(pb, S1_avg[:, j], yerr=z * S1_se[:, j], ls='-', capsize=3, label=label, color=c[j])
                 ax.errorbar(pb, ST_avg[:, j], yerr=z * ST_se[:, j], ls='--', capsize=3, color=c[j])
             ax.plot(np.nan, np.nan, ls='-', color=(0.5, 0.5, 0.5), alpha=0.5, label=f'$S_1$' if i==1 else None)
             ax.plot(np.nan, np.nan, ls='--', color=(0.5, 0.5, 0.5), alpha=0.5, label=f'$S_T$' if i==1 else None)
-            ax.grid()
             ax.set_xscale('log')
-            ax.set_ylim(bottom=0)
-            ax.set_title(title_map.get(qoi))
+            ax.set_ylim(bottom=0, top=1.05)
             uq.ax_default(ax, 'Background pressure (Torr)', "Sobol' index", legend=False)
-        leg = axs[1].legend(fancybox=True, facecolor='white', framealpha=1, loc='upper left', ncol=1,
-                            bbox_to_anchor=(1.02, 1.02), labelspacing=0.8)
-        frame = leg.get_frame()
-        frame.set_edgecolor('k')
-        fig.set_size_inches(10.5, 5)
-        fig.tight_layout(w_pad=2)
-        fig.savefig(f'sobol-thruster.png', dpi=300, format='png')
+        with matplotlib.rc_context(rc={'legend.fontsize': 14}):
+            leg = axs[1].legend(loc='upper left', ncol=1, bbox_to_anchor=(1.02, 1.025), labelspacing=0.8)
+        fig1.savefig(f'sobol-thrust.pdf', bbox_inches='tight', format='pdf')
+        fig2.savefig(f'sobol-uion.pdf', bbox_inches='tight', format='pdf')
         plt.show()
 
         for i, qoi in enumerate(['V_cc', 'jion']):
@@ -158,28 +165,20 @@ def spt100_sobol(Ns=1000):
             ST_avg = np.mean(ST, axis=0)
             ST_se = np.sqrt(np.var(ST, axis=0) / Ns)
 
-            fig, ax = plt.subplots()
+            fig, ax = plt.subplots(layout='tight', figsize=figsize)
             xlabels = [v.to_tex(units=False) for i, v in enumerate(SURR.x_vars) if i in IDX_MAP.get(qoi)]
-            c = plt.get_cmap('jet')(np.linspace(0, 1, len(xlabels)))
+            c = plt.get_cmap('tab10')(np.linspace(0, 1, len(xlabels)))
             for j, str_var in enumerate(xlabels):
                 ax.errorbar(pb, S1_avg[:, j], yerr=z * S1_se[:, j], ls='-', capsize=3, label=str_var, color=c[j])
                 ax.errorbar(pb, ST_avg[:, j], yerr=z * ST_se[:, j], ls='--', capsize=3, color=c[j])
             ax.plot(np.nan, np.nan, ls='-', color=(0.5, 0.5, 0.5), alpha=0.5, label=f'$S_1$')
             ax.plot(np.nan, np.nan, ls='--', color=(0.5, 0.5, 0.5), alpha=0.5, label=f'$S_T$')
-            ax.grid()
             ax.set_xscale('log')
-            ax.set_ylim(bottom=0)
-            ax.set_title(title_map.get(qoi))
+            ax.set_ylim(bottom=0, top=1.08)
             uq.ax_default(ax, 'Background pressure (Torr)', "Sobol' index", legend=qoi == 'V_cc')
             if qoi == 'jion':
-                leg = ax.legend(fancybox=True, facecolor='white', framealpha=1, loc='upper left', ncol=1,
-                                bbox_to_anchor=(1.02, 1.02), labelspacing=0.8)
-                leg.get_frame().set_edgecolor('k')
-                fig.set_size_inches(5.5, 4)
-            else:
-                fig.set_size_inches(5, 4)
-            fig.tight_layout()
-            fig.savefig(f'sobol-{qoi.lower()}.png', dpi=300, format='png')
+                leg = ax.legend(loc='upper left', ncol=1, bbox_to_anchor=(1.02, 1.025), labelspacing=0.8)
+            fig.savefig(f'sobol-{qoi.lower()}.pdf', bbox_inches='tight', format='pdf')
             plt.show()
 
 

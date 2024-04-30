@@ -6,6 +6,7 @@ import time
 import numpy as np
 import uqtils as uq
 import matplotlib.pyplot as plt
+import matplotlib
 from scipy.optimize import direct, minimize, differential_evolution, OptimizeResult
 import skopt
 import h5py
@@ -357,47 +358,50 @@ def journal_plots(file, burnin=0.1):
         bins = 15
 
         # Cathode marginals
-        str_use = ['T_ec', 'V_vac', 'P*', 'PT']
-        idx_use = sorted([THETA_VARS.index(v) for v in str_use])
-        labels = [r'$T_e$ (eV)', r'$V_{vac}$ (V)', r'$P^*$ ($\mu$Torr)', r'$P_T$ ($\mu$Torr)']
-        fig, ax = uq.ndscatter(samples[:, idx_use], subplot_size=2, labels=labels, plot1d='kde', plot2d='hex',
-                               cmap='viridis', cmin=mincnt, bins=bins)
-        fig.savefig('mcmc-cathode.png', dpi=300, format='png')
-        plt.show()
+        rc = {'axes.labelsize': 17, 'xtick.labelsize': 12, 'ytick.labelsize': 12, 'legend.fontsize': 12, 'axes.grid' : False}
+        with plt.style.context("uqtils.default"):
+            with matplotlib.rc_context(rc=rc):
+                str_use = ['T_ec', 'V_vac', 'P*', 'PT']
+                idx_use = sorted([THETA_VARS.index(v) for v in str_use])
+                labels = [r'$T_e$ (eV)', r'$V_{vac}$ (V)', r'$P^*$ ($\mu$Torr)', r'$P_T$ ($\mu$Torr)']
+                fig, ax = uq.ndscatter(samples[:, idx_use], subplot_size=2, labels=labels, plot1d='kde', plot2d='hex',
+                                       cmap='viridis', cmin=mincnt, bins=bins)
+                fig.savefig('mcmc-cathode.pdf', bbox_inches='tight', format='pdf')
+                plt.show()
 
-        # Thruster marginals
-        str_use = ['T_ec', 'u_n', 'l_t', 'vAN1', 'vAN2', 'z0', 'p0']
-        idx_use = sorted([THETA_VARS.index(v) for v in str_use])
-        labels = [r'$T_e$ (eV)', r'$u_n$ (m/s)', r'$l_t$ (mm)', r'$\nu_1$ $(10^x)$ (-)', r'$\nu_2$ (-)', r'$z_0$ (-)', r'$p_0$ ($\mu$Torr)']
-        fig, ax = uq.ndscatter(samples[:, idx_use], subplot_size=2, labels=labels, plot1d='kde', plot2d='hex',
-                               cmap='viridis', cmin=mincnt, bins=bins)
-        fig.savefig('mcmc-thruster.png', dpi=300, format='png')
-        plt.show()
+                # Thruster marginals
+                str_use = ['T_ec', 'u_n', 'l_t', 'vAN1', 'vAN2', 'z0', 'p0']
+                idx_use = sorted([THETA_VARS.index(v) for v in str_use])
+                labels = [r'$T_e$ (eV)', r'$u_n$ (m/s)', r'$l_t$ (mm)', r'$a_1$ $(10^x)$ (-)', r'$a_2$ (-)', r'$z_0$ (-)', r'$p_0$ ($\mu$Torr)']
+                fig, ax = uq.ndscatter(samples[:, idx_use], subplot_size=2, labels=labels, plot1d='kde', plot2d='hex',
+                                       cmap='viridis', cmin=mincnt, bins=bins)
+                fig.savefig('mcmc-thruster.pdf', bbox_inches='tight', format='pdf')
+                plt.show()
 
-        # Plume marginals
-        str_use = ['c0', 'c1', 'c2', 'c3', 'c4', 'c5']
-        idx_use = sorted([THETA_VARS.index(v) for v in str_use])
-        labels = [r'$c_0$ (-)', r'$c_1$ (-)', r'$c_2$ (rad/Pa)', r'$c_3$ (rad)', r'$c_4$ $(10^x)$ ($m^{-3}$/Pa)',
-                  r'$c_5$ $(10^x)$ ($m^{-3}$)']
-        fmt = ['{x:.2f}' for i in range(len(str_use))]
-        fig, ax = uq.ndscatter(samples[:, idx_use], subplot_size=2, labels=labels, plot1d='kde', plot2d='hex',
-                               cmap='viridis', tick_fmts=fmt, bins=bins, cmin=mincnt)
-        fig.savefig('mcmc-plume.png', dpi=300, format='png')
-        plt.show()
+                # Plume marginals
+                str_use = ['c0', 'c1', 'c2', 'c3', 'c4', 'c5']
+                idx_use = sorted([THETA_VARS.index(v) for v in str_use])
+                labels = [r'$c_0$ (-)', r'$c_1$ (-)', r'$c_2$ (rad/Pa)', r'$c_3$ (rad)', r'$c_4$ $(10^x)$ ($m^{-3}$/Pa)',
+                          r'$c_5$ $(10^x)$ ($m^{-3}$)']
+                fmt = ['{x:.2f}' for i in range(len(str_use))]
+                fig, ax = uq.ndscatter(samples[:, idx_use], subplot_size=2, labels=labels, plot1d='kde', plot2d='hex',
+                                       cmap='viridis', tick_fmts=fmt, bins=bins, cmin=mincnt)
+                fig.savefig('mcmc-plume.pdf', bbox_inches='tight', format='pdf')
+                plt.show()
 
-        # Print 1d marginal stats
-        print(f'Average acceptance ratio: {np.mean(accepted) / niter:.4f}')
-        print(f'{"Variable": <10} {"Minimum": <20} {"5th percentile": <20} {"50th percentile": <20} '
-              f'{"95th percentile": <20} {"Maximum": <20} {"Std deviation": <20}')
-        for i in range(ndim):
-            min = np.min(samples[:, i])
-            low = np.percentile(samples[:, i], 5)
-            med = np.percentile(samples[:, i], 50)
-            high = np.percentile(samples[:, i], 95)
-            max = np.max(samples[:, i])
-            std = np.std(samples[:, i])
-            print_str = ' '.join([f"{ele: <20.5f}" for ele in [min, low, med, high, max, std]])
-            print(f'{str(THETA_VARS[i]): <10} ' + print_str)
+                # Print 1d marginal stats
+                print(f'Average acceptance ratio: {np.mean(accepted) / niter:.4f}')
+                print(f'{"Variable": <10} {"Minimum": <20} {"5th percentile": <20} {"50th percentile": <20} '
+                      f'{"95th percentile": <20} {"Maximum": <20} {"Std deviation": <20}')
+                for i in range(ndim):
+                    min = np.min(samples[:, i])
+                    low = np.percentile(samples[:, i], 5)
+                    med = np.percentile(samples[:, i], 50)
+                    high = np.percentile(samples[:, i], 95)
+                    max = np.max(samples[:, i])
+                    std = np.std(samples[:, i])
+                    print_str = ' '.join([f"{ele: <20.5f}" for ele in [min, low, med, high, max, std]])
+                    print(f'{str(THETA_VARS[i]): <10} ' + print_str)
 
 
 if __name__ == '__main__':

@@ -100,7 +100,7 @@
     },
     "vAN1": {
         "id": "vAN1",
-        "tex": "$\\nu_1$",
+        "tex": "$a_1$",
         "description": "Anomalous transport coefficient 1",
         "units": "-",
         "param_type": "calibration",
@@ -111,7 +111,7 @@
     },
     "vAN2": {
         "id": "vAN2",
-        "tex": "$\\nu_2$",
+        "tex": "$a_2$",
         "description": "Anomalous transport coefficient 2",
         "units": "-",
         "param_type": "calibration",
@@ -265,7 +265,7 @@
     },
     "I_B0": {
         "id": "I_B0",
-        "tex": "$I_{B,0}$",
+        "tex": "$I_b$",
         "description": "Beam current",
         "units": "A",
         "param_type": "coupling",
@@ -309,7 +309,7 @@
     },
     "I_D": {
         "id": "I_D",
-        "tex": "$I_D$",
+        "tex": "$I_d$",
         "description": "Discharge current",
         "units": "A",
         "param_type": "coupling",

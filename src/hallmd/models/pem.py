@@ -57,10 +57,11 @@ def pem_v0(save_dir: str | Path = None, executor: Executor = None, init: bool = 
                     surr[node].x_vars[j] = v
                 except:
                     pass
-            # surr.exo_vars[j].nominal = v.nominal
-            # surr.exo_vars[j].param_type = v.param_type
-            # surr.exo_vars[j].tex = v.tex
-            # surr.exo_vars[j].update_bounds(*v.bounds())
+
+        for v in coupling_vars:
+            j = surr.coupling_vars.index(v)
+            surr.coupling_vars[j].tex = v.tex
+            surr.coupling_vars[j].nominal = v.nominal
 
         return surr
 
