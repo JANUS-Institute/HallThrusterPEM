@@ -75,15 +75,32 @@ def run_models(Ns=1000):
         nominal.update({str(v): theta[..., i] for i, v in enumerate(THETA_VARS)})
         xs = SURR.sample_inputs(sample_shape, use_pdf=True, nominal=nominal, constants=CONSTANTS)
         ys = np.squeeze(SURR.predict(xs, qoi_ind=QOI_MAP.get('Cathode'), training=TRAINING), axis=-1)
-        fd.create_dataset('vcc/posterior/xmodel', data=xs)
-        fd.create_dataset('vcc/posterior/ymodel', data=ys)
+        nominal.update({str(v): v.nominal for i, v in enumerate(THETA_VARS)})
+        xmodel = SURR.sample_inputs(Nx, use_pdf=False, nominal=nominal,
+                                    constants=CONSTANTS.union({"design", "other", "operating"}))
+        ymodel = SURR.predict(xmodel, qoi_ind=QOI_MAP.get('Cathode'), use_model='best')
+        ymodel_surr = SURR.predict(xmodel, qoi_ind=QOI_MAP.get('Cathode'), training=TRAINING)
+        fd.create_dataset('vcc/posterior/xsurr', data=xs)
+        fd.create_dataset('vcc/posterior/ysurr', data=ys)
+        fd.create_dataset('vcc/posterior/xmodel', data=xmodel)
+        fd.create_dataset('vcc/posterior/ymodel', data=ymodel)
+        fd.create_dataset('vcc/posterior/ymodel_surr', data=ymodel_surr)
 
         theta = prior_sampler(sample_shape)
         nominal.update({str(v): theta[..., i] for i, v in enumerate(THETA_VARS)})
         xs = SURR.sample_inputs(sample_shape, use_pdf=True, nominal=nominal, constants=CONSTANTS)
         ys = np.squeeze(SURR.predict(xs, qoi_ind=QOI_MAP.get('Cathode'), training=TRAINING), axis=-1)
-        fd.create_dataset('vcc/prior/xmodel', data=xs)
-        fd.create_dataset('vcc/prior/ymodel', data=ys)
+        nominal.update({str(v): v.mu if isinstance(v, NormalRV) else (v.bounds()[0] + v.bounds()[1]) / 2
+                        for i, v in enumerate(THETA_VARS)})
+        xmodel = SURR.sample_inputs(Nx, use_pdf=False, nominal=nominal,
+                                    constants=CONSTANTS.union({"design", "other", "operating"}))
+        ymodel = SURR.predict(xmodel, qoi_ind=QOI_MAP.get('Cathode'), use_model='best')
+        ymodel_surr = SURR.predict(xmodel, qoi_ind=QOI_MAP.get('Cathode'), training=TRAINING)
+        fd.create_dataset('vcc/prior/xsurr', data=xs)
+        fd.create_dataset('vcc/prior/ysurr', data=ys)
+        fd.create_dataset('vcc/prior/xmodel', data=xmodel)
+        fd.create_dataset('vcc/prior/ymodel', data=ymodel)
+        fd.create_dataset('vcc/prior/ymodel_surr', data=ymodel_surr)
 
         # Include discharge current (I_D) with all of these QoIs
 
@@ -297,12 +314,14 @@ def print_l2_error(ys_prior, ys_post, ym_prior, ym_post, ym_surr_prior, ym_surr_
     model_e_post = relative_l2(ym_post, exp_data)
     surr_model_prior = relative_l2(ym_surr_prior, ym_prior)
     surr_model_post = relative_l2(ym_surr_post, ym_post)
-    print(f'{"Case":>20} {"Prior M":>8} {"Prior s":>8} {"Prior r":>8} {"Post M":>8} {"Post s":>8} {"Post r":>8}')
+    surr_med_e_prior = relative_l2(ym_surr_prior, exp_data)
+    surr_med_e_post = relative_l2(ym_surr_post, exp_data)
+    print(f'{"Case":>20} {"Prior mu":>8} {"Prior s":>8} {"Prior r":>8} {"Post mu":>8} {"Post s":>8} {"Post r":>8}')
     print(f'{"Surr-Data":>20} {avg_func(surr_e_prior):>8.3f} {np.std(surr_e_prior):>8.3f} '
           f'{avg_func(surr_e_prior) / exp_noise:>8.3f} '
           f'{avg_func(surr_e_post):>8.3f} {np.std(surr_e_post):>8.3f} '
           f'{avg_func(surr_e_post) / exp_noise:>8.3f}')
-    print(f'{"Model-Data":>20} {avg_func(model_e_prior):>8.3f} {np.std(model_e_prior):>8.3f} '
+    print(f'{"Model-Med-Data":>20} {avg_func(model_e_prior):>8.3f} {np.std(model_e_prior):>8.3f} '
           f'{avg_func(model_e_prior) / exp_noise:>8.3f} '
           f'{avg_func(model_e_post):>8.3f} {np.std(model_e_post):>8.3f} '
           f'{avg_func(model_e_post) / exp_noise:>8.3f}')
@@ -310,6 +329,10 @@ def print_l2_error(ys_prior, ys_post, ym_prior, ym_post, ym_surr_prior, ym_surr_
           f'{avg_func(surr_model_prior) / exp_noise:>8.3f} '
           f'{avg_func(surr_model_post):>8.3f} {np.std(surr_model_post):>8.3f} '
           f'{avg_func(surr_model_post) / exp_noise:>8.3f}')
+    print(f'{"Surr-Med-Model":>20} {avg_func(surr_med_e_prior):>8.3f} {np.std(surr_med_e_prior):>8.3f} '
+          f'{avg_func(surr_med_e_prior) / exp_noise:>8.3f} '
+          f'{avg_func(surr_med_e_post):>8.3f} {np.std(surr_med_e_post):>8.3f} '
+          f'{avg_func(surr_med_e_post) / exp_noise:>8.3f}')
 
 
 def spt100_monte_carlo(Ns=1000, plot=True):
@@ -326,8 +349,12 @@ def spt100_monte_carlo(Ns=1000, plot=True):
         data = DATA['V_cc'][0]
         pb = data['x'][:, 0]
         idx = np.argsort(pb)
-        ys_post = fd['vcc/posterior/ymodel']
-        ys_prior = fd['vcc/prior/ymodel']
+        ys_post = fd['vcc/posterior/ysurr']
+        ys_prior = fd['vcc/prior/ysurr']
+        ym_post = fd['vcc/posterior/ymodel']
+        ym_prior = fd['vcc/prior/ymodel']
+        ym_surr_post = fd['vcc/posterior/ymodel_surr']
+        ym_surr_prior = fd['vcc/prior/ymodel_surr']
         yerr = 2 * np.sqrt(data['var_y'])
         ys_post_pred = np.squeeze(uq.normal_sample(np.array(ys_post)[..., np.newaxis], (np.mean(yerr)/2)**2), axis=-1)
 
@@ -363,7 +390,7 @@ def spt100_monte_carlo(Ns=1000, plot=True):
             plt.show()
 
         print('-------------Cathode coupling voltage training set relative L2 scores----------------')
-        print_l2_error(ys_prior, ys_post, 0, 0, 0, 0, data['y'], 0.01)
+        print_l2_error(ys_prior, ys_post, ym_prior, ym_post, ym_surr_prior, ym_surr_post, data['y'], 0.01)
 
         # Thrust (Diamant)
         data = DATA['T'][0]

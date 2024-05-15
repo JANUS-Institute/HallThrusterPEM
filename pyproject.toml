@@ -20,7 +20,7 @@ dependencies = [
     "scipy>=1.11.4",
     "amisc>=0.2.1",
     "h5py>=3.10.0",
-    "uqtils>=0.3.0",
+    "uqtils>=0.3.1",
 ]
 requires-python = ">=3.11"
 readme = "docs/README.md"

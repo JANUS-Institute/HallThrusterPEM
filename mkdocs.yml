@@ -3,7 +3,7 @@ site_name: Multidisciplinary Hall thruster modeling
 site_author: Joshua Eckels
 repo_name: JANUS-Institute/HallThrusterPEM
 repo_url: https://github.com/JANUS-Institute/HallThrusterPEM.git
-copyright: Copyright &copy 2023 Joshua Eckels
+copyright: Copyright &copy 2024 Joshua Eckels
 
 theme:
   name: material
