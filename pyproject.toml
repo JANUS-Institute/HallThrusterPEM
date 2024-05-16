@@ -77,5 +77,4 @@ dev = [
     "mkdocs-material>=9.5.2",
     "mkdocstrings[python]>=0.24.0",
     "GitPython>=3.1.40",
-    "-e file:///${PROJECT_ROOT}/../uqtils#egg=uqtils",
 ]

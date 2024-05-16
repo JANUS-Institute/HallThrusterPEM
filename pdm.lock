@@ -5,7 +5,7 @@
 groups = ["default", "dev"]
 strategy = ["cross_platform"]
 lock_version = "4.4.1"
-content_hash = "sha256:edb7494fe23754a54ff1700380b8d1ac558dfd6c4c42dc064eba0298df72d0a8"
+content_hash = "sha256:4d82068586dc82140374a658edbe1463986d51f36fae766182271e422d7ddf85"
 
 [[package]]
 name = "amisc"
@@ -1006,10 +1006,8 @@ files = [
 
 [[package]]
 name = "uqtils"
-version = "0.3.0"
+version = "0.3.1"
 requires_python = ">=3.11"
-editable = true
-path = "../uqtils"
 summary = "Assorted utilities for uncertainty quantification and scientific computing."
 dependencies = [
     "h5py>=3.10.0",
@@ -1017,6 +1015,10 @@ dependencies = [
     "numpy>=1.26.3",
     "scipy>=1.12.0",
     "tqdm>=4.66.1",
+]
+files = [
+    {file = "uqtils-0.3.1-py3-none-any.whl", hash = "sha256:7712bf5f26d77d31e12e7d37b2d8540838e2a60844fe629b70fbff33283d0141"},
+    {file = "uqtils-0.3.1.tar.gz", hash = "sha256:74675fda5277f3e8069371dd653a1efea064642152d6b263cc18f19400f07a1d"},
 ]
 
 [[package]]
