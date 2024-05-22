@@ -23,11 +23,11 @@ CONSTANTS = {'Va', 'r_m'}
 SKIP_IDX = [i for i, v in enumerate(SURR.x_vars) if str(v) in CONSTANTS]
 LCH = 0.025
 IDX_MAP = {'V_cc': [i for i in SURR.graph.nodes['Cathode']['exo_in'] if i not in SKIP_IDX],
-           'T': [i for i in SURR.graph.nodes['Thruster']['exo_in'] if i not in SKIP_IDX],
+           'Tc': [i for i in SURR.graph.nodes['Thruster']['exo_in'] if i not in SKIP_IDX],
            'uion': [i for i in SURR.graph.nodes['Thruster']['exo_in'] if i not in SKIP_IDX],
            'jion': [i for i in SURR.graph.nodes['Plume']['exo_in'] if i not in SKIP_IDX]
            }
-QOIS = ['V_cc', 'T', 'uion', 'jion']
+QOIS = ['V_cc', 'Tc', 'uion', 'jion']
 
 MEDIUM_SIZE = 13
 BIGGER_SIZE = 16
@@ -44,30 +44,31 @@ plt.rc('ytick.minor', size=3, width=0.8, visible=True)
 
 
 def compute_indices(Ns=1000):
-    def sampler(shape, nominal, qoi: Literal['V_cc', 'T', 'uion', 'jion']):
+    def sampler(shape, nominal, qoi: Literal['V_cc', 'Tc', 'uion', 'jion']):
         x = SURR.sample_inputs(shape, use_pdf=True, nominal=nominal, constants=CONSTANTS)[..., IDX_MAP.get(qoi)]
 
         if qoi == 'jion':
             # Handle some really bad samples of jion
-            comp_in = np.empty(shape + (x.shape[-1] + 2,))
-            comp_in[..., :-2] = x
-            comp_in[..., -2] = 1    # r_m
-            comp_in[..., -1] = 4    # I_B0
+            comp_in = np.empty(shape + (x.shape[-1] + 3,))
+            comp_in[..., :-3] = x
+            comp_in[..., -3] = 1     # r_m
+            comp_in[..., -2] = 4     # I_B0
+            comp_in[..., -1] = 0.08  # T
             comp_in = comp_in.reshape((-1, comp_in.shape[-1]))
-            comp_out = SURR['Plume']._model(comp_in, compress=False)['y'][..., 1:]
+            comp_out = SURR['Plume']._model(comp_in, compress=False)['y'][..., 2:]
             bad_idx = np.any(comp_out >= 200, axis=-1)
             num_reject = np.sum(bad_idx)
             while num_reject > 0:
                 new_sample = SURR.sample_inputs(int(num_reject), use_pdf=True, nominal=nominal, constants=CONSTANTS)[..., IDX_MAP.get(qoi)]
-                comp_in[bad_idx, :-2] = new_sample
-                comp_out = SURR['Plume']._model(comp_in, compress=False)['y'][..., 1:]
+                comp_in[bad_idx, :-3] = new_sample
+                comp_out = SURR['Plume']._model(comp_in, compress=False)['y'][..., 2:]
                 bad_idx = np.any(comp_out >= 200, axis=-1)
                 num_reject = np.sum(bad_idx)
-            x = comp_in[:, :-2].reshape(x.shape)
+            x = comp_in[:, :-3].reshape(x.shape)
 
         return x
 
-    def model(x, qoi: Literal['V_cc', 'T', 'uion', 'jion']):
+    def model(x, qoi: Literal['V_cc', 'Tc', 'uion', 'jion']):
         """Compute Vcc, T, uion(z=Lch), or jion(gamma=0)"""
         surr_in = np.empty(x.shape[:-1] + (len(SURR.x_vars),))
         j = 0
@@ -77,14 +78,15 @@ def compute_indices(Ns=1000):
                 j += 1
             else:
                 surr_in[..., i] = SURR.x_vars[i].nominal
-        qoi_ind = [qoi] if qoi in ['V_cc', 'T'] else [i for i, v in enumerate(SURR.coupling_vars) if str(v).startswith(qoi)]
+        qoi_ind = [qoi] if qoi in ['V_cc', 'Tc'] else [i for i, v in enumerate(SURR.coupling_vars) if str(v).startswith(qoi)]
 
         if qoi == 'jion':
-            comp_in = np.empty(x.shape[:-1] + (x.shape[-1] + 2,))
-            comp_in[..., :-2] = x
-            comp_in[..., -2] = 1  # r_m
-            comp_in[..., -1] = 4  # I_B0
-            surr_out = SURR['Plume']._model(comp_in, compress=False)['y'][..., 1:]
+            comp_in = np.empty(x.shape[:-1] + (x.shape[-1] + 3,))
+            comp_in[..., :-3] = x
+            comp_in[..., -3] = 1     # r_m
+            comp_in[..., -2] = 4     # I_B0
+            comp_in[..., -1] = 0.08  # T
+            surr_out = SURR['Plume']._model(comp_in, compress=False)['y'][..., 2:]
             surr_out = surr_out[..., 0, np.newaxis]
             thresh = np.percentile(surr_out, 99)
             surr_out[surr_out > thresh] = thresh  # Fix some numerical issues with jion spikes (shit model anyways)

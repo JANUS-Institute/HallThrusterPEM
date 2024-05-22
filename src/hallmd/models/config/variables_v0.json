@@ -307,6 +307,17 @@
         "rv_type": "none",
         "rv_params": []
     },
+    "Tc": {
+        "id": "Tc",
+        "tex": "$T$",
+        "description": "Corrected thrust",
+        "units": "N",
+        "param_type": "coupling",
+        "nominal": 0.08,
+        "domain": [0, 0.2],
+        "rv_type": "none",
+        "rv_params": []
+    },
     "I_D": {
         "id": "I_D",
         "tex": "$I_d$",

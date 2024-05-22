@@ -13,7 +13,7 @@ from pathlib import Path
 from amisc.utils import get_logger
 import numpy as np
 from scipy.special import erfi
-from scipy.integrate import simps
+from scipy.integrate import simpson
 from scipy.interpolate import interp1d
 
 from hallmd.utils import ModelRunException, model_config_dir
@@ -47,6 +47,7 @@ def plume_feedforward(x: np.ndarray, compress: bool = False,
     sigma_cex = x[..., 7, np.newaxis] * 1e-20           # Charge-exchange cross-section (m^2)
     r_m = x[..., 8, np.newaxis]                         # Axial distance from thruster exit plane (m)
     I_B0 = x[..., 9, np.newaxis]                        # Total initial ion beam current (A)
+    T = x[..., 10, np.newaxis]                          # Uncorrected thrust
 
     # Load svd params for dimension reduction
     if compress:
@@ -58,10 +59,10 @@ def plume_feedforward(x: np.ndarray, compress: bool = False,
         A_mu = np.mean(A, axis=0)
         A_std = np.std(A, axis=0)
         r, M = vtr.shape
-        ydim = r + 1
+        ydim = r + 2
     else:
         M = 100
-        ydim = M + 1
+        ydim = M + 2
 
     # Compute model prediction
     alpha_rad = np.reshape(np.linspace(0, np.pi/2, M), (1,)*len(x.shape[:-1]) + (M,))
@@ -96,18 +97,19 @@ def plume_feedforward(x: np.ndarray, compress: bool = False,
             LOGGER.warning('Predicted beam current has imaginary component.')
 
         # Calculate divergence angle from https://aip.scitation.org/doi/10.1063/5.0066849
-        # Requires alpha = [0, ..., 90] deg
-        num_int = j.real * np.cos(alpha_rad) * np.sin(alpha_rad)
-        den_int = j.real * np.cos(alpha_rad)
+        # Requires alpha = [0, ..., 90] deg from thruster exit-plane to thruster centerline (need to flip)
+        num_int = np.flip(j.real, axis=-1) * np.cos(alpha_rad) * np.sin(alpha_rad)
+        den_int = np.flip(j.real, axis=-1) * np.cos(alpha_rad)
 
         with np.errstate(divide='ignore'):
-            cos_div = simps(num_int, alpha_rad, axis=-1) / simps(den_int, alpha_rad, axis=-1)
+            cos_div = simpson(num_int, alpha_rad, axis=-1) / simpson(den_int, alpha_rad, axis=-1)
             cos_div[cos_div == np.inf] = np.nan
 
         y[..., 0] = np.arccos(cos_div)  # Divergence angle (rad)
+        y[..., 1] = cos_div * T         # Corrected thrust (N)
 
         # Ion current density (A/m^2), in compressed dimension (r) or default dimension (M)
-        y[..., 1:] = np.squeeze(vtr @ ((j.real - A_mu) / A_std)[..., np.newaxis], axis=-1) if compress else j.real
+        y[..., 2:] = np.squeeze(vtr @ ((j.real - A_mu) / A_std)[..., np.newaxis], axis=-1) if compress else j.real
         return {'y': y, 'cost': 1}
 
     except Exception as e:

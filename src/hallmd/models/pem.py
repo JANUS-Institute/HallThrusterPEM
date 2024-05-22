@@ -43,7 +43,7 @@ def pem_v0(save_dir: str | Path = None, executor: Executor = None, init: bool = 
     exo_vars = load_variables(['PB', 'Va', 'mdot_a', 'T_ec', 'V_vac', 'P*', 'PT', 'u_n', 'l_t', 'vAN1', 'vAN2',
                                'delta_z', 'z0', 'p0', 'c0', 'c1', 'c2', 'c3', 'c4', 'c5', 'sigma_cex', 'r_m'],
                               var_file)
-    coupling_vars = load_variables(['V_cc', 'I_B0', 'I_D', 'T', 'eta_v', 'eta_c', 'eta_m', 'ui_avg', 'theta_d'], var_file)
+    coupling_vars = load_variables(['V_cc', 'I_B0', 'I_D', 'T', 'eta_v', 'eta_c', 'eta_m', 'ui_avg', 'theta_d', 'Tc'], var_file)
 
     if from_file is not None:
         surr = SystemSurrogate.load_from_file(Path(from_file), stdout=False, executor=executor)
@@ -95,8 +95,8 @@ def pem_v0(save_dir: str | Path = None, executor: Executor = None, init: bool = 
                              max_alpha=(2, 2), coupling_in='V_cc', max_beta=(2,)*(len(thruster_exo)+1), save_output=True,
                              coupling_out=['I_B0', 'I_D', 'T', 'eta_v', 'eta_c', 'eta_m', 'ui_avg'] + [f'uion{i}' for i in range(r1)],
                              model_kwargs=dict(n_jobs=-1, compress=True, hf_override=hf_override))
-    plume = ComponentSpec(plume_feedforward, name='Plume', exo_in=plume_exo, coupling_in='I_B0', surrogate='analytical',
-                          coupling_out=['theta_d'] + [f'jion{i}' for i in range(r2)], model_kwargs={'compress': True})
+    plume = ComponentSpec(plume_feedforward, name='Plume', exo_in=plume_exo, coupling_in=['I_B0', 'T'], surrogate='analytical',
+                          coupling_out=['theta_d', 'Tc'] + [f'jion{i}' for i in range(r2)], model_kwargs={'compress': True})
 
     logger_name = 'SF-surrogate' if hf_override else 'MF-surrogate'
     surr = SystemSurrogate([cathode, thruster, plume], exo_vars, coupling_vars, executor=executor, init_surr=init,

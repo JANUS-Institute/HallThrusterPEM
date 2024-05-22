@@ -27,7 +27,7 @@ SURR = pem_v0(from_file=surr_dir / 'sys' / f'sys_final{"_train" if TRAINING else
 DATA = spt100_data()
 COMP = 'System'
 THETA_VARS = [v for v in SURR[COMP].x_vars if v.param_type == 'calibration']
-QOI_MAP = {'Cathode': ['V_cc'], 'Thruster': ['T', 'uion'], 'Plume': ['jion'], 'System': ['V_cc', 'T', 'uion', 'jion']}
+QOI_MAP = {'Cathode': ['V_cc'], 'Thruster': ['uion'], 'Plume': ['T', 'jion'], 'System': ['V_cc', 'uion', 'T', 'jion']}
 QOIS = QOI_MAP.get(COMP)
 
 # Parse experimental data
@@ -40,7 +40,7 @@ for qoi in QOIS:
     XE_ARRAY = np.concatenate((XE_ARRAY, exp_data.get('x')), axis=0)
     # sigma_y = np.hstack((sigma_y, np.sqrt(exp_data.get('var_y').flatten())))
     # Ny = np.hstack((Ny, np.prod(exp_data.get('y').shape)))
-    qoi_add = [qoi] if exp_data.get('loc', None) is None else \
+    qoi_add = ['Tc' if qoi == 'T' else qoi] if exp_data.get('loc', None) is None else \
         [str(v) for v in SURR.coupling_vars if str(v).startswith(qoi)]
     QOI_USE.extend(qoi_add)
     QOI_CNT.append(len(qoi_add))

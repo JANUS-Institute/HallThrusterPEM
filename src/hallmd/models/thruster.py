@@ -85,7 +85,8 @@ def hallthruster_jl_input(thruster_input: dict) -> dict:
                                'ion_wall_losses': thruster_input['ion_wall_losses'],
                                'electron_ion_collisions': thruster_input['electron_ion_collisions'],
                                'anom_model': thruster_input['anom_model'],
-                               'solve_background_neutrals': thruster_input['solve_background_neutrals']
+                               'solve_background_neutrals': thruster_input['solve_background_neutrals'],
+                               'apply_thrust_divergence_correction': thruster_input['apply_thrust_divergence_correction']
                                }
 
     # data_write(json_data, 'julia_input.json')

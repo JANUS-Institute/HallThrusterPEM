@@ -79,7 +79,7 @@ def gen_svd_data(N=500, r_pct=0.95):
     yt = comp(xt, use_model='best')
     idx = ~np.isnan(yt[:, 0]) & (np.nanmax(yt, axis=-1) <= 500)    # Remove some outliers above 500 A/m^2
     yt = yt[idx, :]
-    A = yt[:, 1:]  # Data matrix, jion (N x M)
+    A = yt[:, 2:]  # Data matrix, jion (N x M)
     u, s, vt = np.linalg.svd((A - np.mean(A, axis=0)) / np.std(A, axis=0))
     frac = np.cumsum(s ** 2 / np.sum(s ** 2))
     idx = int(np.where(frac >= r_pct)[0][0])

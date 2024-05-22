@@ -29,7 +29,7 @@ SURR = pem_v0(from_file=surr_dir / 'sys' / f'sys_final{"_train" if TRAINING else
 DATA = spt100_data()
 COMP = 'System'
 THETA_VARS = [v for v in SURR[COMP].x_vars if v.param_type == 'calibration']
-QOI_MAP = {'Cathode': ['V_cc'], 'Thruster': ['T', 'uion'], 'Plume': ['jion'], 'System': ['V_cc', 'T', 'uion', 'jion']}
+QOI_MAP = {'Cathode': ['V_cc'], 'Thruster': ['uion'], 'Plume': ['T', 'jion'], 'System': ['V_cc', 'uion', 'T', 'jion']}
 QOIS = QOI_MAP.get(COMP)
 CONSTANTS = {"calibration", "delta_z", "r_m"}
 DISCHARGE_CURRENT = 4.5  # A
@@ -115,12 +115,12 @@ def run_models(Ns=1000):
         theta = posterior_sampler(sample_shape)
         nominal.update({str(v): theta[..., i] for i, v in enumerate(THETA_VARS)})
         xs = SURR.sample_inputs(sample_shape, use_pdf=True, nominal=nominal, constants=CONSTANTS)
-        ys = SURR.predict(xs, qoi_ind=['T', 'I_D'], training=TRAINING)
+        ys = SURR.predict(xs, qoi_ind=['Tc', 'I_D'], training=TRAINING)
         nominal.update({str(v): v.nominal for i, v in enumerate(THETA_VARS)})
         xmodel = SURR.sample_inputs(Nx, use_pdf=False, nominal=nominal,
                                     constants=CONSTANTS.union({"design", "other", "operating"}))
-        ymodel = SURR.predict(xmodel, qoi_ind=['T', 'I_D'], use_model='best')
-        ymodel_surr = SURR.predict(xmodel, qoi_ind=['T', 'I_D'], training=TRAINING)
+        ymodel = SURR.predict(xmodel, qoi_ind=['Tc', 'I_D'], use_model='best')
+        ymodel_surr = SURR.predict(xmodel, qoi_ind=['Tc', 'I_D'], training=TRAINING)
         fd.create_dataset('thrust/posterior/xsurr', data=xs)
         fd.create_dataset('thrust/posterior/ysurr', data=ys)
         fd.create_dataset('thrust/posterior/xmodel', data=xmodel)
@@ -140,13 +140,13 @@ def run_models(Ns=1000):
         theta = prior_sampler(sample_shape)
         nominal.update({str(v): theta[..., i] for i, v in enumerate(THETA_VARS)})
         xs = SURR.sample_inputs(sample_shape, use_pdf=True, nominal=nominal, constants=CONSTANTS)
-        ys = SURR.predict(xs, qoi_ind=['T', 'I_D'], training=TRAINING)
+        ys = SURR.predict(xs, qoi_ind=['Tc', 'I_D'], training=TRAINING)
         nominal.update({str(v): v.mu if isinstance(v, NormalRV) else (v.bounds()[0] + v.bounds()[1])/2
                         for i, v in enumerate(THETA_VARS)})
         xmodel = SURR.sample_inputs(Nx, use_pdf=False, nominal=nominal,
                                     constants=CONSTANTS.union({"design", "other", "operating"}))
-        ymodel = SURR.predict(xmodel, qoi_ind=['T', 'I_D'], use_model='best')
-        ymodel_surr = SURR.predict(xmodel, qoi_ind=['T', 'I_D'], training=TRAINING)
+        ymodel = SURR.predict(xmodel, qoi_ind=['Tc', 'I_D'], use_model='best')
+        ymodel_surr = SURR.predict(xmodel, qoi_ind=['Tc', 'I_D'], training=TRAINING)
         fd.create_dataset('thrust/prior/xsurr', data=xs)
         fd.create_dataset('thrust/prior/ysurr', data=ys)
         fd.create_dataset('thrust/prior/xmodel', data=xmodel)
@@ -173,12 +173,12 @@ def run_models(Ns=1000):
         theta = posterior_sampler(sample_shape)
         nominal.update({str(v): theta[..., i] for i, v in enumerate(THETA_VARS)})
         xs = SURR.sample_inputs(sample_shape, use_pdf=True, nominal=nominal, constants=CONSTANTS)
-        ys = SURR.predict(xs, qoi_ind=['T', 'I_D'], training=TRAINING)
+        ys = SURR.predict(xs, qoi_ind=['Tc', 'I_D'], training=TRAINING)
         nominal.update({str(v): v.nominal for i, v in enumerate(THETA_VARS)})
         xmodel = SURR.sample_inputs(Nx, use_pdf=False, nominal=nominal,
                                     constants=CONSTANTS.union({"design", "other", "operating"}))
-        ymodel = SURR.predict(xmodel, qoi_ind=['T', 'I_D'], use_model='best')
-        ymodel_surr = SURR.predict(xmodel, qoi_ind=['T', 'I_D'], training=TRAINING)
+        ymodel = SURR.predict(xmodel, qoi_ind=['Tc', 'I_D'], use_model='best')
+        ymodel_surr = SURR.predict(xmodel, qoi_ind=['Tc', 'I_D'], training=TRAINING)
         fd.create_dataset('thrust-test/posterior/xsurr', data=xs)
         fd.create_dataset('thrust-test/posterior/ysurr', data=ys)
         fd.create_dataset('thrust-test/posterior/xmodel', data=xmodel)
@@ -188,13 +188,13 @@ def run_models(Ns=1000):
         theta = prior_sampler(sample_shape)
         nominal.update({str(v): theta[..., i] for i, v in enumerate(THETA_VARS)})
         xs = SURR.sample_inputs(sample_shape, use_pdf=True, nominal=nominal, constants=CONSTANTS)
-        ys = SURR.predict(xs, qoi_ind=['T', 'I_D'], training=TRAINING)
+        ys = SURR.predict(xs, qoi_ind=['Tc', 'I_D'], training=TRAINING)
         nominal.update({str(v): v.mu if isinstance(v, NormalRV) else (v.bounds()[0] + v.bounds()[1]) / 2
                         for i, v in enumerate(THETA_VARS)})
         xmodel = SURR.sample_inputs(Nx, use_pdf=False, nominal=nominal,
                                     constants=CONSTANTS.union({"design", "other", "operating"}))
-        ymodel = SURR.predict(xmodel, qoi_ind=['T', 'I_D'], use_model='best')
-        ymodel_surr = SURR.predict(xmodel, qoi_ind=['T', 'I_D'], training=TRAINING)
+        ymodel = SURR.predict(xmodel, qoi_ind=['Tc', 'I_D'], use_model='best')
+        ymodel_surr = SURR.predict(xmodel, qoi_ind=['Tc', 'I_D'], training=TRAINING)
         fd.create_dataset('thrust-test/prior/xsurr', data=xs)
         fd.create_dataset('thrust-test/prior/ysurr', data=ys)
         fd.create_dataset('thrust-test/prior/xmodel', data=xmodel)
@@ -259,11 +259,11 @@ def run_models(Ns=1000):
         nominal.update({str(v): v.nominal for i, v in enumerate(THETA_VARS)})
         xmodel = SURR.sample_inputs(Nx, use_pdf=False, nominal=nominal,
                                     constants=CONSTANTS.union({"design", "other", "operating"}))
-        I_B0 = SURR.predict(xmodel, qoi_ind=['I_B0', 'I_D'], use_model='best')
-        plume_in = np.concatenate((xmodel[..., SURR.graph.nodes['Plume']['exo_in']], I_B0[..., 0:1]), axis=-1)
+        I_B0 = SURR.predict(xmodel, qoi_ind=['I_B0', 'I_D', 'T'], use_model='best')
+        plume_in = np.concatenate((xmodel[..., SURR.graph.nodes['Plume']['exo_in']], I_B0[..., [0, 2]]), axis=-1)
         ymodel = SURR['Plume']._model(plume_in, compress=False, svd_data=PLUME_SVD)['y']
         alpha_g = np.linspace(0, np.pi / 2, 100)
-        jion_g = ymodel[..., 1:]
+        jion_g = ymodel[..., 2:]
         alpha_g2 = np.concatenate((-np.flip(alpha_g)[:-1], alpha_g))  # (2M-1,)
         jion_g2 = np.concatenate((np.flip(jion_g, axis=-1)[..., :-1], jion_g), axis=-1)  # (..., 2M-1)
         f = interp1d(alpha_g2, jion_g2, axis=-1)
@@ -272,7 +272,7 @@ def run_models(Ns=1000):
         fd.create_dataset('jion/posterior/xsurr', data=xs)
         fd.create_dataset('jion/posterior/ysurr', data=ys)
         fd.create_dataset('jion/posterior/xmodel', data=xmodel)
-        fd.create_dataset('jion/posterior/ymodel', data=np.concatenate((jion_interp, I_B0[..., 1:]), axis=-1))
+        fd.create_dataset('jion/posterior/ymodel', data=np.concatenate((jion_interp, I_B0[..., 1:2]), axis=-1))
         fd.create_dataset('jion/posterior/ymodel_surr', data=ymodel_surr)
 
         theta = prior_sampler(sample_shape)
@@ -283,11 +283,11 @@ def run_models(Ns=1000):
                         for i, v in enumerate(THETA_VARS)})
         xmodel = SURR.sample_inputs(Nx, use_pdf=False, nominal=nominal,
                                     constants=CONSTANTS.union({"design", "other", "operating"}))
-        I_B0 = SURR.predict(xmodel, qoi_ind=['I_B0', 'I_D'], use_model='best')
-        plume_in = np.concatenate((xmodel[..., SURR.graph.nodes['Plume']['exo_in']], I_B0[..., 0:1]), axis=-1)
+        I_B0 = SURR.predict(xmodel, qoi_ind=['I_B0', 'I_D', 'T'], use_model='best')
+        plume_in = np.concatenate((xmodel[..., SURR.graph.nodes['Plume']['exo_in']], I_B0[..., [0, 2]]), axis=-1)
         ymodel = SURR['Plume']._model(plume_in, compress=False, svd_data=PLUME_SVD)['y']
         alpha_g = np.linspace(0, np.pi / 2, 100)
-        jion_g = ymodel[..., 1:]
+        jion_g = ymodel[..., 2:]
         alpha_g2 = np.concatenate((-np.flip(alpha_g)[:-1], alpha_g))  # (2M-1,)
         jion_g2 = np.concatenate((np.flip(jion_g, axis=-1)[..., :-1], jion_g), axis=-1)  # (..., 2M-1)
         f = interp1d(alpha_g2, jion_g2, axis=-1)
@@ -296,7 +296,7 @@ def run_models(Ns=1000):
         fd.create_dataset('jion/prior/xsurr', data=xs)
         fd.create_dataset('jion/prior/ysurr', data=ys)
         fd.create_dataset('jion/prior/xmodel', data=xmodel)
-        fd.create_dataset('jion/prior/ymodel', data=np.concatenate((jion_interp, I_B0[..., 1:]), axis=-1))
+        fd.create_dataset('jion/prior/ymodel', data=np.concatenate((jion_interp, I_B0[..., 1:2]), axis=-1))
         fd.create_dataset('jion/prior/ymodel_surr', data=ymodel_surr)
 
 
