@@ -47,7 +47,7 @@ def plume_feedforward(x: np.ndarray, compress: bool = False,
     sigma_cex = x[..., 7, np.newaxis] * 1e-20           # Charge-exchange cross-section (m^2)
     r_m = x[..., 8, np.newaxis]                         # Axial distance from thruster exit plane (m)
     I_B0 = x[..., 9, np.newaxis]                        # Total initial ion beam current (A)
-    T = x[..., 10, np.newaxis]                          # Uncorrected thrust
+    T = x[..., 10]                                      # Uncorrected thrust
 
     # Load svd params for dimension reduction
     if compress:
