@@ -14,8 +14,7 @@ from hallmd.models.thruster import uion_reconstruct
 
 PROJECT_ROOT = Path('../..')
 TRAINING = False
-SAMPLER = 'Posterior'  # Or 'Prior'
-surr_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-03-07T01.53.07' / 'multi-fidelity').glob('amisc_*'))[0]
+surr_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-05-23T04.16.17' / 'multi-fidelity').glob('amisc_*'))[0]
 SURR = pem_v0(from_file=surr_dir / 'sys' / f'sys_final{"_train" if TRAINING else ""}.pkl')
 COMP = 'System'
 CONSTANTS = {'Va', 'r_m'}
@@ -45,6 +44,7 @@ plt.rc('ytick.minor', size=3, width=0.8, visible=True)
 
 def compute_indices(Ns=1000):
     def sampler(shape, nominal, qoi: Literal['V_cc', 'Tc', 'uion', 'jion']):
+        # Only prior sampling here
         x = SURR.sample_inputs(shape, use_pdf=True, nominal=nominal, constants=CONSTANTS)[..., IDX_MAP.get(qoi)]
 
         if qoi == 'jion':
@@ -132,9 +132,9 @@ def spt100_sobol(Ns=1000):
     with h5py.File(file, 'r') as fd, plt.style.context('uqtils.default'):
         pb = np.array(fd['PB'])
         fig1, ax1 = plt.subplots(figsize=figsize, layout='tight')
-        fig2, ax2 = plt.subplots(figsize=figsize, layout='tight')
+        fig2, ax2 = plt.subplots(figsize=(6.6, 5), layout='tight')
         axs = [ax1, ax2]
-        for i, qoi in enumerate(['T', 'uion']):
+        for i, qoi in enumerate(['Tc', 'uion']):
             ax = axs[i]
             S1 = np.array(fd[f'{qoi}/S1'])
             ST = np.array(fd[f'{qoi}/ST'])
@@ -179,6 +179,7 @@ def spt100_sobol(Ns=1000):
             ax.set_ylim(bottom=0, top=1.08)
             uq.ax_default(ax, 'Background pressure (Torr)', "Sobol' index", legend=qoi == 'V_cc')
             if qoi == 'jion':
+                fig.set_size_inches((6.6, 5))
                 leg = ax.legend(loc='upper left', ncol=1, bbox_to_anchor=(1.02, 1.025), labelspacing=0.8)
             fig.savefig(f'sobol-{qoi.lower()}.pdf', bbox_inches='tight', format='pdf')
             plt.show()

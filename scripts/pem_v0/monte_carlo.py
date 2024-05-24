@@ -24,14 +24,14 @@ from hallmd.utils import model_config_dir
 
 PROJECT_ROOT = Path('../..')
 TRAINING = False
-surr_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-03-07T01.53.07' / 'multi-fidelity').glob('amisc_*'))[0]
+surr_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-05-23T04.16.17' / 'multi-fidelity').glob('amisc_*'))[0]
 SURR = pem_v0(from_file=surr_dir / 'sys' / f'sys_final{"_train" if TRAINING else ""}.pkl')
 DATA = spt100_data()
 COMP = 'System'
 THETA_VARS = [v for v in SURR[COMP].x_vars if v.param_type == 'calibration']
 QOI_MAP = {'Cathode': ['V_cc'], 'Thruster': ['uion'], 'Plume': ['T', 'jion'], 'System': ['V_cc', 'uion', 'T', 'jion']}
 QOIS = QOI_MAP.get(COMP)
-CONSTANTS = {"calibration", "delta_z", "r_m"}
+CONSTANTS = {"calibration", "r_m"}
 DISCHARGE_CURRENT = 4.5  # A
 
 with open(model_config_dir() / 'plume_svd.pkl', 'rb') as fd:
@@ -41,9 +41,12 @@ with open(model_config_dir() / 'thruster_svd.pkl', 'rb') as fd:
 
 # Load MCMC results
 with h5py.File(f'dram-{COMP.lower()}-{"train" if TRAINING else "test"}.h5', 'r') as fd:
-    SAMPLES = fd['mcmc/chain']
-    niter, nwalk, ndim = SAMPLES.shape
-    SAMPLES = SAMPLES[int(0.1 * niter):, ...].reshape((-1, ndim))
+    samples = fd['mcmc/chain']
+    niter, nwalk, ndim = samples.shape
+    v_idx = THETA_VARS.index('vAN1')  # Hard code vAN1 since it was a point value under the posterior
+    samples = samples[int(0.1 * niter):, ...].reshape((-1, ndim))
+    van1 = THETA_VARS[v_idx].nominal * np.ones((samples.shape[0], 1))
+    SAMPLES = np.concatenate((samples[:, :v_idx], van1, samples[:, v_idx:]), axis=-1)
 
 
 def posterior_sampler(shape):
@@ -316,23 +319,14 @@ def print_l2_error(ys_prior, ys_post, ym_prior, ym_post, ym_surr_prior, ym_surr_
     surr_model_post = relative_l2(ym_surr_post, ym_post)
     surr_med_e_prior = relative_l2(ym_surr_prior, exp_data)
     surr_med_e_post = relative_l2(ym_surr_post, exp_data)
-    print(f'{"Case":>20} {"Prior mu":>8} {"Prior s":>8} {"Prior r":>8} {"Post mu":>8} {"Post s":>8} {"Post r":>8}')
-    print(f'{"Surr-Data":>20} {avg_func(surr_e_prior):>8.3f} {np.std(surr_e_prior):>8.3f} '
-          f'{avg_func(surr_e_prior) / exp_noise:>8.3f} '
-          f'{avg_func(surr_e_post):>8.3f} {np.std(surr_e_post):>8.3f} '
-          f'{avg_func(surr_e_post) / exp_noise:>8.3f}')
-    print(f'{"Model-Med-Data":>20} {avg_func(model_e_prior):>8.3f} {np.std(model_e_prior):>8.3f} '
-          f'{avg_func(model_e_prior) / exp_noise:>8.3f} '
-          f'{avg_func(model_e_post):>8.3f} {np.std(model_e_post):>8.3f} '
-          f'{avg_func(model_e_post) / exp_noise:>8.3f}')
-    print(f'{"Surr-Model":>20} {avg_func(surr_model_prior):>8.3f} {np.std(surr_model_prior):>8.3f} '
-          f'{avg_func(surr_model_prior) / exp_noise:>8.3f} '
-          f'{avg_func(surr_model_post):>8.3f} {np.std(surr_model_post):>8.3f} '
-          f'{avg_func(surr_model_post) / exp_noise:>8.3f}')
-    print(f'{"Surr-Med-Model":>20} {avg_func(surr_med_e_prior):>8.3f} {np.std(surr_med_e_prior):>8.3f} '
-          f'{avg_func(surr_med_e_prior) / exp_noise:>8.3f} '
-          f'{avg_func(surr_med_e_post):>8.3f} {np.std(surr_med_e_post):>8.3f} '
-          f'{avg_func(surr_med_e_post) / exp_noise:>8.3f}')
+    print(f'{"Distribution":>20} {"xi":>8} {"eps50":>8} {"Surrogate --":>15} {"mu50":>8} {"mu":>8} {"sigma":>8} {"mu/xi":>8} {"Model --":>15} {"mu50":>8} {"mu50/xi":>8}')
+    print(f'{"Prior":>20} {exp_noise:>8.3f} {avg_func(surr_model_prior):>8.3f} {" --":>15} {avg_func(surr_med_e_prior):>8.3f} '
+          f'{avg_func(surr_e_prior):>8.3f} {np.std(surr_e_prior):>8.3f} {avg_func(surr_e_prior) / exp_noise:>8.3f} '
+          f'{" --":>15} {avg_func(model_e_prior):>8.3f} {avg_func(model_e_prior) / exp_noise:>8.3f}')
+    print(
+        f'{"Posterior":>20} {exp_noise:>8.3f} {avg_func(surr_model_post):>8.3f} {" --":>15} {avg_func(surr_med_e_post):>8.3f} '
+        f'{avg_func(surr_e_post):>8.3f} {np.std(surr_e_post):>8.3f} {avg_func(surr_e_post) / exp_noise:>8.3f} '
+        f'{" --":>15} {avg_func(model_e_post):>8.3f} {avg_func(model_e_post) / exp_noise:>8.3f}')
 
 
 def spt100_monte_carlo(Ns=1000, plot=True):
@@ -415,7 +409,7 @@ def spt100_monte_carlo(Ns=1000, plot=True):
             h4 = ax.errorbar(10 ** pb, data['y'] * 1000, yerr=yerr*1000, fmt='ok', capsize=3, markerfacecolor='none', markersize=4)
             ax.set_xscale('log')
             ax.set_xlim(left=1e-6, right=1e-4)
-            ax.set_ylim(bottom=67, top=129)
+            ax.set_ylim(bottom=40, top=120)
             leg = dict(handles=[(h1, h2), h3, h4], labels=['Surrogate', 'Model', 'Experiment'], loc='upper right')
             uq.ax_default(ax, 'Background pressure (Torr)', 'Thrust (mN)', legend=leg)
             fig.savefig('mc-thrust-prior.pdf', format='pdf', bbox_inches='tight')
@@ -434,7 +428,7 @@ def spt100_monte_carlo(Ns=1000, plot=True):
                 leg = dict(handles=[(h3, h4), (h1, h4), h5, h6], labels=['Surrogate', 'Surrogate w/noise', 'Model', 'Experiment'], loc='upper right')
                 ax.set_xscale('log')
                 ax.set_xlim(left=1e-6, right=1e-4)
-                ax.set_ylim(bottom=67, top=129)
+                ax.set_ylim(bottom=40, top=120)
                 uq.ax_default(ax, 'Background pressure (Torr)', 'Thrust (mN)', legend=leg)
                 fig.savefig('mc-thrust-post.pdf', format='pdf', bbox_inches='tight')
                 plt.show()
@@ -770,7 +764,7 @@ def get_allocation(surr):
 def plot_surrogate():
     """Make extra plots of the surrogate for the journal paper"""
     # Error v. cost
-    sf_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-03-07T01.53.07' / 'single-fidelity').glob('amisc_*'))[0]
+    sf_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-05-23T04.16.17' / 'single-fidelity').glob('amisc_*'))[0]
     sf_sys = pem_v0(from_file=sf_dir / 'sys' / f'sys_final.pkl')
     mf_sys = SURR
 
@@ -784,10 +778,10 @@ def plot_surrogate():
     hf_model_cost = hf_alloc[1] / hf_alloc[0]
 
     rc = {'axes.labelsize': 23, 'xtick.labelsize': 18, 'ytick.labelsize': 18, 'legend.fontsize': 18}
-    figsize = (6, 5)
+    figsizes = [(6.2, 5), (6, 5), (6, 5)]
     with plt.style.context('uqtils.default'):
         with matplotlib.rc_context(rc=rc):
-            figs, axs = zip(*[plt.subplots(figsize=figsize, layout='tight') for i in range(3)])
+            figs, axs = zip(*[plt.subplots(figsize=figsizes[i], layout='tight') for i in range(3)])
             labels = ['discharge', 'thrust', 'uion0']
             for i in range(3):
                 ax = axs[i]
@@ -795,7 +789,7 @@ def plot_surrogate():
                 ax.plot(sf_cum / hf_model_cost, sf_test[:, 1, i], '--k', label='Single-fidelity (SF)')
                 ax.set_yscale('log')
                 ax.set_xscale('log')
-                ax.set_ylim([5e-2, 2])
+                ax.set_ylim([1e-2, 2])
                 ylabel = r'Relative $\mathrm{L}_2$ error' if i == 0 else ''
                 uq.ax_default(ax, r'Cost (number of SF evals)', ylabel, legend=i == 2)
                 if i > 0:
@@ -804,14 +798,14 @@ def plot_surrogate():
             plt.show()
 
         # 1d slice 4x4 gird
-        fig, ax = SURR.plot_slice(from_file=surr_dir / 'sweep_NYYA' / 'sweep_randNYYA_s9,10,12,13_q2,3,9,10.pkl')
+        fig, ax = SURR.plot_slice(from_file=surr_dir / 'sweep_M2RB' / 'sweep_randM2RB_s9,10,12,13_q2,3,10,11.pkl')
         fig.set_size_inches(14, 14)
         fig.tight_layout()
-        fig.savefig('sweep_randNYYA_s9,10,12,13_q2,3,9,10.pdf', bbox_inches='tight', format='pdf')
+        fig.savefig('sweep_randM2RB_s9,10,12,13_q2,3,10,11.pdf', bbox_inches='tight', format='pdf')
         plt.show()
 
 
 if __name__ == '__main__':
     # run_models()
-    spt100_monte_carlo(plot=False)
-    # plot_surrogate()
+    # spt100_monte_carlo(plot=True)
+    plot_surrogate()

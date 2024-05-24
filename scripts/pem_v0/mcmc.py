@@ -22,7 +22,7 @@ OPTIMIZER_ITER = 1
 START_TIME = 0
 PROJECT_ROOT = Path('../..')
 TRAINING = False
-surr_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-03-07T01.53.07' / 'multi-fidelity').glob('amisc_*'))[0]
+surr_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-05-23T04.16.17' / 'multi-fidelity').glob('amisc_*'))[0]
 SURR = pem_v0(from_file=surr_dir / 'sys' / f'sys_final{"_train" if TRAINING else ""}.pkl')
 DATA = spt100_data()
 COMP = 'System'
@@ -277,17 +277,17 @@ def run_mcmc(file='dram-system.h5', clean=False, n_jobs=1, M=100):
             if group is not None:
                 del fd['mcmc']
 
-    nwalk, niter = 1, 80000
+    nwalk, niter = 1, 100000
 
     cov_pct = {'T_ec': 0.15, 'PT': 0.2, 'P*': 0.08, 'V_vac': 0.01, 'vAN1': 0.01, 'z0': 0.15, 'p0': 0.2, 'c0': 0.05,
                'c1': 0.02, 'c2': 0.15, 'c3': 0.04, 'c4': 0.01, 'c5': 0.02} if TRAINING else \
-        {'T_ec': 0.15, 'PT': 0.02, 'P*': 0.15, 'V_vac': 0.005, 'vAN1': 0.005, 'z0': 0.08, 'p0': 0.16, 'c0': 0.07,
-         'c1': 0.2, 'c2': 0.15, 'c3': 0.2, 'c4': 0.04, 'c5': 0.08, 'vAN2': 0.03, 'l_t': 0.1, 'delta_z': 0.01,
-         'u_n': 0.04}
-    # nominal = {'T_ec': 1.45, 'PT': 11, 'P*': 60.7, 'V_vac': 31.2, 'vAN1': 10.1, 'z0': -0.01, 'p0': 56.7, 'c0': 0.62,
-    #      'c1': 0.42, 'c2': -4.0, 'c3': 0.27, 'c4': 20.0, 'c5': 17.4, 'vAN2': -2.0, 'l_t': 1.45, 'delta_z': 0.4,
-    #      'u_n': 159}
-    nominal = {}
+        {'T_ec': 0.05, 'PT': 0.08, 'P*': 0.07, 'V_vac': 0.005, 'vAN1': 0.005, 'z0': 0.05, 'p0': 0.2, 'c0': 0.04,
+         'c1': 0.03, 'c2': 0.1, 'c3': 0.04, 'c4': 0.006, 'c5': 0.04, 'vAN2': 0.01, 'l_t': 0.03, 'delta_z': 0.03,
+         'u_n': 0.03}
+    nominal = {'T_ec': 1.05, 'PT': 23, 'P*': 75, 'V_vac': 31.9, 'vAN1': -2.5, 'z0': -0.095, 'p0': 50, 'c0': 0.56,
+         'c1': 0.36, 'c2': -5.5, 'c3': 0.26, 'c4': 18.1, 'c5': 14.5, 'vAN2': 16.7, 'l_t': 4.45, 'delta_z': 0.098,
+         'u_n': 143}
+    # nominal = {}
     # p0 = np.array([(v.bounds()[0] + v.bounds()[1])/2 for v in THETA_VARS]).astype(np.float32)
     p0 = np.array([nominal.get(str(v), v.nominal) for v in THETA_VARS]).astype(np.float32)
     p0[np.isclose(p0, 0)] = 1
@@ -297,7 +297,7 @@ def run_mcmc(file='dram-system.h5', clean=False, n_jobs=1, M=100):
 
     with Parallel(n_jobs=n_jobs, verbose=0) as ppool:
         fun = lambda theta: spt100_log_posterior(theta, M=M, ppool=ppool)
-        uq.dram(fun, p0, niter, cov0=None, filename=file, adapt_after=5000, adapt_interval=1000,
+        uq.dram(fun, p0, niter, cov0=cov0, filename=file, adapt_after=5000, adapt_interval=1000,
                 eps=1e-12, gamma=0.1)
 
 
@@ -370,9 +370,9 @@ def journal_plots(file, burnin=0.1):
                 plt.show()
 
                 # Thruster marginals
-                str_use = ['T_ec', 'u_n', 'l_t', 'vAN1', 'vAN2', 'z0', 'p0']
+                str_use = ['T_ec', 'u_n', 'l_t', 'vAN2', 'delta_z', 'z0', 'p0']
                 idx_use = sorted([THETA_VARS.index(v) for v in str_use])
-                labels = [r'$T_e$ (eV)', r'$u_n$ (m/s)', r'$l_t$ (mm)', r'$a_1$ $(10^x)$ (-)', r'$a_2$ (-)', r'$z_0$ (-)', r'$p_0$ ($\mu$Torr)']
+                labels = [r'$T_e$ (eV)', r'$u_n$ (m/s)', r'$l_t$ (mm)', r'$a_2$ (-)', r'$\Delta z$ (-)', r'$z_0$ (-)', r'$p_0$ ($\mu$Torr)']
                 fig, ax = uq.ndscatter(samples[:, idx_use], subplot_size=2, labels=labels, plot1d='kde', plot2d='hex',
                                        cmap='viridis', cmin=mincnt, bins=bins)
                 fig.savefig('mcmc-thruster.pdf', bbox_inches='tight', format='pdf')
@@ -413,6 +413,6 @@ if __name__ == '__main__':
     # run_mle(optimizer, M)
     # run_laplace(M=M)
     # show_laplace()
-    # run_mcmc(M=M, file=file)
+    # run_mcmc(M=M, file=file, clean=False)
     # show_mcmc(file=file)
     journal_plots(file)
