@@ -21,7 +21,7 @@ def test_example():
 
 
 def test_plume(plots=False):
-    variables = load_variables(["PB", "c0", "c1", "c2", "c3", "c4", "c5", "sigma_cex", "r_m", "I_B0"],
+    variables = load_variables(["PB", "c0", "c1", "c2", "c3", "c4", "c5", "sigma_cex", "r_m", "I_B0", "f_n"],
                                CONFIG_DIR / 'variables_v0.json')
     N = 100
     x = np.empty((N, len(variables)))
