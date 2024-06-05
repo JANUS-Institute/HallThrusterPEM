@@ -76,16 +76,27 @@
         "rv_type": "uniform_bds",
         "rv_params": [100, 500]
     },
+    "f_n": {
+        "id": "f_n",
+        "tex": "$f_n$",
+        "description": "Neutral ingestion multiplier",
+        "units": "m/s",
+        "param_type": "calibration",
+        "nominal": 1.0,
+        "domain": [0.5, 10.0],
+        "rv_type": "uniform_bds",
+        "rv_params": [0.5, 10.0]
+    },
     "c_w": {
         "id": "c_w",
         "tex": "$c_w$",
         "description": "Wall sheath loss coefficient",
         "units": "-",
         "param_type": "calibration",
-        "nominal": 0.2,
-        "domain": [0.1, 0.3],
+        "nominal": 1.0,
+        "domain": [0.2, 2.0],
         "rv_type": "uniform_bds",
-        "rv_params": [0.1, 0.3]
+        "rv_params": [0.2, 2.0]
     },
     "l_t": {
         "id": "l_t",
@@ -119,6 +130,28 @@
         "domain": [10, 100],
         "rv_type": "uniform_bds",
         "rv_params": [10, 100]
+    },
+    "vAN3": {
+        "id": "vAN3",
+        "tex": "$a_3$",
+        "description": "Anomalous transport coefficient 3",
+        "units": "-",
+        "param_type": "calibration",
+        "nominal": 0.022,
+        "domain": [0.02, 0.035],
+        "rv_type": "uniform_bds",
+        "rv_params": [0.02, 0.035]
+    },
+    "vAN4": {
+        "id": "vAN4",
+        "tex": "$a_4$",
+        "description": "Anomalous transport coefficient 4",
+        "units": "-",
+        "param_type": "calibration",
+        "nominal": 0.01,
+        "domain": [0.001, 0.02],
+        "rv_type": "uniform_bds",
+        "rv_params": [0.001, 0.02]
     },
     "delta_z": {
         "id": "delta_z",
