@@ -42,16 +42,15 @@ def hallthruster_jl_input(thruster_input: dict) -> dict:
     :param thruster_input: dictionary with all named thruster inputs and values
     :returns: a nested `dict` in the format that Hallthruster.jl expects to be called
     """
-
     anom_model = thruster_input['anom_model']
     anom_model_coeffs = []
-    if (anom_model == "ShiftedTwoZoneBohm" or anom_model == "TwoZoneBohm"):
+    if anom_model == "ShiftedTwoZoneBohm" or anom_model == "TwoZoneBohm":
         vAN1 = 10 ** thruster_input['vAN1']
         vAN2 = vAN1 * thruster_input['vAN2']
         anom_model_coeffs = [vAN1, vAN2]
-    elif (anom_model == "ShiftedGaussianBohm"):
-        vAN1 = thruster_input['vAN1']
-        vAN2 = thruster_input['vAN2']
+    elif anom_model == "ShiftedGaussianBohm":
+        vAN1 = 10 ** thruster_input['vAN1']
+        vAN2 = vAN1 * thruster_input['vAN2']
         vAN3 = thruster_input['vAN3']
         vAN4 = thruster_input['vAN4']
         anom_model_coeffs = [vAN1, vAN2, vAN3, vAN4]
@@ -219,10 +218,10 @@ def hallthruster_jl_wrapper(x: np.ndarray, alpha: tuple = (2, 2), *, compress: b
     # Constant inputs from config file (thruster geometry, propellant, wall material, simulation params, etc.)
     with open(Path(config), 'r') as fd:
         config_data = json.load(fd)
-        default_inputs = load_variables(config_data['all_inputs'], Path(variables))
-        base_input = {var.id: var.nominal for var in default_inputs}  # Set default values for required inputs
+        default_inputs = load_variables(config_data['default_inputs'], Path(variables))
+        base_input = {var.id: var.nominal for var in default_inputs}  # Set default values for variables.json RV inputs
         base_input.update(config_data[thruster])                      # Set all other simulation configs
-        input_list = config_data['inputs']  # Needs to match xdim and correspond with str input ids to hallthruster.jl
+        input_list = config_data['required_inputs']  # Needs to match xdim and correspond with str input ids to hallthruster.jl
         output_list = config_data['outputs']
     base_input.update({'num_cells': Ncells, 'dt_s': dt_s, 'max_charge': Ncharge})  # Update model fidelity params
 
