@@ -45,7 +45,7 @@ def hallthruster_jl_input(thruster_input: dict) -> dict:
 
     anom_model = thruster_input['anom_model']
     anom_model_coeffs = []
-    if (anom_model == "ShiftedTwoZoneBohm" || anom_model == "TwoZoneBohm"):
+    if (anom_model == "ShiftedTwoZoneBohm" or anom_model == "TwoZoneBohm"):
         vAN1 = 10 ** thruster_input['vAN1']
         vAN2 = vAN1 * thruster_input['vAN2']
         anom_model_coeffs = [vAN1, vAN2]
