@@ -68,7 +68,7 @@ def hallthruster_jl_input(thruster_input: dict) -> dict:
         'background_pressure_Torr': 10 ** thruster_input['PB'],
         'background_temperature_K': thruster_input['background_temperature_K'],
         'neutral_ingestion_multiplier': thruster_input['neutral_ingestion_multiplier'],
-        'apply_thrust_divergence_correction': thruster_input['apply_thrust_divergence_correction']
+        'apply_thrust_divergence_correction': thruster_input['apply_thrust_divergence_correction'],
         # design
         'thruster_name': thruster_input['thruster_name'],
         'inner_radius': thruster_input['inner_radius'],
