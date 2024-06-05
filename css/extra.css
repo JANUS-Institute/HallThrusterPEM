@@ -1,0 +1,7 @@
+.md-grid {
+    max-width: 1440px;
+}
+
+:root > * {
+  --md-code-hl-keyword-color: #842e21;
+}
