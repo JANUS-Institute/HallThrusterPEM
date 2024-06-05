@@ -25,7 +25,7 @@
         "anom_model": "TwoZoneBohm",
         "neutral_temp_K": 300,
         "ion_temp_K": 1000,
-        "background_temperature_K": 300
+        "background_temperature_K": 300,
         "apply_thrust_divergence_correction": false
     }
 }
