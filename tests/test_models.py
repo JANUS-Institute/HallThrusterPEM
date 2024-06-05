@@ -59,7 +59,7 @@ def test_cc(plots=False):
 
 
 def test_hallthruster_jl(plots=False):
-    variables = load_variables(["PB", "Va", "mdot_a", "T_ec", "u_n", "l_t", "vAN1", "vAN2", "delta_z",
+    variables = load_variables(["PB", "Va", "mdot_a", "T_ec", "u_n", "l_t", "vAN1", "vAN2", "vAN3", "vAN4", "delta_z",
                                 "z0", "p0", "V_cc", "f_n"], CONFIG_DIR / 'variables_v0.json')
     x = np.empty((2, len(variables)))
     for i, var in enumerate(variables):
