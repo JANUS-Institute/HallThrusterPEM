@@ -96,7 +96,7 @@ def hallthruster_jl_input(thruster_input: dict) -> dict:
         'anom_model': thruster_input['anom_model'],
     }
     
-    if anom_model 'ShiftedTwoZone' or anom_model == 'ShiftedGaussianBohm':
+    if anom_model == 'ShiftedTwoZone' or anom_model == 'ShiftedGaussianBohm':
         # Add extra parameters for anomalous transport models that depend on pressure
         json_data.update({'pressure_dz': thruster_input['delta_z'] * thruster_input['channel_length'],
                           'pressure_z0': thruster_input['z0'] * thruster_input['channel_length'],
