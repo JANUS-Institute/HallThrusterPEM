@@ -49,7 +49,7 @@ def hallthruster_jl_input(thruster_input: dict) -> dict:
         vAN1 = 10 ** thruster_input['vAN1']
         vAN2 = vAN1 * thruster_input['vAN2']
         anom_model_coeffs = [vAN1, vAN2]
-    elif (anom_model == "ShiftedGaussianBohm")
+    elif (anom_model == "ShiftedGaussianBohm"):
         vAN1 = thruster_input['vAN1']
         vAN2 = thruster_input['vAN2']
         vAN3 = thruster_input['vAN3']
