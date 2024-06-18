@@ -22,7 +22,7 @@ OPTIMIZER_ITER = 1
 START_TIME = 0
 PROJECT_ROOT = Path('../..')
 TRAINING = False
-surr_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-05-23T04.16.17' / 'multi-fidelity').glob('amisc_*'))[0]
+surr_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-06-12T23.50.31' / 'multi-fidelity').glob('amisc_*'))[0]
 SURR = pem_v0(from_file=surr_dir / 'sys' / f'sys_final{"_train" if TRAINING else ""}.pkl')
 DATA = spt100_data()
 COMP = 'System'
@@ -145,8 +145,9 @@ def pdf_slice(pdfs=None, M=200, n_jobs=-1):
         funcs = [pdf_map.get(pdf) for pdf in pdfs]
         fig, ax = uq.plot_slice(funcs, bds, x0=x0, N=15, random_walk=True,
                                 xlabels=[v.to_tex(units=True) for v in THETA_VARS], ylabels=['Log PDF'], fun_labels=pdfs,
-                                x_idx=list(np.arange(0, 4)))
-    plt.show()
+                                x_idx=list(np.arange(0, 20)))
+    # plt.show()
+    plt.savefig('pdf_slice.png')
 
 
 def mle_callback(xk, *args, **kwargs):
@@ -171,17 +172,27 @@ def mle_callback(xk, *args, **kwargs):
 def run_mle(optimizer='nelder-mead', M=100):
     """Compute maximum likelihood estimate for the PEM."""
     global START_TIME
-    # nominal = {'u_n': 102.5, 'l_t': 19.9, 'vAN1': -1.66, 'vAN2': 29.44, 'delta_z': 2.47e-3, 'z0': -0.205, 'p0': 44.5}
-    # nominal = {'T_ec': 4.707, 'u_n': 100.4, 'l_t': 3.497, 'vAN1': -1.088, 'vAN2': 10.78, 'delta_z': 0.38, 'z0': -2.172e-2, 'p0': 29.19}  # f(x)=3965
-    # nominal = {'T_ec': 4.1, 'u_n': 101, 'l_t': 20, 'vAN1': -1.97, 'vAN2': 31, 'delta_z': 4.35e-4, 'z0': -0.2, 'p0': 54}  # f(x)=5470
-    # nominal = {'T_ec': 1.04, 'V_vac': 31.2, 'P*': 29.14, 'PT': 17.7, 'u_n': 102, 'l_t': 1.31, 'vAN1': -2.5,
-    #            'vAN2': 10.3, 'delta_z': 8.12e-4, 'z0': -0.0958, 'p0': 29.3, 'c0': 0.796, 'c1': 0.89, 'c2': 12.8,
-    #            'c3': 0.5, 'c4': 18.4, 'c5': 16}  # f(x)=3500
-    nominal = {'T_ec': 1.024, 'V_vac': 30.8, 'P*': 30.3, 'PT': 10.2, 'u_n': 167.8, 'l_t': 1.16, 'vAN1': -2.185,
-               'vAN2': 10.13, 'delta_z': 5.149e-4, 'z0': -0.0078, 'p0': 51.87, 'c0': 0.997, 'c1': 0.783, 'c2': 13.67,
-               'c3': 0.415, 'c4': 18.04, 'c5': 14.11}  # f(x)=3487
-    # nominal = {'c0': 0.5938, 'c1': 0.4363, 'c2': -8.55, 'c3': 0.2812, 'c4': 20.13, 'c5': 16.64}  # f(x) = 526
-    # .744, .8685, 15, .4767, 18.66, 15.01
+    # nominal = {'T_ec': 2.312, 'V_vac': 32.47, 'P*': 22.3, 'PT': 99.3, 'u_n': 311.0, 'c_w': 1.15, 'l_t': 5.90, 'f_n': 5.34, 
+    #            'vAN1': -2.150, 'vAN2': 15.90, 'vAN3': 0.028, 'vAN4': 0.011, 'delta_z': 0.339, 'z0': -0.238, 'p0': 49.30, 
+    #            'c0': 0.557, 'c1': 0.375, 'c2': -9.64, 'c3': 0.309, 'c4': 19.47, 'c5': 15.31}                                  # f(x)=1898, evolution, run 1
+
+    # nominal = {'T_ec': 1.187, 'V_vac': 31.53, 'P*': 44.16, 'PT': 10.24, 'u_n': 162.4, 'c_w': 1.218, 'l_t': 4.802, 'f_n': .9857, 
+    #            'vAN1': -2.054, 'vAN2': 12.65, 'vAN3': .0279, 'vAN4': .0101, 'delta_z': .3040, 'z0': -.2500, 'p0': 51.40, 
+    #            'c0': .5653, 'c1': .3664, 'c2': -4.917, 'c3': .3013, 'c4': 19.20, 'c5': 14.22}                                 # f(x)=1875, nelder-mead anomalous variables, run 2
+
+    # nominal = {'T_ec': 2.091, 'V_vac': 32.18, 'P*': 21.01, 'PT': 98.49, 'u_n': 278.4, 'c_w': .7844, 'l_t': 6.347, 'f_n': 4.289, 
+    #            'vAN1': -2.500, 'vAN2': 31.76, 'vAN3': .0256, 'vAN4': .0101, 'delta_z': .2306, 'z0': -.0940, 'p0': 36.61, 
+    #            'c0': .4998, 'c1': .3871, 'c2': -4.588, 'c3': .3041, 'c4': 19.48, 'c5': 15.02}                                 # f(x)=2545, nelder-mead thruster vars, run 3
+
+    # nominal = {'T_ec': 1.011, 'V_vac': 31.76, 'P*': 35.54, 'PT': 10.15, 'u_n': 246.9, 'c_w': .8344, 'l_t': 4.331, 'f_n': 1.062, 
+    #            'vAN1': -2.500, 'vAN2': 33.33, 'vAN3': .0262, 'vAN4': .0099, 'delta_z': .2015, 'z0': -.1158, 'p0': 33.94, 
+    #            'c0': .4356, 'c1': .3830, 'c2': -6.532, 'c3': .3257, 'c4': 19.56, 'c5': 14.02}                                 # f(x)=2555, nelder-mead plume vars, run 4
+
+    # nominal = {'T_ec': 1.32975724, 'V_vac': 31.4944035, 'P*': 37.6649643, 'PT': 10.0596097, 'u_n': 173.475606, 'c_w': 1.19056820, 
+    #            'l_t': 6.15632359, 'f_n': .832893150, 'vAN1': -2.04501734, 'vAN2': 11.9583442, 'vAN3': .0283206049, 'vAN4': .0101167989, 
+    #            'delta_z': .269274170, 'z0': -.2500, 'p0': 49.7019000, 'c0': .434697689, 'c1': .360025789, 'c2': -7.70634738, 
+    #            'c3': .352032243, 'c4': 19.2993325, 'c5': 14.5840943}                                                          # f(x) = 1822, nelder-mead all vars, run 5
+
     nominal = {str(v): (v.bounds()[0] + v.bounds()[1])/2 for v in THETA_VARS}
     bds = [v.bounds() for v in THETA_VARS]
     x0 = [nominal.get(str(v), v.nominal) for v in THETA_VARS]
@@ -234,6 +245,9 @@ def run_mle(optimizer='nelder-mead', M=100):
     #     pickle.dump(res_dict, fd)
     print(f'Optimization finished! Elapsed time: {time.time() - START_TIME:.2f} s')
     print(f'Opimization result: {res}')
+    np.set_printoptions(threshold=np.inf)
+    print(res.get('x'))
+    np.set_printoptions(threshold=1000)
 
 
 def run_laplace(M=100):
@@ -277,23 +291,26 @@ def run_mcmc(file='dram-system.h5', clean=False, n_jobs=1, M=100):
             if group is not None:
                 del fd['mcmc']
 
-    nwalk, niter = 1, 100000
+    nwalk, niter = 1, 20000
 
-    cov_pct = {'T_ec': 0.15, 'PT': 0.2, 'P*': 0.08, 'V_vac': 0.01, 'vAN1': 0.01, 'z0': 0.15, 'p0': 0.2, 'c0': 0.05,
-               'c1': 0.02, 'c2': 0.15, 'c3': 0.04, 'c4': 0.01, 'c5': 0.02} if TRAINING else \
-        {'T_ec': 0.05, 'PT': 0.08, 'P*': 0.07, 'V_vac': 0.005, 'vAN1': 0.005, 'z0': 0.05, 'p0': 0.2, 'c0': 0.04,
-         'c1': 0.03, 'c2': 0.1, 'c3': 0.04, 'c4': 0.006, 'c5': 0.04, 'vAN2': 0.01, 'l_t': 0.03, 'delta_z': 0.03,
-         'u_n': 0.03}
-    nominal = {'T_ec': 1.05, 'PT': 23, 'P*': 75, 'V_vac': 31.9, 'vAN1': -2.5, 'z0': -0.095, 'p0': 50, 'c0': 0.56,
-         'c1': 0.36, 'c2': -5.5, 'c3': 0.26, 'c4': 18.1, 'c5': 14.5, 'vAN2': 16.7, 'l_t': 4.45, 'delta_z': 0.098,
-         'u_n': 143}
+    cov_pct = {'T_ec': 0.05, 'V_vac': 0.005, 'P*': 0.07, 'PT': 0.08, 'u_n': 0.03, 
+               'c_w': 0.03, 'l_t': 0.03, 'f_n': 0.03, 'vAN1': 0.005, 'vAN2': 0.01, 
+               'vAN3': 0.005, 'vAN4': 0.005, 'delta_z': 0.03, 'z0': 0.05, 'p0': 0.2, 
+               'c0': 0.04, 'c1': 0.03, 'c2': 0.1, 'c3': 0.04, 'c4': 0.006, 'c5': 0.04}
+    nominal = {'T_ec': 1.32975724, 'V_vac': 31.4944035, 'P*': 37.6649643, 'PT': 10.0596097, 'u_n': 173.475606, 
+               'c_w': 1.19056820, 'l_t': 6.15632359, 'f_n': .832893150, 'vAN1': -2.04501734, 'vAN2': 11.9583442, 
+               'vAN3': .0283206049, 'vAN4': .0101167989, 'delta_z': .269274170, 'z0': -.2500, 'p0': 49.7019000, 
+               'c0': .434697689, 'c1': .360025789, 'c2': -7.70634738, 'c3': .352032243, 'c4': 19.2993325, 'c5': 14.5840943}
     # nominal = {}
     # p0 = np.array([(v.bounds()[0] + v.bounds()[1])/2 for v in THETA_VARS]).astype(np.float32)
     p0 = np.array([nominal.get(str(v), v.nominal) for v in THETA_VARS]).astype(np.float32)
     p0[np.isclose(p0, 0)] = 1
     cov0 = np.eye(p0.shape[0]) * np.array([(cov_pct.get(str(v), 0.08) * np.abs(p0[i]) / 2)**2 for i, v in enumerate(THETA_VARS)])
     cov0 *= 1
-    # p0 = uq.normal_sample(p0, cov0, nwalk).astype(np.float32)
+    p0 = uq.normal_sample(p0, cov0, nwalk).astype(np.float32)
+
+    print(cov0)
+    cov0 = np.linalg.cholesky(cov0)
 
     with Parallel(n_jobs=n_jobs, verbose=0) as ppool:
         fun = lambda theta: spt100_log_posterior(theta, M=M, ppool=ppool)
@@ -308,7 +325,8 @@ def show_mcmc(file='dram-system.h5', burnin=0.1):
         cov = np.mean(np.array(fd['mcmc/cov']), axis=0)
         niter, nwalk, ndim = samples.shape
         samples = samples[int(burnin*niter):, ...]
-        colors = ['r', 'g', 'b', 'k', 'c', 'm', 'y', 'lime', 'fuchsia', 'royalblue', 'sienna']
+        colors = ['r', 'g', 'b', 'k', 'c', 'm', 'y', 'lime', 'fuchsia', 'royalblue', 'sienna', 
+                  'salmon', 'yellow', 'crimson', 'navy', 'skyblue', 'peru', 'teal', 'indigo', 'slategray', 'gold', 'olive']
         # labels = [f'x{i}' for i in range(ndim)]
         labels = [str(v) for v in THETA_VARS]
 
@@ -318,7 +336,7 @@ def show_mcmc(file='dram-system.h5', burnin=0.1):
         print(f'Average ESS: {np.mean(ess):.4f}')
 
         nchains = min(4, nwalk)
-        nshow = min(10, ndim)
+        nshow = min(21, ndim)
         offset = 0
         j = offset*nshow
         nshow = min(nshow, ndim - j)
@@ -343,7 +361,8 @@ def show_mcmc(file='dram-system.h5', burnin=0.1):
         # Marginal corner plot
         fig, ax = uq.ndscatter(samples[..., j:j+nshow].reshape((-1, nshow)), subplot_size=2, labels=labels[j:j+nshow],
                                plot2d='hist', cov_overlay=cov[j:j+nshow, j:j+nshow])
-        plt.show()
+        # plt.show()
+        plt.savefig('show_mcmc.png')
 
 
 def journal_plots(file, burnin=0.1):
@@ -355,7 +374,7 @@ def journal_plots(file, burnin=0.1):
         niter, nwalk, ndim = samples.shape
         samples = samples[int(burnin*niter):, ...].reshape((-1, ndim))
         mincnt = int(0.0015 * samples.shape[0])
-        bins = 15
+        bins = 21
 
         # Cathode marginals
         rc = {'axes.labelsize': 17, 'xtick.labelsize': 12, 'ytick.labelsize': 12, 'legend.fontsize': 12, 'axes.grid' : False}
@@ -367,7 +386,7 @@ def journal_plots(file, burnin=0.1):
                 fig, ax = uq.ndscatter(samples[:, idx_use], subplot_size=2, labels=labels, plot1d='kde', plot2d='hex',
                                        cmap='viridis', cmin=mincnt, bins=bins)
                 fig.savefig('mcmc-cathode.pdf', bbox_inches='tight', format='pdf')
-                plt.show()
+                # plt.show()
 
                 # Thruster marginals
                 str_use = ['T_ec', 'u_n', 'l_t', 'vAN2', 'delta_z', 'z0', 'p0']
@@ -376,7 +395,7 @@ def journal_plots(file, burnin=0.1):
                 fig, ax = uq.ndscatter(samples[:, idx_use], subplot_size=2, labels=labels, plot1d='kde', plot2d='hex',
                                        cmap='viridis', cmin=mincnt, bins=bins)
                 fig.savefig('mcmc-thruster.pdf', bbox_inches='tight', format='pdf')
-                plt.show()
+                # plt.show()
 
                 # Plume marginals
                 str_use = ['c0', 'c1', 'c2', 'c3', 'c4', 'c5']
@@ -387,7 +406,7 @@ def journal_plots(file, burnin=0.1):
                 fig, ax = uq.ndscatter(samples[:, idx_use], subplot_size=2, labels=labels, plot1d='kde', plot2d='hex',
                                        cmap='viridis', tick_fmts=fmt, bins=bins, cmin=mincnt)
                 fig.savefig('mcmc-plume.pdf', bbox_inches='tight', format='pdf')
-                plt.show()
+                # plt.show()
 
                 # Print 1d marginal stats
                 print(f'Average acceptance ratio: {np.mean(accepted) / niter:.4f}')
