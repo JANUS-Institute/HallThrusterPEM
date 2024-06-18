@@ -42,54 +42,65 @@ def hallthruster_jl_input(thruster_input: dict) -> dict:
     :param thruster_input: dictionary with all named thruster inputs and values
     :returns: a nested `dict` in the format that Hallthruster.jl expects to be called
     """
-    json_data = dict()
-    vAN1 = 10 ** thruster_input['vAN1']
-    vAN2 = vAN1 * thruster_input['vAN2']
-    json_data['parameters'] = {'neutral_temp_K': thruster_input['neutral_temp_K'],
-                               'neutral_velocity_m_s': thruster_input['u_n'],
-                               'ion_temp_K': thruster_input['ion_temp_K'],
-                               'cathode_electron_temp_eV': thruster_input['T_ec'],
-                               'sheath_loss_coefficient': thruster_input['c_w'],
-                               'inner_outer_transition_length_m': thruster_input['l_t'] * 1e-3,
-                               'anom_model_coeffs': [vAN1, vAN2],
-                               'background_pressure_Torr': 10 ** thruster_input['PB'],
-                               'background_temperature_K': thruster_input['background_temperature_K'],
-                               }
-    if thruster_input['anom_model'] == 'ShiftedTwoZone':
-        # Add extra parameters for shifted two zone anomalous model
-        json_data['parameters'].update({'pressure_dz': thruster_input['delta_z'] * thruster_input['channel_length'],
-                                        'pressure_z0': thruster_input['z0'] * thruster_input['channel_length'],
-                                        'pressure_pstar': thruster_input['p0'] * 1e-6,
-                                        'pressure_alpha': thruster_input['alpha']})
-    json_data['design'] = {'thruster_name': thruster_input['thruster_name'],
-                           'inner_radius': thruster_input['inner_radius'],
-                           'outer_radius': thruster_input['outer_radius'],
-                           'channel_length': thruster_input['channel_length'],
-                           'magnetic_field_file': str(CONFIG_DIR / thruster_input['magnetic_field_file']),
-                           'wall_material': thruster_input['wall_material'],
-                           'magnetically_shielded': thruster_input['magnetically_shielded'],
-                           'anode_potential': thruster_input['Va'],
-                           'cathode_potential': thruster_input['V_cc'],
-                           'anode_mass_flow_rate': thruster_input['mdot_a'] * 1e-6,
-                           'propellant': thruster_input['propellant_material'],
-                           }
-    json_data['simulation'] = {'num_cells': thruster_input['num_cells'],
-                               'dt_s': thruster_input['dt_s'],
-                               'duration_s': thruster_input['duration_s'],
-                               'num_save': thruster_input['num_save'],
-                               'cathode_location_m': thruster_input['l_c'],
-                               'max_charge': thruster_input['max_charge'],
-                               'flux_function': thruster_input['flux_function'],
-                               'limiter': thruster_input['limiter'],
-                               'reconstruct': thruster_input['reconstruct'],
-                               'ion_wall_losses': thruster_input['ion_wall_losses'],
-                               'electron_ion_collisions': thruster_input['electron_ion_collisions'],
-                               'anom_model': thruster_input['anom_model'],
-                               'solve_background_neutrals': thruster_input['solve_background_neutrals'],
-                               'apply_thrust_divergence_correction': thruster_input['apply_thrust_divergence_correction']
-                               }
+    anom_model = thruster_input['anom_model']
+    anom_model_coeffs = []
+    if anom_model == "ShiftedTwoZoneBohm" or anom_model == "TwoZoneBohm":
+        vAN1 = 10 ** thruster_input['vAN1']
+        vAN2 = vAN1 * thruster_input['vAN2']
+        anom_model_coeffs = [vAN1, vAN2]
+    elif anom_model == "ShiftedGaussianBohm":
+        vAN1 = 10 ** thruster_input['vAN1']
+        vAN2 = vAN1 * thruster_input['vAN2']
+        vAN3 = thruster_input['vAN3']
+        vAN4 = thruster_input['vAN4']
+        anom_model_coeffs = [vAN1, vAN2, vAN3, vAN4]
 
-    # data_write(json_data, 'julia_input.json')
+    json_data = {
+        # parameters
+        'neutral_temp_K': thruster_input['neutral_temp_K'],
+        'neutral_velocity_m_s': thruster_input['u_n'],
+        'ion_temp_K': thruster_input['ion_temp_K'],
+        'cathode_electron_temp_eV': thruster_input['T_ec'],
+        'sheath_loss_coefficient': thruster_input['c_w'],
+        'inner_outer_transition_length_m': thruster_input['l_t'] * 1e-3,
+        'anom_model_coeffs': anom_model_coeffs,
+        'background_pressure_Torr': 10 ** thruster_input['PB'],
+        'background_temperature_K': thruster_input['background_temperature_K'],
+        'neutral_ingestion_multiplier': thruster_input['f_n'],
+        'apply_thrust_divergence_correction': thruster_input['apply_thrust_divergence_correction'],
+        # design
+        'thruster_name': thruster_input['thruster_name'],
+        'inner_radius': thruster_input['inner_radius'],
+        'outer_radius': thruster_input['outer_radius'],
+        'channel_length': thruster_input['channel_length'],
+        'magnetic_field_file': str(CONFIG_DIR / thruster_input['magnetic_field_file']),
+        'wall_material': thruster_input['wall_material'],
+        'magnetically_shielded': thruster_input['magnetically_shielded'],
+        'anode_potential': thruster_input['Va'],
+        'cathode_potential': thruster_input['V_cc'],
+        'anode_mass_flow_rate': thruster_input['mdot_a'] * 1e-6,
+        'propellant': thruster_input['propellant_material'],
+        # simulation                  
+        'num_cells': thruster_input['num_cells'],
+        'dt_s': thruster_input['dt_s'],
+        'duration_s': thruster_input['duration_s'],
+        'num_save': thruster_input['num_save'],
+        'cathode_location_m': thruster_input['l_c'],
+        'max_charge': thruster_input['max_charge'],
+        'flux_function': thruster_input['flux_function'],
+        'limiter': thruster_input['limiter'],
+        'reconstruct': thruster_input['reconstruct'],
+        'ion_wall_losses': thruster_input['ion_wall_losses'],
+        'electron_ion_collisions': thruster_input['electron_ion_collisions'],
+        'anom_model': thruster_input['anom_model'],
+    }
+
+    if anom_model == 'ShiftedTwoZone' or anom_model == 'ShiftedGaussianBohm':
+        # Add extra parameters for anomalous transport models that depend on pressure
+        json_data.update({'pressure_dz': thruster_input['delta_z'] * thruster_input['channel_length'],
+                          'pressure_z0': thruster_input['z0'] * thruster_input['channel_length'],
+                          'pressure_pstar': thruster_input['p0'] * 1e-6,
+                          'pressure_alpha': thruster_input['alpha']})
     return json_data
 
 
@@ -207,10 +218,10 @@ def hallthruster_jl_wrapper(x: np.ndarray, alpha: tuple = (2, 2), *, compress: b
     # Constant inputs from config file (thruster geometry, propellant, wall material, simulation params, etc.)
     with open(Path(config), 'r') as fd:
         config_data = json.load(fd)
-        default_inputs = load_variables(config_data['all_inputs'], Path(variables))
-        base_input = {var.id: var.nominal for var in default_inputs}  # Set default values for required inputs
+        default_inputs = load_variables(config_data['default_inputs'], Path(variables))
+        base_input = {var.id: var.nominal for var in default_inputs}  # Set default values for variables.json RV inputs
         base_input.update(config_data[thruster])                      # Set all other simulation configs
-        input_list = config_data['inputs']  # Needs to match xdim and correspond with str input ids to hallthruster.jl
+        input_list = config_data['required_inputs']  # Needs to match xdim and correspond with str input ids to hallthruster.jl
         output_list = config_data['outputs']
     base_input.update({'num_cells': Ncells, 'dt_s': dt_s, 'max_charge': Ncharge})  # Update model fidelity params
 
