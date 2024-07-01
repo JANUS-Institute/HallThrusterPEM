@@ -24,7 +24,7 @@ from hallmd.utils import model_config_dir
 
 PROJECT_ROOT = Path('../..')
 TRAINING = False
-surr_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-05-23T04.16.17' / 'multi-fidelity').glob('amisc_*'))[0]
+surr_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-06-26T18.04.11' / 'single-fidelity').glob('amisc_*'))[0]
 SURR = pem_v0(from_file=surr_dir / 'sys' / f'sys_final{"_train" if TRAINING else ""}.pkl')
 DATA = spt100_data()
 COMP = 'System'
@@ -365,7 +365,7 @@ def spt100_monte_carlo(Ns=1000, plot=True):
                        loc='upper left', fancybox=True, facecolor='white', framealpha=1)
             uq.ax_default(ax, 'Background pressure (Torr)', 'Cathode coupling voltage (V)', legend=leg)
             fig.savefig('mc-vcc-prior.pdf', format='pdf', bbox_inches='tight')
-            plt.show()
+            # plt.show()
 
             fig, ax = plt.subplots(figsize=figsize, layout='tight')
             p5_pred, p95_pred = list(map(lambda x: np.percentile(ys_post_pred, x, axis=0), (5, 95)))
@@ -381,7 +381,7 @@ def spt100_monte_carlo(Ns=1000, plot=True):
                        loc='upper left', fancybox=True, facecolor='white', framealpha=1)
             uq.ax_default(ax, 'Background pressure (Torr)', 'Cathode coupling voltage (V)', legend=leg)
             fig.savefig('mc-vcc-post.pdf', format='pdf', bbox_inches='tight')
-            plt.show()
+            # plt.show()
 
         print('-------------Cathode coupling voltage training set relative L2 scores----------------')
         print_l2_error(ys_prior, ys_post, ym_prior, ym_post, ym_surr_prior, ym_surr_post, data['y'], 0.01)
@@ -413,7 +413,7 @@ def spt100_monte_carlo(Ns=1000, plot=True):
             leg = dict(handles=[(h1, h2), h3, h4], labels=['Surrogate', 'Model', 'Experiment'], loc='upper right')
             uq.ax_default(ax, 'Background pressure (Torr)', 'Thrust (mN)', legend=leg)
             fig.savefig('mc-thrust-prior.pdf', format='pdf', bbox_inches='tight')
-            plt.show()
+            # plt.show()
 
             with matplotlib.rc_context(rc={'legend.fontsize': 13}):
                 fig, ax = plt.subplots(figsize=figsize, layout='tight')
@@ -431,7 +431,7 @@ def spt100_monte_carlo(Ns=1000, plot=True):
                 ax.set_ylim(bottom=40, top=120)
                 uq.ax_default(ax, 'Background pressure (Torr)', 'Thrust (mN)', legend=leg)
                 fig.savefig('mc-thrust-post.pdf', format='pdf', bbox_inches='tight')
-                plt.show()
+                # plt.show()
 
         print('-------------Thrust training set relative L2 scores----------------')
         print_l2_error(ys_prior, ys_post, ym_prior, ym_post, ym_surr_prior, ym_surr_post, data['y'], 0.01)
@@ -458,7 +458,7 @@ def spt100_monte_carlo(Ns=1000, plot=True):
             leg = dict(handles=[(h1, h2), h3, h4], labels=['Surrogate', 'Model', 'Experiment'], loc='upper right')
             uq.ax_default(ax, 'Background pressure (Torr)', 'Discharge current (A)', legend=leg)
             fig.savefig('mc-discharge-prior.pdf', format='pdf', bbox_inches='tight')
-            plt.show()
+            # plt.show()
 
             fig, ax = plt.subplots(figsize=figsize, layout='tight')
             p5, med, p95 = list(map(lambda x: np.percentile(ys_post, x, axis=0), (5, 50, 95)))
@@ -473,7 +473,7 @@ def spt100_monte_carlo(Ns=1000, plot=True):
             ax.set_ylim([0, 35])
             uq.ax_default(ax, 'Background pressure (Torr)', 'Discharge current (A)', legend=leg)
             fig.savefig('mc-discharge-post.pdf', format='pdf', bbox_inches='tight')
-            plt.show()
+            # plt.show()
 
         print('-------------Discharge current training set relative L2 scores----------------')
         print_l2_error(ys_prior, ys_post, ym_prior, ym_post, ym_surr_prior, ym_surr_post, 4.5, 0.1)
@@ -500,7 +500,7 @@ def spt100_monte_carlo(Ns=1000, plot=True):
             uq.ax_default(ax, 'Experimental thrust (mN)', 'Predicted thrust (mN)', legend=False)
             ax.set_ylim([15, 120])
             fig.savefig('mc-thrust-test-prior.pdf', format='pdf', bbox_inches='tight')
-            plt.show()
+            # plt.show()
 
             fig, ax = plt.subplots(figsize=figsize, layout='tight')
             p5, med, p95 = list(map(lambda x: 1000 * np.percentile(ys_post, x, axis=0), (5, 50, 95)))
@@ -513,7 +513,7 @@ def spt100_monte_carlo(Ns=1000, plot=True):
             uq.ax_default(ax, 'Experimental thrust (mN)', 'Predicted thrust (mN)', legend=True)
             ax.set_ylim([15, 120])
             fig.savefig('mc-thrust-test-post.pdf', bbox_inches='tight', format='pdf')
-            plt.show()
+            # plt.show()
 
         print('-------------Thrust test set relative L2 scores----------------')
         print_l2_error(ys_prior, ys_post, ym_prior, ym_post, ym_surr_prior, ym_surr_post, data['y'], 0.01)
@@ -539,7 +539,7 @@ def spt100_monte_carlo(Ns=1000, plot=True):
             uq.ax_default(ax, 'Experimental discharge current (A)', 'Predicted discharge current (A)', legend=False)
             ax.set_ylim([1, 34])
             fig.savefig('mc-discharge-test-prior.pdf', bbox_inches='tight', format='pdf')
-            plt.show()
+            # plt.show()
 
             fig, ax = plt.subplots(figsize=figsize, layout='tight')
             p5, med, p95 = list(map(lambda x: np.percentile(ys_post, x, axis=0), (5, 50, 95)))
@@ -552,7 +552,7 @@ def spt100_monte_carlo(Ns=1000, plot=True):
             uq.ax_default(ax, 'Experimental discharge current (A)', 'Predicted discharge current (A)', legend=True)
             ax.set_ylim([1, 34])
             fig.savefig('mc-discharge-test-post.pdf', bbox_inches='tight', format='pdf')
-            plt.show()
+            # plt.show()
 
         print('-------------Discharge current test set relative L2 scores----------------')
         print_l2_error(ys_prior, ys_post, ym_prior, ym_post, ym_surr_prior, ym_surr_post, data['y'], 0.1)
@@ -603,7 +603,7 @@ def spt100_monte_carlo(Ns=1000, plot=True):
             ax[1].set_ylim([-4, 22])
             fig1.savefig('mc-uion-prior.pdf', bbox_inches='tight', format='pdf')
             fig2.savefig('mc-uion-post.pdf', bbox_inches='tight', format='pdf')
-            plt.show()
+            # plt.show()
 
         print('-------------Ion velocity training set relative L2 scores----------------')
         Ns = ys_prior.shape[0]
@@ -645,7 +645,7 @@ def spt100_monte_carlo(Ns=1000, plot=True):
             leg = dict(handles=[(h1, h2), h3, h4], labels=['Surrogate', 'Model', 'Experiment'], borderaxespad=0.7, loc='lower left')
             uq.ax_default(ax, 'Angle from thruster centerline (deg)', r'Ion current density (A/$\mathrm{m}^2$)', legend=leg)
             fig.savefig('mc-jion-prior.pdf', format='pdf', bbox_inches='tight')
-            plt.show()
+            # plt.show()
 
             fig, ax = plt.subplots(figsize=figsize, layout='tight')
             p5_pred, p95_pred = list(map(lambda x: np.percentile(ys_post_pred, x, axis=0), (5, 95)))
@@ -662,7 +662,7 @@ def spt100_monte_carlo(Ns=1000, plot=True):
             ax.set_ylim([1e-3, 18])
             uq.ax_default(ax, 'Angle from thruster centerline (deg)', r'Ion current density (A/$\mathrm{m}^2$)', legend=leg)
             fig.savefig('mc-jion-post.pdf', bbox_inches='tight', format='pdf')
-            plt.show()
+            # plt.show()
 
             with matplotlib.rc_context(rc={'legend.fontsize': 13}):
                 fig1, ax1 = plt.subplots(figsize=figsize, layout='tight')
@@ -685,7 +685,7 @@ def spt100_monte_carlo(Ns=1000, plot=True):
                 uq.ax_default(ax[1], 'Angle from thruster centerline (deg)', r'Ion current density (A/$\mathrm{m}^2$)', legend=leg)
                 fig1.savefig('mc-jion-exp.pdf', bbox_inches='tight', format='pdf')
                 fig2.savefig('mc-jion-model.pdf', bbox_inches='tight', format='pdf')
-                plt.show()
+                # plt.show()
 
         print('-------------Ion current density training set relative L2 scores----------------')
         Ns = ys_prior.shape[0]
@@ -764,7 +764,7 @@ def get_allocation(surr):
 def plot_surrogate():
     """Make extra plots of the surrogate for the journal paper"""
     # Error v. cost
-    sf_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-05-23T04.16.17' / 'single-fidelity').glob('amisc_*'))[0]
+    sf_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-06-12T23.50.31' / 'single-fidelity').glob('amisc_*'))[0]
     sf_sys = pem_v0(from_file=sf_dir / 'sys' / f'sys_final.pkl')
     mf_sys = SURR
 
@@ -795,17 +795,44 @@ def plot_surrogate():
                 if i > 0:
                     ax.axes.yaxis.set_ticklabels([])
                 figs[i].savefig(f'{labels[i]}-error_v_cost.pdf', bbox_inches='tight', format='pdf')
-            plt.show()
+            # plt.show()
 
         # 1d slice 4x4 gird
-        fig, ax = SURR.plot_slice(from_file=surr_dir / 'sweep_M2RB' / 'sweep_randM2RB_s9,10,12,13_q2,3,10,11.pkl')
+        fig, ax = SURR.plot_slice(from_file=surr_dir / 'sweep_KYE4' / 'sweep_randKYE4_s8,10,11,12,13,14,16,17_q2,3,10,11.pkl')
         fig.set_size_inches(14, 14)
         fig.tight_layout()
-        fig.savefig('sweep_randM2RB_s9,10,12,13_q2,3,10,11.pdf', bbox_inches='tight', format='pdf')
-        plt.show()
+        fig.savefig('sweep_randKYE4_s8,10,11,12,13,14,16,17_q2,3,10,11.pdf', bbox_inches='tight', format='pdf')
+        #plt.show()
 
 
 if __name__ == '__main__':
-    # run_models()
-    # spt100_monte_carlo(plot=True)
-    plot_surrogate()
+    run_models()
+    spt100_monte_carlo(plot=True)
+    # plot_surrogate()
+
+    # file = Path('monte-carlo.h5')
+    # gray = (0.5, 0.5, 0.5)
+    # alpha = 0.2
+    # figsize = (6, 5)
+
+    # with h5py.File(file, 'r') as fd, plt.style.context("uqtils.default"):
+    #     data = DATA['T'][0]
+    #     pb = data['x'][:, 0]
+    #     idx = np.argsort(pb)
+    #     yerr = 2 * np.sqrt(data['var_y'])
+    #     cov = np.expand_dims(data['var_y'], axis=(-1, -2))
+    #     ys_post = fd['thrust/posterior/ysurr'][..., 0]
+    #     ys_post_pred = np.squeeze(uq.normal_sample(np.array(ys_post)[..., np.newaxis], cov), axis=-1)
+    #     ys_prior = fd['thrust/prior/ysurr'][..., 0]
+    #     ym_post = fd['thrust/posterior/ymodel'][..., 0]
+    #     ym_prior = fd['thrust/prior/ymodel'][..., 0]
+    #     ym_surr_post = fd['thrust/posterior/ymodel_surr'][..., 0]
+    #     ym_surr_prior = fd['thrust/prior/ymodel_surr'][..., 0]
+    #     print(data)
+    #     print(ys_post)
+    #     print(ys_post_pred)
+    #     print(ys_prior)
+    #     print(ym_post)
+    #     print(ym_prior)
+    #     print(ym_surr_post)
+    #     print(ym_surr_prior)

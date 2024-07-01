@@ -22,7 +22,7 @@ OPTIMIZER_ITER = 1
 START_TIME = 0
 PROJECT_ROOT = Path('../..')
 TRAINING = False
-surr_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-06-12T23.50.31' / 'multi-fidelity').glob('amisc_*'))[0]
+surr_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-06-26T18.04.11' / 'single-fidelity').glob('amisc_*'))[0]
 SURR = pem_v0(from_file=surr_dir / 'sys' / f'sys_final{"_train" if TRAINING else ""}.pkl')
 DATA = spt100_data()
 COMP = 'System'
@@ -291,31 +291,107 @@ def run_mcmc(file='dram-system.h5', clean=False, n_jobs=1, M=100):
             if group is not None:
                 del fd['mcmc']
 
-    nwalk, niter = 1, 20000
+    nwalk, niter = 1, 50000
 
-    cov_pct = {'T_ec': 0.05, 'V_vac': 0.005, 'P*': 0.07, 'PT': 0.08, 'u_n': 0.03, 
-               'c_w': 0.03, 'l_t': 0.03, 'f_n': 0.03, 'vAN1': 0.005, 'vAN2': 0.01, 
-               'vAN3': 0.005, 'vAN4': 0.005, 'delta_z': 0.03, 'z0': 0.05, 'p0': 0.2, 
-               'c0': 0.04, 'c1': 0.03, 'c2': 0.1, 'c3': 0.04, 'c4': 0.006, 'c5': 0.04}
-    nominal = {'T_ec': 1.32975724, 'V_vac': 31.4944035, 'P*': 37.6649643, 'PT': 10.0596097, 'u_n': 173.475606, 
-               'c_w': 1.19056820, 'l_t': 6.15632359, 'f_n': .832893150, 'vAN1': -2.04501734, 'vAN2': 11.9583442, 
-               'vAN3': .0283206049, 'vAN4': .0101167989, 'delta_z': .269274170, 'z0': -.2500, 'p0': 49.7019000, 
-               'c0': .434697689, 'c1': .360025789, 'c2': -7.70634738, 'c3': .352032243, 'c4': 19.2993325, 'c5': 14.5840943}
-    # nominal = {}
+    cov_pct = {'T_ec': 0.04,
+               'V_vac': 0.004,
+               'P*': 0.06,
+               'PT': 0.07,
+               'u_n': 0.04,
+               'c_w': 0.035,
+               'l_t': 0.04,
+               'f_n': 0.04,
+               'vAN1': 0.006,
+               'vAN2': 0.0085,
+               'vAN3': 0.0065,
+               'vAN4': 0.0065,
+               'delta_z': 0.04,
+               'z0': 0.06,
+               'p0': 0.21,
+               'c0': 0.05,
+               'c1': 0.04,
+               'c2': 0.09,
+               'c3': 0.035,
+               'c4': 0.005,
+               'c5': 0.05}
+    # cov_pct = {'T_ec': 0.04,      # Multi-Fidelity Settings
+    #            'V_vac': 0.004,
+    #            'P*': 0.06,
+    #            'PT': 0.07,
+    #            'u_n': 0.04,
+    #            'c_w': 0.035,
+    #            'l_t': 0.04,
+    #            'f_n': 0.04,
+    #            'vAN1': 0.006,
+    #            'vAN2': 0.0085,
+    #            'vAN3': 0.0065,
+    #            'vAN4': 0.0065,
+    #            'delta_z': 0.04,
+    #            'z0': 0.06,
+    #            'p0': 0.21,
+    #            'c0': 0.05,
+    #            'c1': 0.04,
+    #            'c2': 0.09,
+    #            'c3': 0.035,
+    #            'c4': 0.005,
+    #            'c5': 0.05}
+    nominal = {'T_ec':    3.04387,
+               'V_vac':   31.96449,
+               'P_star':  31.44788,
+               'PT':      10.54750,
+               'u_n':     210.57903,
+               'c_w':     1.15500,
+               'l_t':     18.82385,
+               'f_n':     1.23434,
+               'vAN1':    -2.02342,
+               'vAN2':    10.03596,
+               'vAN3':    0.02687,
+               'vAN4':    0.00907,
+               'delta_z': 0.29058,
+               'z0':      -0.22342,
+               'p0':      47.53610,
+               'c0':      0.40120,
+               'c1':      0.35644,
+               'c2':      -8.85125,
+               'c3':      0.36195,
+               'c4':      19.42760,
+               'c5':      14.97537}
+    # nominal = {'T_ec':    3.04387,        # MultiFidelity Nominals
+    #            'V_vac':   30.96449,
+    #            'P_star':  30.44788,
+    #            'PT':      10.04750,
+    #            'u_n':     100.57903,
+    #            'c_w':     1.25500,
+    #            'l_t':     18.82385,
+    #            'f_n':     1.13434,
+    #            'vAN1':    -2.01342,
+    #            'vAN2':    10.03596,
+    #            'vAN3':    0.02707,
+    #            'vAN4':    0.00947,
+    #            'delta_z': 0.29758,
+    #            'z0':      -0.24342,
+    #            'p0':      47.53610,
+    #            'c0':      0.40120,
+    #            'c1':      0.35644,
+    #            'c2':      -8.85125,
+    #            'c3':      0.36195,
+    #            'c4':      19.42760,
+    #            'c5':      14.97537}
+
     # p0 = np.array([(v.bounds()[0] + v.bounds()[1])/2 for v in THETA_VARS]).astype(np.float32)
     p0 = np.array([nominal.get(str(v), v.nominal) for v in THETA_VARS]).astype(np.float32)
     p0[np.isclose(p0, 0)] = 1
     cov0 = np.eye(p0.shape[0]) * np.array([(cov_pct.get(str(v), 0.08) * np.abs(p0[i]) / 2)**2 for i, v in enumerate(THETA_VARS)])
-    cov0 *= 1
-    p0 = uq.normal_sample(p0, cov0, nwalk).astype(np.float32)
+    cov0 *= 0.01
+    # p0 = uq.normal_sample(p0, cov0, nwalk).astype(np.float32)
 
-    print(cov0)
-    cov0 = np.linalg.cholesky(cov0)
+    # with Parallel(n_jobs=n_jobs, verbose=0) as ppool:
+    #     fun = lambda theta: spt100_log_posterior(theta, M=M, ppool=ppool)
+    #     uq.dram(fun, p0, niter, cov0=cov0, filename=file, adapt_after=5000, adapt_interval=1500,
+    #             eps=1e-6, gamma=0.15)
 
-    with Parallel(n_jobs=n_jobs, verbose=0) as ppool:
-        fun = lambda theta: spt100_log_posterior(theta, M=M, ppool=ppool)
-        uq.dram(fun, p0, niter, cov0=cov0, filename=file, adapt_after=5000, adapt_interval=1000,
-                eps=1e-12, gamma=0.1)
+    fun = lambda theta: spt100_log_posterior(theta, M=M)
+    uq.dram(fun, p0, niter, cov0=cov0, filename=file, adapt_after=5000, adapt_interval=1000, eps=1e-6, gamma=0.1)
 
 
 def show_mcmc(file='dram-system.h5', burnin=0.1):
@@ -346,6 +422,7 @@ def show_mcmc(file='dram-system.h5', burnin=0.1):
         for i in range(nshow):
             ax.plot(lags, np.mean(autos[:, :, j+i], axis=1), c=colors[i], ls='-', label=labels[j+i])
         uq.ax_default(ax, 'Lag', 'Auto-correlation', legend=True)
+        plt.savefig('autocorr.png')
 
         # Mixing plots
         fig, axs = plt.subplots(nshow, 1, sharex=True)
@@ -357,12 +434,13 @@ def show_mcmc(file='dram-system.h5', burnin=0.1):
         axs[-1].set_xlabel('Iterations')
         fig.set_size_inches(7, nshow*2)
         fig.tight_layout()
+        plt.savefig('mixing_mcmc.png')
 
         # Marginal corner plot
         fig, ax = uq.ndscatter(samples[..., j:j+nshow].reshape((-1, nshow)), subplot_size=2, labels=labels[j:j+nshow],
                                plot2d='hist', cov_overlay=cov[j:j+nshow, j:j+nshow])
         # plt.show()
-        plt.savefig('show_mcmc.png')
+        plt.savefig('marginal_mcmc.png')
 
 
 def journal_plots(file, burnin=0.1):
@@ -380,6 +458,7 @@ def journal_plots(file, burnin=0.1):
         rc = {'axes.labelsize': 17, 'xtick.labelsize': 12, 'ytick.labelsize': 12, 'legend.fontsize': 12, 'axes.grid' : False}
         with plt.style.context("uqtils.default"):
             with matplotlib.rc_context(rc=rc):
+                # Cathode marginals
                 str_use = ['T_ec', 'V_vac', 'P*', 'PT']
                 idx_use = sorted([THETA_VARS.index(v) for v in str_use])
                 labels = [r'$T_e$ (eV)', r'$V_{vac}$ (V)', r'$P^*$ ($\mu$Torr)', r'$P_T$ ($\mu$Torr)']
@@ -389,9 +468,9 @@ def journal_plots(file, burnin=0.1):
                 # plt.show()
 
                 # Thruster marginals
-                str_use = ['T_ec', 'u_n', 'l_t', 'vAN2', 'delta_z', 'z0', 'p0']
+                str_use = ['T_ec', 'u_n', 'c_w', 'l_t', 'f_n', 'vAN1', 'vAN2', 'vAN3', 'vAN4', 'delta_z', 'z0', 'p0']
                 idx_use = sorted([THETA_VARS.index(v) for v in str_use])
-                labels = [r'$T_e$ (eV)', r'$u_n$ (m/s)', r'$l_t$ (mm)', r'$a_2$ (-)', r'$\Delta z$ (-)', r'$z_0$ (-)', r'$p_0$ ($\mu$Torr)']
+                labels = [r'$T_e$ (eV)', r'$u_n$ (m/s)', r'$c_w$ (-)', r'$l_t$ (mm)', r'$f_n$ (m/s)', r'$a_1$ (-)', r'$a_2$ (-)', r'$a_3$ (-)', r'$a_4$ (-)', r'$\Delta z$ (-)', r'$z_0$ (-)', r'$p_0$ ($\mu$Torr)']
                 fig, ax = uq.ndscatter(samples[:, idx_use], subplot_size=2, labels=labels, plot1d='kde', plot2d='hex',
                                        cmap='viridis', cmin=mincnt, bins=bins)
                 fig.savefig('mcmc-thruster.pdf', bbox_inches='tight', format='pdf')
@@ -433,5 +512,5 @@ if __name__ == '__main__':
     # run_laplace(M=M)
     # show_laplace()
     # run_mcmc(M=M, file=file, clean=False)
-    # show_mcmc(file=file)
-    journal_plots(file)
+    show_mcmc(file=file)
+    # journal_plots(file)
