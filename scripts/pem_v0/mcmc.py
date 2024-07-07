@@ -22,7 +22,7 @@ OPTIMIZER_ITER = 1
 START_TIME = 0
 PROJECT_ROOT = Path('../..')
 TRAINING = False
-surr_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-06-26T18.04.11' / 'single-fidelity').glob('amisc_*'))[0]
+surr_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-07-05T18.36.17' / 'multi-fidelity').glob('amisc_*'))[0]
 SURR = pem_v0(from_file=surr_dir / 'sys' / f'sys_final{"_train" if TRAINING else ""}.pkl')
 DATA = spt100_data()
 COMP = 'System'
@@ -172,26 +172,22 @@ def mle_callback(xk, *args, **kwargs):
 def run_mle(optimizer='nelder-mead', M=100):
     """Compute maximum likelihood estimate for the PEM."""
     global START_TIME
-    # nominal = {'T_ec': 2.312, 'V_vac': 32.47, 'P*': 22.3, 'PT': 99.3, 'u_n': 311.0, 'c_w': 1.15, 'l_t': 5.90, 'f_n': 5.34, 
-    #            'vAN1': -2.150, 'vAN2': 15.90, 'vAN3': 0.028, 'vAN4': 0.011, 'delta_z': 0.339, 'z0': -0.238, 'p0': 49.30, 
-    #            'c0': 0.557, 'c1': 0.375, 'c2': -9.64, 'c3': 0.309, 'c4': 19.47, 'c5': 15.31}                                  # f(x)=1898, evolution, run 1
-
-    # nominal = {'T_ec': 1.187, 'V_vac': 31.53, 'P*': 44.16, 'PT': 10.24, 'u_n': 162.4, 'c_w': 1.218, 'l_t': 4.802, 'f_n': .9857, 
-    #            'vAN1': -2.054, 'vAN2': 12.65, 'vAN3': .0279, 'vAN4': .0101, 'delta_z': .3040, 'z0': -.2500, 'p0': 51.40, 
-    #            'c0': .5653, 'c1': .3664, 'c2': -4.917, 'c3': .3013, 'c4': 19.20, 'c5': 14.22}                                 # f(x)=1875, nelder-mead anomalous variables, run 2
-
-    # nominal = {'T_ec': 2.091, 'V_vac': 32.18, 'P*': 21.01, 'PT': 98.49, 'u_n': 278.4, 'c_w': .7844, 'l_t': 6.347, 'f_n': 4.289, 
-    #            'vAN1': -2.500, 'vAN2': 31.76, 'vAN3': .0256, 'vAN4': .0101, 'delta_z': .2306, 'z0': -.0940, 'p0': 36.61, 
-    #            'c0': .4998, 'c1': .3871, 'c2': -4.588, 'c3': .3041, 'c4': 19.48, 'c5': 15.02}                                 # f(x)=2545, nelder-mead thruster vars, run 3
-
-    # nominal = {'T_ec': 1.011, 'V_vac': 31.76, 'P*': 35.54, 'PT': 10.15, 'u_n': 246.9, 'c_w': .8344, 'l_t': 4.331, 'f_n': 1.062, 
-    #            'vAN1': -2.500, 'vAN2': 33.33, 'vAN3': .0262, 'vAN4': .0099, 'delta_z': .2015, 'z0': -.1158, 'p0': 33.94, 
-    #            'c0': .4356, 'c1': .3830, 'c2': -6.532, 'c3': .3257, 'c4': 19.56, 'c5': 14.02}                                 # f(x)=2555, nelder-mead plume vars, run 4
 
     # nominal = {'T_ec': 1.32975724, 'V_vac': 31.4944035, 'P*': 37.6649643, 'PT': 10.0596097, 'u_n': 173.475606, 'c_w': 1.19056820, 
     #            'l_t': 6.15632359, 'f_n': .832893150, 'vAN1': -2.04501734, 'vAN2': 11.9583442, 'vAN3': .0283206049, 'vAN4': .0101167989, 
     #            'delta_z': .269274170, 'z0': -.2500, 'p0': 49.7019000, 'c0': .434697689, 'c1': .360025789, 'c2': -7.70634738, 
-    #            'c3': .352032243, 'c4': 19.2993325, 'c5': 14.5840943}                                                          # f(x) = 1822, nelder-mead all vars, run 5
+    #            'c3': .352032243, 'c4': 19.2993325, 'c5': 14.5840943}          # f(x) = 1822, nelder-mead all vars, run 5
+
+    # nominal = {'T_ec': 2.70865899, 'V_vac': 31.2211380, 'P*': 30.4120381, 'PT': 11.6315896, 'u_n': 204.143044, 'c_w': 0.462289568, 
+    #            'l_t': 19.1386146, 'f_n': 0.632404833, 'vAN1': -2.13637623, 'vAN2': 10.0482673, 'vAN3': 0.0265154113, 'vAN4': 0.00972030060,
+    #            'delta_z': 0.299183519, 'z0': 0.243762813, 'p0': 63.6813217, 'c0': 0.602931820, 'c1': 0.367925440, 'c2': -12.6833611, 
+    #            'c3': 0.283327885, 'c4': 19.6154376, 'c5': 17.5502184}          # f(x) = 3464.050, nelder-mead
+
+    # Nelder-Mead Converged SUCCESS, f(x) = 3980
+    # nominal = {'T_ec': 4.08580524, 'V_vac': 30.4524956, 'P*': 38.3408929, 'PT': 12.2784913, 'u_n': 100.711461, 'c_w': 0.200901451, 
+    #            'l_t': 13.3836729, 'f_n': 0.586990143, 'vAN1': -2.49948729, 'vAN2': 11.6964655, 'vAN3': 0.0214592350, 'vAN4': 0.00853451347,
+    #            'delta_z': 0.212382287, 'z0': 0.00000000, 'p0': 64.5527923, 'c0': 0.691766706, 'c1': 0.261273974, 'c2': -8.82522890, 
+    #            'c3': 0.200914411, 'c4': 19.8624270, 'c5': 15.1428905}
 
     nominal = {str(v): (v.bounds()[0] + v.bounds()[1])/2 for v in THETA_VARS}
     bds = [v.bounds() for v in THETA_VARS]
@@ -291,9 +287,30 @@ def run_mcmc(file='dram-system.h5', clean=False, n_jobs=1, M=100):
             if group is not None:
                 del fd['mcmc']
 
-    nwalk, niter = 1, 50000
+    nwalk, niter = 1, 70000
 
-    cov_pct = {'T_ec': 0.04,
+    # cov_pct = {'T_ec': 0.06,
+    #            'V_vac': 0.007,
+    #            'P*': 0.08,
+    #            'PT': 0.08,
+    #            'u_n': 0.05,
+    #            'c_w': 0.04,
+    #            'l_t': 0.06,
+    #            'f_n': 0.06,
+    #            'vAN1': 0.02,
+    #            'vAN2': 0.011,
+    #            'vAN3': 0.010,
+    #            'vAN4': 0.02,
+    #            'delta_z': 0.05,
+    #            'z0': 0.07,
+    #            'p0': 0.22,
+    #            'c0': 0.07,
+    #            'c1': 0.06,
+    #            'c2': 0.07,
+    #            'c3': 0.05,
+    #            'c4': 0.007,
+    #            'c5': 0.07}
+    cov_pct = {'T_ec': 0.04,      # Multi-Fidelity Settings
                'V_vac': 0.004,
                'P*': 0.06,
                'PT': 0.07,
@@ -314,41 +331,41 @@ def run_mcmc(file='dram-system.h5', clean=False, n_jobs=1, M=100):
                'c3': 0.035,
                'c4': 0.005,
                'c5': 0.05}
-    # cov_pct = {'T_ec': 0.04,      # Multi-Fidelity Settings
-    #            'V_vac': 0.004,
-    #            'P*': 0.06,
-    #            'PT': 0.07,
-    #            'u_n': 0.04,
-    #            'c_w': 0.035,
-    #            'l_t': 0.04,
-    #            'f_n': 0.04,
-    #            'vAN1': 0.006,
-    #            'vAN2': 0.0085,
-    #            'vAN3': 0.0065,
-    #            'vAN4': 0.0065,
-    #            'delta_z': 0.04,
-    #            'z0': 0.06,
-    #            'p0': 0.21,
-    #            'c0': 0.05,
-    #            'c1': 0.04,
-    #            'c2': 0.09,
-    #            'c3': 0.035,
-    #            'c4': 0.005,
-    #            'c5': 0.05}
-    nominal = {'T_ec':    3.04387,
-               'V_vac':   31.96449,
-               'P_star':  31.44788,
-               'PT':      10.54750,
-               'u_n':     210.57903,
-               'c_w':     1.15500,
+    # nominal = {'T_ec':    2.8358,
+    #            'V_vac':   31.06449,
+    #            'P_star':  30.14788,
+    #            'PT':      11.54750,
+    #            'u_n':     218.57903,
+    #            'c_w':     1.13500,
+    #            'l_t':     17.82385,
+    #            'f_n':     1.22434,
+    #            'vAN1':    -2.08342,
+    #            'vAN2':    10.06596,
+    #            'vAN3':    0.02687,
+    #            'vAN4':    0.00797,
+    #            'delta_z': 0.28058,
+    #            'z0':      -0.19342,
+    #            'p0':      47.03610,
+    #            'c0':      0.40120,
+    #            'c1':      0.35644,
+    #            'c2':      -10.85125,
+    #            'c3':      0.36195,
+    #            'c4':      19.42760,
+    #            'c5':      14.91537}
+    nominal = {'T_ec':    3.04387,        # MultiFidelity Nominals
+               'V_vac':   30.96449,
+               'P_star':  30.44788,
+               'PT':      10.04750,
+               'u_n':     100.57903,
+               'c_w':     1.25500,
                'l_t':     18.82385,
-               'f_n':     1.23434,
-               'vAN1':    -2.02342,
+               'f_n':     1.13434,
+               'vAN1':    -2.01342,
                'vAN2':    10.03596,
-               'vAN3':    0.02687,
-               'vAN4':    0.00907,
-               'delta_z': 0.29058,
-               'z0':      -0.22342,
+               'vAN3':    0.02707,
+               'vAN4':    0.00947,
+               'delta_z': 0.29758,
+               'z0':      -0.24342,
                'p0':      47.53610,
                'c0':      0.40120,
                'c1':      0.35644,
@@ -356,33 +373,12 @@ def run_mcmc(file='dram-system.h5', clean=False, n_jobs=1, M=100):
                'c3':      0.36195,
                'c4':      19.42760,
                'c5':      14.97537}
-    # nominal = {'T_ec':    3.04387,        # MultiFidelity Nominals
-    #            'V_vac':   30.96449,
-    #            'P_star':  30.44788,
-    #            'PT':      10.04750,
-    #            'u_n':     100.57903,
-    #            'c_w':     1.25500,
-    #            'l_t':     18.82385,
-    #            'f_n':     1.13434,
-    #            'vAN1':    -2.01342,
-    #            'vAN2':    10.03596,
-    #            'vAN3':    0.02707,
-    #            'vAN4':    0.00947,
-    #            'delta_z': 0.29758,
-    #            'z0':      -0.24342,
-    #            'p0':      47.53610,
-    #            'c0':      0.40120,
-    #            'c1':      0.35644,
-    #            'c2':      -8.85125,
-    #            'c3':      0.36195,
-    #            'c4':      19.42760,
-    #            'c5':      14.97537}
 
     # p0 = np.array([(v.bounds()[0] + v.bounds()[1])/2 for v in THETA_VARS]).astype(np.float32)
     p0 = np.array([nominal.get(str(v), v.nominal) for v in THETA_VARS]).astype(np.float32)
     p0[np.isclose(p0, 0)] = 1
     cov0 = np.eye(p0.shape[0]) * np.array([(cov_pct.get(str(v), 0.08) * np.abs(p0[i]) / 2)**2 for i, v in enumerate(THETA_VARS)])
-    cov0 *= 0.01
+    cov0 *= 0.05 # MF *= 0.05, SF *= 0.0061
     # p0 = uq.normal_sample(p0, cov0, nwalk).astype(np.float32)
 
     # with Parallel(n_jobs=n_jobs, verbose=0) as ppool:
@@ -504,13 +500,13 @@ def journal_plots(file, burnin=0.1):
 
 if __name__ == '__main__':
     M = 1
-    optimizer = 'evolution'
+    optimizer = 'nelder-mead'
     file = f'dram-{COMP.lower()}-{"train" if TRAINING else "test"}.h5'
 
     # pdf_slice(pdfs=['Posterior'], M=M)
     # run_mle(optimizer, M)
     # run_laplace(M=M)
     # show_laplace()
-    # run_mcmc(M=M, file=file, clean=False)
+    run_mcmc(M=M, file=file, clean=False)
     show_mcmc(file=file)
-    # journal_plots(file)
+    journal_plots(file)

@@ -24,7 +24,7 @@ from hallmd.utils import model_config_dir
 
 PROJECT_ROOT = Path('../..')
 TRAINING = False
-surr_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-06-26T18.04.11' / 'single-fidelity').glob('amisc_*'))[0]
+surr_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-06-26T18.04.11' / 'multi-fidelity').glob('amisc_*'))[0]
 SURR = pem_v0(from_file=surr_dir / 'sys' / f'sys_final{"_train" if TRAINING else ""}.pkl')
 DATA = spt100_data()
 COMP = 'System'
@@ -45,8 +45,9 @@ with h5py.File(f'dram-{COMP.lower()}-{"train" if TRAINING else "test"}.h5', 'r')
     niter, nwalk, ndim = samples.shape
     v_idx = THETA_VARS.index('vAN1')  # Hard code vAN1 since it was a point value under the posterior
     samples = samples[int(0.1 * niter):, ...].reshape((-1, ndim))
-    van1 = THETA_VARS[v_idx].nominal * np.ones((samples.shape[0], 1))
-    SAMPLES = np.concatenate((samples[:, :v_idx], van1, samples[:, v_idx:]), axis=-1)
+    SAMPLES = samples
+    # van1 = THETA_VARS[v_idx].nominal * np.ones((samples.shape[0], 1))
+    # SAMPLES = np.concatenate((samples[:, :v_idx], van1, samples[:, v_idx:]), axis=-1)
 
 
 def posterior_sampler(shape):
@@ -809,30 +810,3 @@ if __name__ == '__main__':
     run_models()
     spt100_monte_carlo(plot=True)
     # plot_surrogate()
-
-    # file = Path('monte-carlo.h5')
-    # gray = (0.5, 0.5, 0.5)
-    # alpha = 0.2
-    # figsize = (6, 5)
-
-    # with h5py.File(file, 'r') as fd, plt.style.context("uqtils.default"):
-    #     data = DATA['T'][0]
-    #     pb = data['x'][:, 0]
-    #     idx = np.argsort(pb)
-    #     yerr = 2 * np.sqrt(data['var_y'])
-    #     cov = np.expand_dims(data['var_y'], axis=(-1, -2))
-    #     ys_post = fd['thrust/posterior/ysurr'][..., 0]
-    #     ys_post_pred = np.squeeze(uq.normal_sample(np.array(ys_post)[..., np.newaxis], cov), axis=-1)
-    #     ys_prior = fd['thrust/prior/ysurr'][..., 0]
-    #     ym_post = fd['thrust/posterior/ymodel'][..., 0]
-    #     ym_prior = fd['thrust/prior/ymodel'][..., 0]
-    #     ym_surr_post = fd['thrust/posterior/ymodel_surr'][..., 0]
-    #     ym_surr_prior = fd['thrust/prior/ymodel_surr'][..., 0]
-    #     print(data)
-    #     print(ys_post)
-    #     print(ys_post_pred)
-    #     print(ys_prior)
-    #     print(ym_post)
-    #     print(ym_prior)
-    #     print(ym_surr_post)
-    #     print(ym_surr_prior)

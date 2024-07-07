@@ -101,6 +101,8 @@ def hallthruster_jl_input(thruster_input: dict) -> dict:
                           'pressure_z0': thruster_input['z0'] * thruster_input['channel_length'],
                           'pressure_pstar': thruster_input['p0'] * 1e-6,
                           'pressure_alpha': thruster_input['alpha']})
+    # with open(Path('.') / 'variables.json', 'w', encoding='utf-8') as fd:
+    #     json.dump(json_data, fd, ensure_ascii=False, indent=4)
     return json_data
 
 
@@ -448,3 +450,16 @@ def uion_reconstruct(xr: np.ndarray, z: np.ndarray = None, L: float | np.ndarray
         return z, uion_interp
     else:
         return zg, uion_g
+
+
+if __name__ == '__main__':
+    with open(Path(CONFIG_DIR / 'hallthruster_jl.json'), 'r') as fd:
+        config_data = json.load(fd)
+        default_inputs = load_variables(config_data['default_inputs'], Path(CONFIG_DIR / "variables_v0.json"))
+        base_input = {var.id: var.nominal for var in default_inputs}  # Set default values for variables.json RV inputs
+        base_input.update(config_data['SPT-100'])                      # Set all other simulation configs
+        input_list = config_data['required_inputs']  # Needs to match xdim and correspond with str input ids to hallthruster.jl
+        output_list = config_data['outputs']
+    base_input.update({'num_cells': 150, 'dt_s': 2e-08, 'max_charge': 3})  # Update model fidelity params
+    with open(Path('.') / 'variables.json', 'w', encoding='utf-8') as fd:
+        json.dump(hallthruster_jl_input(base_input), fd, ensure_ascii=False, indent=4)

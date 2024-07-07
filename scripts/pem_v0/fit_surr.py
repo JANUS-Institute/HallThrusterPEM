@@ -30,7 +30,7 @@ from hallmd.utils import model_config_dir
 CONFIG_DIR = model_config_dir()
 
 
-def train_mf(max_runtime_hr=4):
+def train_mf(max_runtime_hr=5):
     """Train and compare MF v. SF surrogates."""
     with MPICommExecutor(MPI.COMM_WORLD, root=0) as executor:
         if executor is not None:
@@ -42,6 +42,10 @@ def train_mf(max_runtime_hr=4):
             os.mkdir(root_dir / 'multi-fidelity')
             sf_sys = pem_v0(executor=executor, init=False, save_dir=root_dir / 'single-fidelity', hf_override=True)
             mf_sys = pem_v0(executor=executor, init=False, save_dir=root_dir / 'multi-fidelity', hf_override=False)
+            # with open('results/mf_2024-06-12T23.50.31/multi-fidelity/amisc_2024-06-12T23.50.31/sys/sys_final.pkl', 'rb') as fd:
+            #     mf_sys = pickle.load(fd)
+            # with open('results/mf_2024-06-12T23.50.31/single-fidelity/amisc_2024-06-12T23.50.31/sys/sys_final.pkl', 'rb') as fd:
+            #     sf_sys = pickle.load(fd)
 
             # Filter test set
             with open(CONFIG_DIR / 'test_set.pkl', 'rb') as fd:
