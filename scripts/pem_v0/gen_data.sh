@@ -2,7 +2,7 @@
 
 #SBATCH --job-name=gen_data_v0
 #SBATCH --partition=standard
-#SBATCH --time=00-04:00:00
+#SBATCH --time=00-4:00:00
 #SBATCH --nodes=1
 #SBATCH --mem-per-cpu=1g
 #SBATCH --ntasks-per-node=1
