@@ -15,6 +15,7 @@ from datetime import timezone
 import os
 from pathlib import Path
 import pickle
+import time
 
 import dill
 from mpi4py import MPI
@@ -25,6 +26,7 @@ import matplotlib.pyplot as plt
 from uqtils import ax_default
 from amisc import IndicesRV, IndexSet
 from joblib import Parallel, delayed
+from amisc.system import SystemSurrogate
 
 from hallmd.models.pem import pem_v0
 from hallmd.utils import model_config_dir
@@ -99,162 +101,154 @@ def train_mf(max_runtime_hr=16):
             mf_sys.plot_allocation()
 
 
-def get_test_set_error(surr, qoi_ind: IndicesRV = None, max_iter: int = 20, 
-                       test_set: dict = None, n_jobs: int = 1, root_dir = '.'):
-        """Simulate training surrogate to generate test set error statistics.
+def get_test_set_error(surr, qoi_ind):
+    """Simulate training surrogate to generate test set error statistics.
 
-        :param qoi_ind: list of system QoI variables to focus refinement on, use all QoI if not specified
-        :param max_iter: the maximum number of refinement steps to take
-        :param test_set: `dict(xt=(Nt, x_dim), yt=(Nt, y_dim)` to show convergence of surrogate to the truth model
-        :param n_jobs: number of cpu workers for computing error indicators (on master MPI task), 1=sequential
-        """
-        qoi_ind = surr._get_qoi_ind(qoi_ind)
-        Nqoi = len(qoi_ind)
-        max_iter = surr.refine_level + max_iter
-        cum_cost = 0
-        test_stats, xt, yt, t_fig, t_ax = None, None, None, None, None
+    :param surr: the SystemSurrogate object
+    :param qoi_ind: list of system QoI variables to focus refinement on, use all QoI if not specified
+    :returns: `cost_cum`, `test_error` -- the cumulative training cost and test set error on given qois during training
+    """
+    qoi_ind = surr._get_qoi_ind(qoi_ind)
+    Nqoi = len(qoi_ind)
+    max_iter = surr.refine_level  # Iterate up to last surrogate refinement level
+    xt, yt = surr.build_metrics['xt'], surr.build_metrics['yt']  # Same as the ones in test_set.pkl
+    comp = surr['Thruster'] # TODO: should generalize this to arbitrary components and put in convenience amisc function
+    index_set = []          # The active index set for Thruster component
+    candidate_set = []      # The candidate indices for Thruster component
 
-        # Record of (error indicator, component, alpha, beta, num_evals, total added cost (s)) for each iteration
-        train_record = surr.build_metrics.get('train_record', [])
-        if test_set is not None:
-            xt, yt = test_set['xt'], test_set['yt']
-        # xt, yt = surr.build_metrics.get('xt', xt), surr.build_metrics.get('yt', yt)  # Overrides test set param
+    def relative_l2(pred, targ, axis=-1):
+        with np.errstate(divide='ignore', invalid='ignore'):
+            pred, targ = np.atleast_1d(pred), np.atleast_1d(targ)
+            err = np.sqrt(np.mean((pred - targ) ** 2, axis=axis) / np.mean(targ ** 2, axis=axis))
+            err = np.nan_to_num(err, posinf=np.nan, neginf=np.nan, nan=np.nan)
+            return err
 
-        # Track convergence progress on a test set and on the max error indicator
-        err_fig, err_ax = plt.subplots()
-        if xt is not None and yt is not None:
-            surr.build_metrics['xt'] = xt
-            surr.build_metrics['yt'] = yt
-            test_stats = np.expand_dims(surr.get_test_metrics(xt, yt, qoi_ind=qoi_ind), axis=0)
-            t_fig, t_ax = plt.subplots(1, Nqoi) if Nqoi > 1 else plt.subplots()
+    def activate_index(alpha, beta):
+        # Add all possible new candidates (distance of one unit vector away)
+        ele = (alpha, beta)
+        ind = list(alpha + beta)
+        new_candidates = []
+        for i in range(len(ind)):
+            ind_new = ind.copy()
+            ind_new[i] += 1
 
-        def activate_index(alpha, beta):
-            # Add all possible new candidates (distance of one unit vector away)
-            ele = (alpha, beta)
-            ind = list(alpha + beta)
-            new_candidates = []
-            for i in range(len(ind)):
-                ind_new = ind.copy()
-                ind_new[i] += 1
+            # Don't add if we surpass a refinement limit
+            if np.any(np.array(ind_new) > np.array(comp.max_refine)):
+                continue
 
-                # Don't add if we surpass a refinement limit
-                if np.any(np.array(ind_new) > np.array(surr['Thruster'].max_refine)):
-                    continue
+            # Add the new index if it maintains downward-closedness
+            new_cand = (tuple(ind_new[:len(alpha)]), tuple(ind_new[len(alpha):]))
+            down_closed = True
+            for j in range(len(ind)):
+                ind_check = ind_new.copy()
+                ind_check[j] -= 1
+                if ind_check[j] >= 0:
+                    tup_check = (tuple(ind_check[:len(alpha)]), tuple(ind_check[len(alpha):]))
+                    if tup_check not in index_set and tup_check != ele:
+                        down_closed = False
+                        break
+            if down_closed:
+                new_candidates.append(new_cand)
 
-                # Add the new index if it maintains downward-closedness
-                new_cand = (tuple(ind_new[:len(alpha)]), tuple(ind_new[len(alpha):]))
-                down_closed = True
-                for j in range(len(ind)):
-                    ind_check = ind_new.copy()
-                    ind_check[j] -= 1
-                    if ind_check[j] >= 0:
-                        tup_check = (tuple(ind_check[:len(alpha)]), tuple(ind_check[len(alpha):]))
-                        if tup_check not in index_set and tup_check != ele:
-                            down_closed = False
-                            break
-                if down_closed:
-                    new_candidates.append(new_cand)
+        # Move to the active index set
+        if ele in candidate_set:
+            candidate_set.remove(ele)
+        index_set.append(ele)
+        new_candidates = [cand for cand in new_candidates if cand not in candidate_set]
+        candidate_set.extend(new_candidates)
 
-            # Move to the active index set
-            if ele in candidate_set:
-                candidate_set.remove(ele)
-            index_set.append(ele)
-            new_candidates = [cand for cand in new_candidates if cand not in candidate_set]
-            candidate_set.extend(new_candidates)
+        # Return total cost of activation
+        total_cost = 0.0
+        for a, b in new_candidates:
+            total_cost += comp.get_cost(a, b)
+        return total_cost
 
-            # Return total cost of activation
-            total_cost = 0.0
-            for a, b in new_candidates:
-                total_cost += surr['Thruster'].get_cost(a, b)
-            return total_cost
+    cost_cum = np.empty(max_iter+1)                # Cumulative cost allocation during training
+    test_error = np.empty((max_iter+1, Nqoi))      # Relative L2 error on test set qois
+    dt = []                                        # Time per surrogate prediction
+    num_active = []                                # Number of active indices
+    num_cand = []                                  # Number of candidate indices
 
-        # Set up a parallel pool of workers, sequential if n_jobs=1
-        with Parallel(n_jobs=n_jobs, verbose=0) as ppool:
-            i = 0
-            error_record = []
-            index_set = []
-            candidate_set = []
-            while True:
-                # Check all end conditions
-                if surr.refine_level >= max_iter:
-                    surr._print_title_str(f'Termination criteria reached: Max iteration {surr.refine_level}/{max_iter}')
-                    break
-                if i == 75:
-                    break
-                print(i)
+    # Initial cost and test set error
+    base_alpha = (0,) * len(comp.truth_alpha)
+    base_beta = (0,) * (len(comp.max_refine) - len(comp.truth_alpha))
+    base_cost = activate_index(base_alpha, base_beta) + comp.get_cost(base_alpha, base_beta)
+    cost_cum[0] = base_cost
+    t1 = time.time()
+    ysurr = surr.predict(xt, index_set={'Thruster': index_set})
+    dt.append(time.time() - t1)
+    num_active.append(len(index_set))
+    num_cand.append(len(candidate_set))
+    test_error[0, :] = relative_l2(ysurr[:, qoi_ind], yt[:, qoi_ind], axis=0)
 
-                # Plot progress of error indicator
-                # train_record.append(refine_res)
-                # error_record = [res[0] for res in train_record]
-                # surr.build_metrics['train_record'] = train_record
-                err_indicator, node, alpha, beta, num_evals, cost = surr.build_metrics['train_record'][i]
-                error_record.append(err_indicator)
-                new_cost = activate_index(alpha, beta)
-                cum_cost += new_cost
-                yt = surr.predict(xt, 100, 10, 1e-10, None, None, False, False, {node: index_set}, qoi_ind, None)
+    # Iterate back over each step of surrogate training history and compute test set error
+    t1 = time.time()
+    for i in range(max_iter):
+        err_indicator, node, alpha, beta, num_evals, cost = surr.build_metrics['train_record'][i]
+        new_cost = activate_index(alpha, beta)  # Updates index_set with (alpha, beta) for Thruster node
+        cost_cum[i+1] = new_cost
+        t2 = time.time()
+        ysurr = surr.predict(xt, index_set={'Thruster': index_set})  # (Ntest, Nqoi)
+        t3 = time.time()
+        dt.append(t3-t2)
+        num_active.append(len(index_set))
+        num_cand.append(len(candidate_set))
+        test_error[i+1, :] = relative_l2(ysurr[:, qoi_ind], yt[:, qoi_ind], axis=0)
+        print(f'i={i}, time={(t3-t1)/60.0:.2f} min, dt={(t3-t2)/60.0:.2f} min')
 
-                # Plot progress on test set
-                if xt is not None and yt is not None:
-                    stats = surr.get_test_metrics(xt, yt, qoi_ind=[0,1,2,3])
-                    test_stats = np.concatenate((test_stats, stats[np.newaxis, ...]), axis=0)
-                    surr.build_metrics['test_stats'] = test_stats
+    return np.cumsum(cost_cum), test_error, dt, num_active, num_cand
 
-                i+=1
 
-        for i in range(Nqoi):
-            ax = t_ax if Nqoi == 1 else t_ax[i]
-            ax.clear(); ax.grid(); ax.set_yscale('log')
-            ax.plot(test_stats[:, 1, i], '-k')
-            ax.set_title(surr.coupling_vars[qoi_ind[i]].to_tex(units=True))
-            ax_default(ax, 'Iteration', r'Relative $L_2$ error', legend=False)
-        t_fig.set_size_inches(3.5*Nqoi, 3.5)
-        t_fig.tight_layout()
-        if root_dir is not None:
-            t_fig.savefig(str(Path(root_dir) / 'test_set.png'), dpi=300, format='png')
-        
-        err_ax.clear(); err_ax.grid(); err_ax.plot(error_record, '-k')
-        ax_default(err_ax, 'Iteration', r'Relative $L_2$ error indicator', legend=False)
-        err_ax.set_yscale('log')
-        if root_dir is not None:
-                    err_fig.savefig(str(Path(root_dir) / 'error_indicator.png'), dpi=300, format='png')
+def plot_test_set_error():
+    """Simulate surrogate training and plot test set error v. cost"""
+    mf_sys = SystemSurrogate.load_from_file('sys_final.pkl')
+    qois = ['I_B0', 'I_D', 'T', 'uion0']
+    # cost_cum, test_error, surr_time, num_active, num_cand = get_test_set_error(mf_sys, qois)  # (Niter+1,) and (Niter+1, Nqoi)
+    # with open('test_set_error.pkl', 'wb') as fd:
+    #     pickle.dump({'cost_cum': cost_cum, 'test_error': test_error, 'surr_time': surr_time,
+    #                  'num_active': num_active, 'num_cand': num_cand}, fd)
+    with open('test_set_error.pkl', 'rb') as fd:
+        # Load test set results from pkl (so you don't have to run it everytime)
+        data = pickle.load(fd)
+        cost_cum, test_error = data['cost_cum'], data['test_error']
+        surr_time, num_active, num_cand = data['surr_time'], data['num_active'], data['num_cand']
+    surr_time, num_active, num_cand = map(np.array, (surr_time, num_active, num_cand))
 
-        print(cum_cost)
-        return test_stats
+    mf_alloc, _, _ = mf_sys.get_allocation()
+    lf_alloc = mf_alloc['Thruster'][str((0,) * len(mf_sys['Thruster'].truth_alpha))]  # [Neval, total cost] for LF model
+    lf_model_cost = lf_alloc[1] / lf_alloc[0]  # LF single model eval cost
+    # Have to use LF cost here since the HF alpha=(2,2) wasn't reached by the mf_sys training
+
+    # Plot QoI L2 error on test set vs. cost
+    qoi_ind = mf_sys._get_qoi_ind(qois)
+    old_qoi = ['I_D', 'T', 'uion0']
+    labels = [mf_sys.coupling_vars[idx].to_tex(units=True) for idx in qoi_ind]
+    with plt.style.context('uqtils.default'):
+        # Plot test set error results
+        fig, ax = plt.subplots(1, len(qoi_ind), sharey='row', layout='tight', figsize=(3.5 * len(qoi_ind), 4))
+        for i in range(len(qoi_ind)):
+            ax[i].plot(cost_cum / lf_model_cost, test_error[:, i], '-k', label='Simulated training')
+            if qois[i] in old_qoi:
+                # Check that we are computing the same test set error as before
+                old_test_error = mf_sys.build_metrics['test_stats'][:, 1, old_qoi.index(qois[i])]  # (Niter+1)
+                ax[i].plot(cost_cum / lf_model_cost, old_test_error, '--r', label='Original training')
+            ax[i].set_xscale('log')
+            ax[i].set_yscale('log')
+            ax[i].set_title(labels[i])
+            ylabel = r'Relative $L_2$ error' if i == 0 else ''
+            ax_default(ax[i], r'Cost (number of LF evaluations)', ylabel, legend=i == len(qoi_ind) - 1)
+        fig.savefig('error_v_cost.png', dpi=200, format='png')
+
+        # Plot surrogate evaluation time on test set against total number of candidate indices
+        # TODO: find what fraction of surrogate cost is mostly spent recomputing misc coefficients
+        fig, ax = plt.subplots(1, 2, layout='tight', figsize=(11, 5))
+        ax[0].plot(num_active + num_cand, '-k')
+        ax[1].plot(num_active + num_cand, surr_time, '-k')
+        ax_default(ax[0], 'Training iteration', 'Total number of indices')
+        ax_default(ax[1], 'Total number of indices', 'Surrogate evaluation time (s)')
+        fig.savefig('surrogate_time.png', dpi=200, format='png')
 
 
 if __name__ == '__main__':
     # train_mf()
-    with open('../../results/mf_2024-07-09T20.25.34/multi-fidelity/amisc_2024-07-09T20.25.35/sys/sys_final.pkl', 'rb') as fd:
-        mf_sys = pickle.load(fd)
-    with open(CONFIG_DIR / 'test_set.pkl', 'rb') as fd:
-        test_set = pickle.load(fd)
-    lb = np.array([var.bounds()[0] for var in mf_sys.exo_vars])
-    ub = np.array([var.bounds()[1] for var in mf_sys.exo_vars])
-    keep_idx = np.all((test_set['xt'] < ub) & (test_set['xt'] > lb), axis=1)
-    test_set['xt'] = test_set['xt'][keep_idx, :]
-    test_set['yt'] = test_set['yt'][keep_idx, :]
-
-    stats = get_test_set_error(mf_sys, ['I_B0', 'I_D', 'T', 'uion0'], 75, test_set, 1, '.')
-    print(stats)
-    mf_test = stats    # (Niter+1, 2, Nqoi)
-    mf_alloc, mf_offline, mf_cum = mf_sys.get_allocation()
-    hf_alloc = mf_alloc['Thruster']['(0, 0)']
-    hf_model_cost = hf_alloc[1] / hf_alloc[0]
-
-    # Plot QoI L2 error on test set vs. cost
-    qoi_ind = mf_sys._get_qoi_ind(['I_B0', 'I_D', 'T', 'uion0'])
-    labels = [mf_sys.coupling_vars[idx].to_tex(units=True) for idx in qoi_ind]
-    fig, axs = plt.subplots(1, len(qoi_ind), sharey='row')
-    for i in range(len(qoi_ind)):
-        ax = axs[i] if len(qoi_ind) > 1 else axs
-        ax.plot(mf_cum / hf_model_cost, mf_test[:, 1, i], '-k', label='Multi-fidelity')
-        # ax.plot(sf_cum / hf_model_cost, sf_test[:, 1, i], '--k', label='Single-fidelity')
-        ax.set_yscale('log')
-        ax.set_xscale('log')
-        ax.grid()
-        ax.set_title(labels[i])
-        ylabel = r'Relative $L_2$ error' if i == 0 else ''
-        ax_default(ax, r'Cost', ylabel, legend=i+1 == len(qoi_ind))
-    fig.set_size_inches(3.5*len(qoi_ind), 3.5)
-    fig.tight_layout()
-    fig.savefig('error_v_cost.png', dpi=300, format='png')
+    plot_test_set_error()

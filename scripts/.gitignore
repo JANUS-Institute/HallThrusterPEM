@@ -4,5 +4,6 @@
 *.h5
 *.hdf5
 *.pdf
+*.png
 temp/
 .vscode/
