@@ -48,8 +48,11 @@ def pem_v0(save_dir: str | Path = None, executor: Executor = None, init: bool = 
         surr = SystemSurrogate.load_from_file(Path(from_file), stdout=False, executor=executor)
         for v in exo_vars:
             # Make sure nominal values are up to date with the current config file
-            j = surr.exo_vars.index(v)
-            surr.exo_vars[j] = v
+            try:
+                j = surr.exo_vars.index(v)
+                surr.exo_vars[j] = v
+            except:
+                continue  # Skip if surrogate doesn't have this exo var anymore
             for node, node_obj in surr.graph.nodes.items():
                 try:
                     j = surr[node].x_vars.index(v)
@@ -58,9 +61,12 @@ def pem_v0(save_dir: str | Path = None, executor: Executor = None, init: bool = 
                     pass
 
         for v in coupling_vars:
-            j = surr.coupling_vars.index(v)
-            surr.coupling_vars[j].tex = v.tex
-            surr.coupling_vars[j].nominal = v.nominal
+            try:
+                j = surr.coupling_vars.index(v)
+                surr.coupling_vars[j].tex = v.tex
+                surr.coupling_vars[j].nominal = v.nominal
+            except:
+                continue
 
         return surr
 
