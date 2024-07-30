@@ -17,6 +17,7 @@ from scipy.interpolate import interp1d
 from amisc.rv import NormalRV
 
 from hallmd.data.loader import spt100_data
+from hallmd.data.loader import h9_data
 from hallmd.models.plume import jion_reconstruct
 from hallmd.models.thruster import uion_reconstruct
 from hallmd.models.pem import pem_v0
@@ -27,9 +28,10 @@ TRAINING = False
 surr_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-06-26T18.04.11' / 'multi-fidelity').glob('amisc_*'))[0]
 SURR = pem_v0(from_file=surr_dir / 'sys' / f'sys_final{"_train" if TRAINING else ""}.pkl')
 DATA = spt100_data()
+# DATA = h9_data(['V_cc', 'jion', 'uion'])
 COMP = 'System'
 THETA_VARS = [v for v in SURR[COMP].x_vars if v.param_type == 'calibration']
-QOI_MAP = {'Cathode': ['V_cc'], 'Thruster': ['uion'], 'Plume': ['T', 'jion'], 'System': ['V_cc', 'uion', 'T', 'jion']}
+QOI_MAP = {'Cathode': ['V_cc'], 'Thruster': ['uion'], 'Plume': ['T', 'jion'], 'System': ['V_cc', 'uion', 'jion']} # 'T' Taken out
 QOIS = QOI_MAP.get(COMP)
 CONSTANTS = {"calibration", "r_m"}
 DISCHARGE_CURRENT = 4.5  # A
@@ -123,6 +125,9 @@ def run_models(Ns=1000):
         nominal.update({str(v): v.nominal for i, v in enumerate(THETA_VARS)})
         xmodel = SURR.sample_inputs(Nx, use_pdf=False, nominal=nominal,
                                     constants=CONSTANTS.union({"design", "other", "operating"}))
+        print(xmodel)
+        print(nominal)
+        print(data)
         ymodel = SURR.predict(xmodel, qoi_ind=['Tc', 'I_D'], use_model='best')
         ymodel_surr = SURR.predict(xmodel, qoi_ind=['Tc', 'I_D'], training=TRAINING)
         fd.create_dataset('thrust/posterior/xsurr', data=xs)
@@ -176,9 +181,11 @@ def run_models(Ns=1000):
         nominal = {'PB': data['x'][:, 0], 'Va': data['x'][:, 1], 'mdot_a': data['x'][:, 2]}
         theta = posterior_sampler(sample_shape)
         nominal.update({str(v): theta[..., i] for i, v in enumerate(THETA_VARS)})
+        print(f'Time: {(time.time() - t1) / 60:.2f} min. POST SURROGATE')
         xs = SURR.sample_inputs(sample_shape, use_pdf=True, nominal=nominal, constants=CONSTANTS)
         ys = SURR.predict(xs, qoi_ind=['Tc', 'I_D'], training=TRAINING)
         nominal.update({str(v): v.nominal for i, v in enumerate(THETA_VARS)})
+        print(f'Time: {(time.time() - t1) / 60:.2f} min. POST MODEL')
         xmodel = SURR.sample_inputs(Nx, use_pdf=False, nominal=nominal,
                                     constants=CONSTANTS.union({"design", "other", "operating"}))
         ymodel = SURR.predict(xmodel, qoi_ind=['Tc', 'I_D'], use_model='best')
@@ -191,10 +198,12 @@ def run_models(Ns=1000):
 
         theta = prior_sampler(sample_shape)
         nominal.update({str(v): theta[..., i] for i, v in enumerate(THETA_VARS)})
+        print(f'Time: {(time.time() - t1) / 60:.2f} min. PRIOR SURROGATE')
         xs = SURR.sample_inputs(sample_shape, use_pdf=True, nominal=nominal, constants=CONSTANTS)
         ys = SURR.predict(xs, qoi_ind=['Tc', 'I_D'], training=TRAINING)
         nominal.update({str(v): v.mu if isinstance(v, NormalRV) else (v.bounds()[0] + v.bounds()[1]) / 2
                         for i, v in enumerate(THETA_VARS)})
+        print(f'Time: {(time.time() - t1) / 60:.2f} min. PRIOR MODEL')
         xmodel = SURR.sample_inputs(Nx, use_pdf=False, nominal=nominal,
                                     constants=CONSTANTS.union({"design", "other", "operating"}))
         ymodel = SURR.predict(xmodel, qoi_ind=['Tc', 'I_D'], use_model='best')
@@ -809,4 +818,5 @@ def plot_surrogate():
 if __name__ == '__main__':
     run_models()
     spt100_monte_carlo(plot=True)
+    # h9_monte_carlo(plot=True)
     # plot_surrogate()

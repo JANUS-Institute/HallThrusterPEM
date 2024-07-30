@@ -40,8 +40,8 @@ def pem_v0(save_dir: str | Path = None, executor: Executor = None, init: bool = 
     :param from_file: the `.pkl` save file to load the surrogate from, (instead of building from scratch)
     :returns: the `SystemSurrogate` object
     """
-    exo_vars = load_variables(['PB', 'Va', 'mdot_a', 'T_ec', 'V_vac', 'P*', 'PT', 'u_n', 'c_w', 'l_t', 'f_n', 'vAN1', 'vAN2', 'vAN3',
-                               'vAN4', 'delta_z', 'z0', 'p0', 'c0', 'c1', 'c2', 'c3', 'c4', 'c5', 'sigma_cex', 'r_m'], var_file)
+    exo_vars = load_variables(['PB', 'Va', 'mdot_a', 'V_vac', 'P*', 'PT', 'u_n','f_n', 'vAN1', 'vAN2', 'vAN3',
+                               'vAN4', 'delta_z', 'z0', 'c0', 'c1', 'c2', 'c3', 'c4', 'c5', 'sigma_cex', 'r_m'], var_file) # Removed T_ec, c_w, l_t, and p0
     coupling_vars = load_variables(['V_cc', 'I_B0', 'I_D', 'T', 'eta_v', 'eta_c', 'eta_m', 'ui_avg', 'theta_d', 'Tc'], var_file)
 
     if from_file is not None:
@@ -83,8 +83,8 @@ def pem_v0(save_dir: str | Path = None, executor: Executor = None, init: bool = 
                                     param_type='coupling') for i in range(r2)])
 
     # Component inputs
-    cathode_exo = ['PB', 'Va', 'T_ec', 'V_vac', 'P*', 'PT']
-    thruster_exo = ['PB', 'Va', 'mdot_a', 'T_ec', 'u_n', 'c_w' , 'l_t', 'f_n', 'vAN1', 'vAN2', 'vAN3', 'vAN4', 'delta_z', 'z0', 'p0']
+    cathode_exo = ['PB', 'Va', 'V_vac', 'P*', 'PT']
+    thruster_exo = ['PB', 'Va', 'mdot_a', 'u_n', 'f_n', 'vAN1', 'vAN2', 'vAN3', 'vAN4', 'delta_z', 'z0']
     plume_exo = ['PB', 'c0', 'c1', 'c2', 'c3', 'c4', 'c5', 'sigma_cex', 'r_m']
 
     # Models should be specified at the global scope for pickling

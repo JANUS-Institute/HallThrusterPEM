@@ -7,3 +7,5 @@
 *.png
 temp/
 .vscode/
+*.out
+*.txt

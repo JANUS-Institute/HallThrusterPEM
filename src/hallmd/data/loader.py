@@ -69,3 +69,58 @@ def spt100_data(qois: list[str] = None) -> dict[str: list[ExpData]]:
         exp_data['jion'] = [load_jion()]
 
     return exp_data
+
+def h9_data(qois: list[str] = None) -> dict[str: list[ExpData]]:
+    """Return a dict with experimental data for each specified quantity for the H9.
+
+    :param qois: a list specifying the experimental data to return, must be in `['V_cc', 'T', 'uion', 'jion']`
+    :returns: map of `qoi->data`, where `data` is a list of experimental data sets
+    """
+    import sys
+    import os
+    secure_path = '/home/morag/h9-data'
+    if os.path.exists(secure_path):
+        sys.path.insert(0, secure_path)
+    else:
+        raise ImportError(f"The specified secure path does not exist: {secure_path}")
+    try:
+        import h9dataloader
+    except ImportError:
+        raise ImportError('Could not import ITAR data loader. Ensure the secure path is correct.')
+
+    if qois is None:
+        qois = ['V_cc', 'uion', 'jion']
+    exp_data = dict()
+
+    # Load Vcc data
+    if 'V_cc' in qois:
+        from h9dataloader import load_vcc
+        exp_data['V_cc'] = [load_vcc()]
+
+    # Load thrust data
+    if 'T' in qois:
+        print("No Thrust Data")
+        # from h9dataloader import load_thrust
+        # exp_data['T'] = [load_thrust()]
+
+    # Load discharge current data
+    if 'I_D' in qois:
+        print("No I_D data")
+        # from h9dataloader import load_discharge_current
+        # exp_data['I_D'] = [load_discharge_current()]
+
+    # Load ion velocity data
+    if 'uion' in qois:
+        from h9dataloader import load_uion
+        exp_data['uion'] = [load_uion()]
+
+    # Load ion velocity data
+    if 'jion' in qois:
+        from h9dataloader import load_jion
+        exp_data['jion'] = [load_jion()]
+
+    return exp_data
+
+if __name__ == '__main__':
+    data = h9_data(['V_cc', 'uion', 'jion'])
+    print(data)

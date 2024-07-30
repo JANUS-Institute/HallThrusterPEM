@@ -4,8 +4,8 @@
         "tex": "$T_e$",
         "description": "Cathode electron temperature",
         "units": "eV",
-        "param_type": "design",
-        "nominal": 3.26173,
+        "param_type": "other",
+        "nominal": 3,
         "domain": [1, 5],
         "rv_type": "uniform_bds",
         "rv_params": [1, 5]
@@ -16,7 +16,7 @@
         "description": "Coupling voltage in vacuum",
         "units": "V",
         "param_type": "calibration",
-        "nominal": 30.93303,
+        "nominal": 6.808,
         "domain": [0, 60],
         "rv_type": "uniform_bds",
         "rv_params": [0, 60]
@@ -27,10 +27,10 @@
         "description": "Turning point pressure",
         "units": "$\\mu$-Torr",
         "param_type": "calibration",
-        "nominal": 29.90806,
-        "domain": [10, 100],
+        "nominal": 1505.0,
+        "domain": [1, 2000],
         "rv_type": "uniform_bds",
-        "rv_params": [10, 100]
+        "rv_params": [1, 2000]
     },
     "PT": {
         "id": "PT",
@@ -38,10 +38,10 @@
         "description": "Thruster to facility plasma density ratio",
         "units": "$\\mu$-Torr",
         "param_type": "calibration",
-        "nominal": 10.60412,
-        "domain": [10, 100],
+        "nominal": 8.00,
+        "domain": [1, 100],
         "rv_type": "uniform_bds",
-        "rv_params": [10, 100]
+        "rv_params": [1, 100]
     },
     "PB": {
         "id": "PB",
@@ -71,7 +71,7 @@
         "description": "Neutral velocity",
         "units": "m/s",
         "param_type": "calibration",
-        "nominal": 278.01331,
+        "nominal": 480.0,
         "domain": [100, 500],
         "rv_type": "uniform_bds",
         "rv_params": [100, 500]
@@ -81,8 +81,8 @@
         "tex": "$c_w$",
         "description": "Wall sheath loss coefficient",
         "units": "-",
-        "param_type": "calibration",
-        "nominal": 0.86904,
+        "param_type": "other",
+        "nominal": 1.0,
         "domain": [0.2, 2.0],
         "rv_type": "uniform_bds",
         "rv_params": [0.2, 2.0]
@@ -92,8 +92,8 @@
         "tex": "$l_t$",
         "description": "Inner-outer transition length",
         "units": "mm",
-        "param_type": "calibration",
-        "nominal": 4.14740,
+        "param_type": "other",
+        "nominal": 3.8,
         "domain": [1, 20],
         "rv_type": "uniform_bds",
         "rv_params": [1, 20]
@@ -104,7 +104,7 @@
         "description": "Neutral ingestion multiplier",
         "units": "m/s",
         "param_type": "calibration",
-        "nominal": 6.23341,
+        "nominal": 5.95,
         "domain": [0.5, 10.0],
         "rv_type": "uniform_bds",
         "rv_params": [0.5, 10.0]
@@ -115,7 +115,7 @@
         "description": "Anomalous transport coefficient 1",
         "units": "-",
         "param_type": "calibration",
-        "nominal": -2.15392,
+        "nominal": -2.3,
         "domain": [-2.5, -1],
         "rv_type": "uniform_bds",
         "rv_params": [-2.5, -1]
@@ -126,7 +126,7 @@
         "description": "Anomalous transport coefficient 2",
         "units": "-",
         "param_type": "calibration",
-        "nominal": 10.01271,
+        "nominal": 12.9,
         "domain": [10, 100],
         "rv_type": "uniform_bds",
         "rv_params": [10, 100]
@@ -137,10 +137,10 @@
         "description": "Anomalous transport coefficient 3",
         "units": "-",
         "param_type": "calibration",
-        "nominal": 0.02506,
-        "domain": [0.02, 0.035],
+        "nominal": 0.036,
+        "domain": [0.03, 0.05],
         "rv_type": "uniform_bds",
-        "rv_params": [0.02, 0.035]
+        "rv_params": [0.03, 0.05]
     },
     "vAN4": {
         "id": "vAN4",
@@ -148,7 +148,7 @@
         "description": "Anomalous transport coefficient 4",
         "units": "-",
         "param_type": "calibration",
-        "nominal": 0.00650,
+        "nominal": 0.0099,
         "domain": [0.001, 0.02],
         "rv_type": "uniform_bds",
         "rv_params": [0.001, 0.02]
@@ -159,7 +159,7 @@
         "description": "Anomalous transport profile shift",
         "units": "-",
         "param_type": "calibration",
-        "nominal": 0.35940,
+        "nominal": 0.296,
         "domain": [0, 0.4],
         "rv_type": "normal",
         "rv_params": [0.2, 0.07]
@@ -170,7 +170,7 @@
         "description": "Anomalous transport profile max shift",
         "units": "-",
         "param_type": "calibration",
-        "nominal": -0.17682,
+        "nominal": -0.00564,
         "domain": [-0.25, 0],
         "rv_type": "normal",
         "rv_params": [-0.12, 0.04]
@@ -180,7 +180,7 @@
         "tex": "$p_0$",
         "description": "Anomalous transport pressure shift upper bound",
         "units": "$\\mu$-Torr",
-        "param_type": "calibration",
+        "param_type": "other",
         "nominal": 47.35361,
         "domain": [25, 65],
         "rv_type": "normal",
@@ -203,8 +203,8 @@
         "description": "Cathode location",
         "units": "m",
         "param_type": "design",
-        "nominal": 0.08,
-        "domain": [0.07, 0.09],
+        "nominal": 0.152,
+        "domain": [0.07, 0.2],
         "rv_type": "uniform_bds",
         "rv_params": [0.07, 0.09]
     },
@@ -214,8 +214,8 @@
         "description": "Anode mass flow rate",
         "units": "mg/s",
         "param_type": "operating",
-        "nominal": 5,
-        "domain": [2, 7],
+        "nominal": 11.8,
+        "domain": [2, 22],
         "rv_type": "uniform_pct",
         "rv_params": 0.01
     },
@@ -236,7 +236,7 @@
         "description": "Plume fit coefficient 0",
         "units": "-",
         "param_type": "calibration",
-        "nominal": 0.40159,
+        "nominal": 0.7,
         "domain": [0, 1],
         "rv_type": "uniform_bds",
         "rv_params": [0, 1]
@@ -247,7 +247,7 @@
         "description": "Plume fit coefficient 1",
         "units": "-",
         "param_type": "calibration",
-        "nominal": 0.35365,
+        "nominal": 0.340,
         "domain": [0.1, 0.9],
         "rv_type": "uniform_bds",
         "rv_params": [0.1, 0.9]
@@ -258,7 +258,7 @@
         "description": "Plume fit coefficient 2",
         "units": "-",
         "param_type": "calibration",
-        "nominal": 0.058398,
+        "nominal": 0.05,
         "domain": [-15, 15],
         "rv_type": "uniform_bds",
         "rv_params": [-15, 15]
@@ -269,7 +269,7 @@
         "description": "Plume fit coefficient 3",
         "units": "rad",
         "param_type": "calibration",
-        "nominal": 0.36468,
+        "nominal": 1.3,
         "domain": [0.2, 1.570796],
         "rv_type": "uniform_bds",
         "rv_params": [0.2, 1.570796]
@@ -280,7 +280,7 @@
         "description": "Plume fit coefficient 4",
         "units": "-",
         "param_type": "calibration",
-        "nominal": 19.31920,
+        "nominal": 21.40,
         "domain": [18, 22],
         "rv_type": "uniform_bds",
         "rv_params": [18, 22]
@@ -291,7 +291,7 @@
         "description": "Plume fit coefficient 5",
         "units": "-",
         "param_type": "calibration",
-        "nominal": 16.09474,
+        "nominal": 14.20,
         "domain": [14, 18],
         "rv_type": "uniform_bds",
         "rv_params": [14, 18]
@@ -303,7 +303,7 @@
         "units": "A",
         "param_type": "coupling",
         "nominal": 3.6,
-        "domain": [0, 10],
+        "domain": [0, 20],
         "rv_type": "none",
         "rv_params": []
     },
@@ -324,8 +324,8 @@
         "description": "Plume measurement axial distance from channel exit",
         "units": "m",
         "param_type": "other",
-        "nominal": 1,
-        "domain": [0.5, 1.5],
+        "nominal": 55,
+        "domain": [0.5, 100],
         "rv_type": "none",
         "rv_params": []
     },
@@ -335,8 +335,8 @@
         "description": "Thrust",
         "units": "N",
         "param_type": "coupling",
-        "nominal": 0.08,
-        "domain": [0, 0.2],
+        "nominal": 0.22,
+        "domain": [0, 0.4],
         "rv_type": "none",
         "rv_params": []
     },
@@ -346,8 +346,8 @@
         "description": "Corrected thrust",
         "units": "N",
         "param_type": "coupling",
-        "nominal": 0.08,
-        "domain": [0, 0.2],
+        "nominal": 0.22,
+        "domain": [0, 0.4],
         "rv_type": "none",
         "rv_params": []
     },
@@ -357,8 +357,8 @@
         "description": "Discharge current",
         "units": "A",
         "param_type": "coupling",
-        "nominal": 4.5,
-        "domain": [0, 10],
+        "nominal": 15,
+        "domain": [0, 20],
         "rv_type": "none",
         "rv_params": []
     },
@@ -402,7 +402,7 @@
         "units": "km/s",
         "param_type": "coupling",
         "nominal": 18,
-        "domain": [14, 22],
+        "domain": [14, 25],
         "rv_type": "none",
         "rv_params": []
     },
@@ -417,4 +417,4 @@
         "rv_type": "none",
         "rv_params": []
     }
-  }
+}

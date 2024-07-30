@@ -73,7 +73,8 @@ def hallthruster_jl_input(thruster_input: dict) -> dict:
         'inner_radius': thruster_input['inner_radius'],
         'outer_radius': thruster_input['outer_radius'],
         'channel_length': thruster_input['channel_length'],
-        'magnetic_field_file': str(CONFIG_DIR / thruster_input['magnetic_field_file']),
+        # 'magnetic_field_file': str(CONFIG_DIR / thruster_input['magnetic_field_file']),
+        'magnetic_field_file': '/home/morag/h9-data/' + thruster_input['magnetic_field_file'], # CONFIG_DIR, need to find better way of loading secure directory
         'wall_material': thruster_input['wall_material'],
         'magnetically_shielded': thruster_input['magnetically_shielded'],
         'anode_potential': thruster_input['Va'],
@@ -175,7 +176,7 @@ def hallthruster_jl_wrapper(x: np.ndarray, alpha: tuple = (2, 2), *, compress: b
                             config: str | Path = CONFIG_DIR / 'hallthruster_jl.json',
                             variables: str | Path = CONFIG_DIR / 'variables_v0.json',
                             svd_data: dict | str | Path = CONFIG_DIR / 'thruster_svd.pkl',
-                            hf_override: tuple | bool = None, thruster: str = 'SPT-100'):
+                            hf_override: tuple | bool = None, thruster: str = 'H9'):
     """Wrapper function for Hallthruster.jl.
 
     !!! Note "Defining input variables"
@@ -457,9 +458,9 @@ if __name__ == '__main__':
         config_data = json.load(fd)
         default_inputs = load_variables(config_data['default_inputs'], Path(CONFIG_DIR / "variables_v0.json"))
         base_input = {var.id: var.nominal for var in default_inputs}  # Set default values for variables.json RV inputs
-        base_input.update(config_data['SPT-100'])                      # Set all other simulation configs
+        base_input.update(config_data['H9'])                      # Set all other simulation configs
         input_list = config_data['required_inputs']  # Needs to match xdim and correspond with str input ids to hallthruster.jl
         output_list = config_data['outputs']
-    base_input.update({'num_cells': 150, 'dt_s': 2e-08, 'max_charge': 3})  # Update model fidelity params
+    base_input.update({'num_cells': 200, 'dt_s': 2e-08, 'max_charge': 3})  # Update model fidelity params
     with open(Path('.') / 'variables.json', 'w', encoding='utf-8') as fd:
         json.dump(hallthruster_jl_input(base_input), fd, ensure_ascii=False, indent=4)

@@ -11,6 +11,7 @@ Includes
 import json
 from pathlib import Path
 from importlib import resources
+from hallmd.models.pem import pem_v0
 
 import numpy as np
 from uqtils import ax_default
@@ -48,3 +49,15 @@ def data_write(data, filename, write_dir='.'):
     """Convenience function to write .json data files."""
     with open(Path(write_dir) / filename, 'w', encoding='utf-8') as fd:
         json.dump(data, fd, ensure_ascii=False, indent=4)
+
+def get_test_surrogate(root_dir="mf_2024-06-26T18.04.11/"):
+    surr = pem_v0(from_file=root_dir+'sys_final.pkl')
+    num_samples = 1
+
+    x = surr.sample_inputs(num_samples)
+    y = surr.predict(x)                      # implicitly runs with training=False, which will recompute and save MISC coefficients in the background
+                                            # this will take on the order of 10 min to run
+    surr.save_to_file('sys_final_test.pkl')
+
+if __name__ == "__main__":
+    get_test_surrogate()

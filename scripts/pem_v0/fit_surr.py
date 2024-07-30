@@ -34,7 +34,7 @@ from hallmd.utils import model_config_dir
 CONFIG_DIR = model_config_dir()
 
 
-def train_mf(max_runtime_hr=16):
+def train_mf(max_runtime_hr=8):
     """Train and compare MF v. SF surrogates."""
     with MPICommExecutor(MPI.COMM_WORLD, root=0) as executor:
         if executor is not None:
@@ -44,7 +44,7 @@ def train_mf(max_runtime_hr=16):
             os.mkdir(root_dir)
             os.mkdir(root_dir / 'single-fidelity')
             os.mkdir(root_dir / 'multi-fidelity')
-            # sf_sys = pem_v0(executor=executor, init=False, save_dir=root_dir / 'single-fidelity', hf_override=True)
+            sf_sys = pem_v0(executor=executor, init=False, save_dir=root_dir / 'single-fidelity', hf_override=True)
             mf_sys = pem_v0(executor=executor, init=False, save_dir=root_dir / 'multi-fidelity', hf_override=False)
             # with open('results/mf_2024-06-12T23.50.31/multi-fidelity/amisc_2024-06-12T23.50.31/sys/sys_final.pkl', 'rb') as fd:
             #     mf_sys = pickle.load(fd)
@@ -60,24 +60,24 @@ def train_mf(max_runtime_hr=16):
             test_set['xt'] = test_set['xt'][keep_idx, :]
             test_set['yt'] = test_set['yt'][keep_idx, :]
 
-            # sf_sys.init_system()
+            sf_sys.init_system()
             mf_sys.init_system()
 
             qoi_ind = ['I_D', 'T', 'uion0']
-            # sf_sys.fit(qoi_ind=qoi_ind, num_refine=1000, max_iter=200, max_runtime=max_runtime_hr,
-            #            save_interval=50, test_set=test_set, n_jobs=-1)
+            sf_sys.fit(qoi_ind=qoi_ind, num_refine=1000, max_iter=200, max_runtime=max_runtime_hr,
+                       save_interval=50, test_set=test_set, n_jobs=-1)
             mf_sys.fit(qoi_ind=qoi_ind, num_refine=1000, max_iter=200, max_runtime=max_runtime_hr,
                        save_interval=50, test_set=test_set, n_jobs=-1)
 
             # Get cost allocation for sf and mf systems
-            # sf_test = sf_sys.build_metrics['test_stats']    # (Niter+1, 2, Nqoi)
-            # sf_alloc, sf_offline, sf_cum = sf_sys.get_allocation()
-            # hf_alloc = sf_alloc['Thruster'][str(tuple())]   # [Neval, total cost]
-            # hf_model_cost = hf_alloc[1] / hf_alloc[0]
-            mf_test = mf_sys.build_metrics['test_stats']    # (Niter+1, 2, Nqoi)
-            mf_alloc, mf_offline, mf_cum = mf_sys.get_allocation()
-            hf_alloc = mf_alloc['Thruster']['(0, 0)']
+            sf_test = sf_sys.build_metrics['test_stats']    # (Niter+1, 2, Nqoi)
+            sf_alloc, sf_offline, sf_cum = sf_sys.get_allocation()
+            hf_alloc = sf_alloc['Thruster'][str(tuple())]   # [Neval, total cost]
             hf_model_cost = hf_alloc[1] / hf_alloc[0]
+            #mf_test = mf_sys.build_metrics['test_stats']    # (Niter+1, 2, Nqoi)
+            #mf_alloc, mf_offline, mf_cum = mf_sys.get_allocation()
+            #hf_alloc = mf_alloc['Thruster']['(0, 0)']
+            #hf_model_cost = hf_alloc[1] / hf_alloc[0]
 
             # Plot QoI L2 error on test set vs. cost
             qoi_ind = mf_sys._get_qoi_ind(qoi_ind)
@@ -85,7 +85,7 @@ def train_mf(max_runtime_hr=16):
             fig, axs = plt.subplots(1, len(qoi_ind), sharey='row')
             for i in range(len(qoi_ind)):
                 ax = axs[i] if len(qoi_ind) > 1 else axs
-                ax.plot(mf_cum / hf_model_cost, mf_test[:, 1, i], '-k', label='Multi-fidelity')
+                ax.plot(sf_cum / hf_model_cost, sf_test[:, 1, i], '-k', label='Multi-fidelity')
                 # ax.plot(sf_cum / hf_model_cost, sf_test[:, 1, i], '--k', label='Single-fidelity')
                 ax.set_yscale('log')
                 ax.set_xscale('log')
@@ -203,10 +203,10 @@ def plot_test_set_error():
     """Simulate surrogate training and plot test set error v. cost"""
     mf_sys = SystemSurrogate.load_from_file('sys_final.pkl')
     qois = ['I_B0', 'I_D', 'T', 'uion0']
-    # cost_cum, test_error, surr_time, num_active, num_cand = get_test_set_error(mf_sys, qois)  # (Niter+1,) and (Niter+1, Nqoi)
-    # with open('test_set_error.pkl', 'wb') as fd:
-    #     pickle.dump({'cost_cum': cost_cum, 'test_error': test_error, 'surr_time': surr_time,
-    #                  'num_active': num_active, 'num_cand': num_cand}, fd)
+    cost_cum, test_error, surr_time, num_active, num_cand = get_test_set_error(mf_sys, qois)  # (Niter+1,) and (Niter+1, Nqoi)
+    with open('test_set_error.pkl', 'wb') as fd:
+        pickle.dump({'cost_cum': cost_cum, 'test_error': test_error, 'surr_time': surr_time,
+                     'num_active': num_active, 'num_cand': num_cand}, fd)
     with open('test_set_error.pkl', 'rb') as fd:
         # Load test set results from pkl (so you don't have to run it everytime)
         data = pickle.load(fd)
@@ -250,5 +250,5 @@ def plot_test_set_error():
 
 
 if __name__ == '__main__':
-    # train_mf()
-    plot_test_set_error()
+    train_mf()
+    # plot_test_set_error()

@@ -44,7 +44,7 @@ def test_plume(plots=False):
 
 
 def test_cc(plots=False):
-    variables = load_variables(["PB", "Va", "T_ec", "V_vac", "P*", "PT"], CONFIG_DIR / 'variables_v0.json')
+    variables = load_variables(["PB", "Va", "V_vac", "P*", "PT"], CONFIG_DIR / 'variables_v0.json')
     N = 100
     x = np.empty((N, len(variables)))
     for i, var in enumerate(variables):
@@ -60,8 +60,8 @@ def test_cc(plots=False):
 
 def test_hallthruster_jl(plots=False):
     """This test must coincide with the `required_inputs` of the config file passed to `hallthruster_jl_wrapper`"""
-    variables = load_variables(["PB", "Va", "mdot_a", "T_ec", "u_n", "c_w", "l_t", "f_n", "vAN1", "vAN2", "vAN3", 
-                                "vAN4", "delta_z", "z0", "p0", "V_cc"], CONFIG_DIR / 'variables_v0.json')
+    variables = load_variables(["PB", "Va", "mdot_a", "u_n", "f_n", "vAN1", "vAN2", "vAN3",
+                                "vAN4", "delta_z", "z0", "V_cc"], CONFIG_DIR / 'variables_v0.json')
     x = np.empty((2, len(variables)))
     for i, var in enumerate(variables):
         x[:, i] = var.sample_domain(2)
