@@ -126,7 +126,7 @@ def hallthruster_jl_model(thruster_input: dict, jl=None) -> dict:
         json.dump(json_data, fd, ensure_ascii=False, indent=4)
         fd.close()
         t1 = time.time()
-        sol = jl.seval(r'sol = HallThruster.run_simulation("{}", verbose=false)'.format(fd.name))
+        sol = jl.seval(r'sol = HallThruster.run_simulation("{repr(fd.name)[1:-1]}", verbose=false)')
         os.unlink(fd.name)   # delete the tempfile
     except juliacall.JuliaError as e:
         raise ModelRunException(f"Julicall error in Hallthruster.jl: {e}")
