@@ -135,7 +135,7 @@ def hallthruster_jl_model(thruster_input: dict, jl=None) -> dict:
         raise ModelRunException(f"Exception in Hallthruster.jl: Retcode = {sol.retcode}")
 
     # Average simulation results
-    avg = jl.HallThruster.time_average(sol, thruster_input['time_avg_frame_start'])
+    avg = jl.seval(f"avg = HallThruster.time_average(sol, {thruster_input['time_avg_frame_start']}")
 
     # Extract needed data
     I_B0 = jl.HallThruster.ion_current(avg)[0]
