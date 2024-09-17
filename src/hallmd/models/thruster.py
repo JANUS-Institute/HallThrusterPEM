@@ -27,7 +27,7 @@ import string
 import juliacall
 import numpy as np
 from joblib import Parallel, delayed, cpu_count
-from joblib.externals.loky import set_loky_picklerx
+from joblib.externals.loky import set_loky_pickler
 from amisc.utils import load_variables, get_logger
 
 from hallmd.utils import ModelRunException, data_write, model_config_dir
