@@ -139,14 +139,13 @@ def hallthruster_jl_model(thruster_input: dict, jl=None) -> dict:
 
     # Extract needed data
     I_B0 = jl.HallThruster.ion_current(avg)[0]
-    ui_avg_code = """niui_exit = 0.0
-        ni_exit = 0.0
-        for Z in 1:avg.params.ncharge
-            ni_exit += avg[:ni, Z][][end]
-            niui_exit += avg[:niui, Z][][end]
-        end
-        niui_exit / ni_exit"""
-    ui_avg = jl.seval(ui_avg_code)
+    niui_exit = 0.0
+    ni_exit = 0.0
+    for Z in range(avg.params.ncharge):
+        ni_exit += jl.seval(f"avg[:ni, {Z}][][end]")
+        niui_exit += jl.seval(f"avg[:niui, Z][][end]")
+    end
+    ui_avg = niui_exit / ni_exit
     
     # Load simulation results
     fd = tempfile.NamedTemporaryFile(suffix='.json', encoding='utf-8', mode='w', delete=False)
