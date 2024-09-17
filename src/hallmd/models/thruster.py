@@ -27,7 +27,7 @@ import string
 import juliacall
 import numpy as np
 from joblib import Parallel, delayed, cpu_count
-from joblib.externals.loky import set_loky_pickler
+from joblib.externals.loky import set_loky_picklerx
 from amisc.utils import load_variables, get_logger
 
 from hallmd.utils import ModelRunException, data_write, model_config_dir
@@ -150,7 +150,7 @@ def hallthruster_jl_model(thruster_input: dict, jl=None) -> dict:
     fd = tempfile.NamedTemporaryFile(suffix='.json', encoding='utf-8', mode='w', delete=False)
     fd.close()
     
-    jl.HallThruster.write_to_json(fd.name, ))
+    jl.HallThruster.write_to_json(fd.name, avg)
     with open(fd.name, 'r') as f:
         thruster_output = json.load(f)
     os.unlink(fd.name)  # delete the tempfile
