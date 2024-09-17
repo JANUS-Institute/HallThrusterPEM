@@ -142,8 +142,8 @@ def hallthruster_jl_model(thruster_input: dict, jl=None) -> dict:
     niui_exit = 0.0
     ni_exit = 0.0
     for Z in range(avg.params.ncharge):
-        ni_exit += jl.seval(f"avg[:ni, {Z}][][end]")
-        niui_exit += jl.seval(f"avg[:niui, {Z}][][end]")
+        ni_exit += jl.seval(f"avg[:ni, {Z+1}][][end]")
+        niui_exit += jl.seval(f"avg[:niui, {Z+1}][][end]")
     end
     ui_avg = niui_exit / ni_exit
     
