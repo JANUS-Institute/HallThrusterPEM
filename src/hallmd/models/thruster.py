@@ -143,7 +143,7 @@ def hallthruster_jl_model(thruster_input: dict, jl=None) -> dict:
     ni_exit = 0.0
     for Z in range(avg.params.ncharge):
         ni_exit += jl.seval(f"avg[:ni, {Z}][][end]")
-        niui_exit += jl.seval(f"avg[:niui, Z][][end]")
+        niui_exit += jl.seval(f"avg[:niui, {Z}][][end]")
     end
     ui_avg = niui_exit / ni_exit
     
@@ -164,7 +164,7 @@ def hallthruster_jl_model(thruster_input: dict, jl=None) -> dict:
                                'eta_v': thruster_output[0]['voltage_eff']})
 
     # Raise an exception if thrust or beam current are negative (non-physical cases)
-    if thrust < 0 or I_B0 < 0:
+    if thrust < 0 or I_B0 < 0:x
         raise ModelRunException(f'Exception due to non-physical case: thrust={thrust} N, beam current={I_B0} A')
 
     return thruster_output[0]
