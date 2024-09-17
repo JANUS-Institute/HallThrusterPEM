@@ -134,26 +134,27 @@ def hallthruster_jl_model(thruster_input: dict, jl=None) -> dict:
     if str(sol.retcode).lower() != "success":
         raise ModelRunException(f"Exception in Hallthruster.jl: Retcode = {sol.retcode}")
 
+    # Average simulation results
+    avg = jl.HallThruster.time_average(sol, thruster_input['time_avg_frame_start'])
+
+    # Extract needed data
+    I_B0 = jl.HallThruster.ion_current(avg)[0]
+    niui_exit = 0
+    ni_exit = 0
+    for Z in avg.params.ncharge:
+        ni_exit += avg[:ni, Z][0][-1]
+        niui_exit += avg[:niui, Z][0][-1]
+    ui_avg = niui_exit / ni_exit
+    
     # Load simulation results
     fd = tempfile.NamedTemporaryFile(suffix='.json', encoding='utf-8', mode='w', delete=False)
     fd.close()
-    jl.HallThruster.write_to_json(fd.name, jl.HallThruster.time_average(sol, thruster_input['time_avg_frame_start']))
+    
+    jl.HallThruster.write_to_json(fd.name, ))
     with open(fd.name, 'r') as f:
         thruster_output = json.load(f)
     os.unlink(fd.name)  # delete the tempfile
 
-    j_exit = 0      # Current density at thruster exit
-    ui_exit = 0     # Ion velocity at thruster exit
-    for param, grid_sol in thruster_output[0].items():
-        if 'niui' in param:
-            charge_num = int(param.split('_')[1])
-            j_exit += Q_E * charge_num * grid_sol[-1]
-        if param.split('_')[0] == 'ui':
-            ui_exit += grid_sol[-1]
-
-    A = np.pi * (thruster_input['outer_radius'] ** 2 - thruster_input['inner_radius'] ** 2)
-    ui_avg = ui_exit / thruster_input['max_charge']
-    I_B0 = j_exit * A           # Total current (A) at thruster exit
     thrust = thruster_output[0]['thrust']
     discharge_current = thruster_output[0]['discharge_current']
 
