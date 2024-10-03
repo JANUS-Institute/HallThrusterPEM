@@ -73,7 +73,8 @@ def hallthruster_jl_input(thruster_input: dict) -> dict:
         'inner_radius': thruster_input['inner_radius'],
         'outer_radius': thruster_input['outer_radius'],
         'channel_length': thruster_input['channel_length'],
-        'magnetic_field_file': str(CONFIG_DIR / thruster_input['magnetic_field_file']),
+        #'magnetic_field_file': str(CONFIG_DIR / thruster_input['magnetic_field_file']),
+        'magnetic_field_file': '/home/morag/h9-data/' + thruster_input['magnetic_field_file'], # CONFIG_DIR, need to find better way of loading secure directory
         'wall_material': thruster_input['wall_material'],
         'magnetically_shielded': thruster_input['magnetically_shielded'],
         'anode_potential': thruster_input['Va'],
@@ -171,10 +172,10 @@ def hallthruster_jl_model(thruster_input: dict, jl=None) -> dict:
 
 def hallthruster_jl_wrapper(x: np.ndarray, alpha: tuple = (2, 2), *, compress: bool = False,
                             output_dir: str | Path = None, n_jobs: int = -1,
-                            config: str | Path = CONFIG_DIR / 'hallthruster_jl.json',
+                            config: str | Path = '/home/morag/h9-data/hallthruster_jl_h9.json',
                             variables: str | Path = CONFIG_DIR / 'variables_v0.json',
                             svd_data: dict | str | Path = CONFIG_DIR / 'thruster_svd.pkl',
-                            hf_override: tuple | bool = None, thruster: str = 'SPT-100'):
+                            hf_override: tuple | bool = None, thruster: str = 'H9'):
     """Wrapper function for Hallthruster.jl.
 
     !!! Note "Defining input variables"
@@ -375,7 +376,7 @@ def hallthruster_jl_wrapper(x: np.ndarray, alpha: tuple = (2, 2), *, compress: b
     return {'y': y_ret, 'files': files, 'cost': avg_model_cpu_time}
 
 
-def uion_reconstruct(xr: np.ndarray, z: np.ndarray = None, L: float | np.ndarray = 0.08,
+def uion_reconstruct(xr: np.ndarray, z: np.ndarray = None, L: float | np.ndarray = 0.152,   # 0.08 SPT, 0.152 H9
                      svd_data: dict | str | Path = CONFIG_DIR / 'thruster_svd.pkl') -> tuple[np.ndarray, np.ndarray]:
     """Reconstruct an ion velocity profile, interpolate to `z` if provided.
 
@@ -453,9 +454,11 @@ def uion_reconstruct(xr: np.ndarray, z: np.ndarray = None, L: float | np.ndarray
     else:
         return zg, uion_g
 
+
 if __name__ == '__main__':
-    with open(Path(CONFIG_DIR / 'hallthruster_jl.json'), 'r') as fd:
+    with open(Path('/home/morag/h9-data/hallthruster_jl_h9.json'), 'r') as fd:
         config_data = json.load(fd)
+        print(config_data)
         default_inputs = load_variables(config_data['default_inputs'], Path(CONFIG_DIR / "variables_v0.json"))
         base_input = {var.id: var.nominal for var in default_inputs}  # Set default values for variables.json RV inputs
         base_input.update(config_data['H9'])                      # Set all other simulation configs

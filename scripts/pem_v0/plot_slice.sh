@@ -2,7 +2,7 @@
 
 #SBATCH --job-name=plot_slice_v0
 #SBATCH --partition=standard
-#SBATCH --time=00-00:45:00
+#SBATCH --time=00-01:00:00
 #SBATCH --nodes=1
 #SBATCH --mem-per-cpu=1g
 #SBATCH --ntasks-per-node=1

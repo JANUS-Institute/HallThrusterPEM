@@ -1,3 +1,4 @@
+
 """Script for surrogate-enabled Monte Carlo forward UQ analysis.
 
 I do not seriously intend that anyone will understand how this specific script works, only that it does.
@@ -16,8 +17,8 @@ import uqtils as uq
 from scipy.interpolate import interp1d
 from amisc.rv import NormalRV
 
-from hallmd.data.loader import spt100_data
-# from hallmd.data.loader import h9_data
+# from hallmd.data.loader import spt100_data
+from hallmd.data.loader import h9_data
 from hallmd.models.plume import jion_reconstruct
 from hallmd.models.thruster import uion_reconstruct
 from hallmd.models.pem import pem_v0
@@ -25,16 +26,17 @@ from hallmd.utils import model_config_dir
 
 PROJECT_ROOT = Path('../..')
 TRAINING = False
-surr_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-06-26T18.04.11' / 'multi-fidelity').glob('amisc_*'))[0]
+surr_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-09-21T02.15.55' / 'multi-fidelity').glob('amisc_*'))[0]
 SURR = pem_v0(from_file=surr_dir / 'sys' / f'sys_final{"_train" if TRAINING else "_test"}.pkl')
-DATA = spt100_data()
-# DATA = h9_data(['V_cc', 'jion', 'uion'])
+# DATA = spt100_data()
+DATA = h9_data(['V_cc', 'jion', 'uion', 'GT'])
 COMP = 'System'
 THETA_VARS = [v for v in SURR[COMP].x_vars if v.param_type == 'calibration']
 QOI_MAP = {'Cathode': ['V_cc'], 'Thruster': ['uion'], 'Plume': ['T', 'jion'], 'System': ['V_cc', 'uion', 'T', 'jion']}
 QOIS = QOI_MAP.get(COMP)
 CONSTANTS = {"calibration", "r_m"}
-DISCHARGE_CURRENT = 4.5  # A
+CONSTANTS = CONSTANTS.union({"design", "other", "operating"})
+DISCHARGE_CURRENT = 15  # A
 
 with open(model_config_dir() / 'plume_svd.pkl', 'rb') as fd:
     PLUME_SVD = pickle.load(fd)
@@ -45,7 +47,7 @@ with open(model_config_dir() / 'thruster_svd.pkl', 'rb') as fd:
 with h5py.File(f'dram-{COMP.lower()}-{"train" if TRAINING else "test"}.h5', 'r') as fd:
     samples = fd['mcmc/chain']
     niter, nwalk, ndim = samples.shape
-    v_idx = THETA_VARS.index('vAN1')  # Hard code vAN1 since it was a point value under the posterior
+    #v_idx = THETA_VARS.index('vAN1')  # Hard code vAN1 since it was a point value under the posterior
     samples = samples[int(0.1 * niter):, ...].reshape((-1, ndim))
     SAMPLES = samples
     # van1 = THETA_VARS[v_idx].nominal * np.ones((samples.shape[0], 1))
@@ -82,8 +84,7 @@ def run_models(Ns=1000):
         xs = SURR.sample_inputs(sample_shape, use_pdf=True, nominal=nominal, constants=CONSTANTS)
         ys = np.squeeze(SURR.predict(xs, qoi_ind=QOI_MAP.get('Cathode'), training=TRAINING), axis=-1)
         nominal.update({str(v): v.nominal for i, v in enumerate(THETA_VARS)})
-        xmodel = SURR.sample_inputs(Nx, use_pdf=False, nominal=nominal,
-                                    constants=CONSTANTS.union({"design", "other", "operating"}))
+        xmodel = SURR.sample_inputs(Nx, use_pdf=False, nominal=nominal, constants=CONSTANTS.union({"design", "other", "operating"}))
         ymodel = SURR.predict(xmodel, qoi_ind=QOI_MAP.get('Cathode'), use_model='best')
         ymodel_surr = SURR.predict(xmodel, qoi_ind=QOI_MAP.get('Cathode'), training=TRAINING)
         fd.create_dataset('vcc/posterior/xsurr', data=xs)
@@ -112,7 +113,8 @@ def run_models(Ns=1000):
 
         # Thrust (Diamant)
         print(f'Time: {(time.time() - t1) / 60:.2f} min. Running Diamant thrust predictions...')
-        data = DATA['T'][0]
+        #data = DATA['T'][0]
+        data = DATA['gt_thrust'][0]
         pb = data['x'][:, 0]
         idx = np.argsort(pb)
         Nx = data['x'].shape[0]
@@ -169,43 +171,6 @@ def run_models(Ns=1000):
         # ys = SURR.predict(xs, qoi_ind=['T', 'I_D'], training=TRAINING)
         # fd.create_dataset('thrust-uq/posterior/xsurr', data=xs)
         # fd.create_dataset('thrust-uq/posterior/ysurr', data=ys)
-
-        # Thrust (Sankovic)
-        print(f'Time: {(time.time() - t1) / 60:.2f} min. Running Sankovic thrust predictions...')
-        data = DATA['T'][1]
-        Nx = data['x'].shape[0]
-        sample_shape = (Ns, Nx)
-        nominal = {'PB': data['x'][:, 0], 'Va': data['x'][:, 1], 'mdot_a': data['x'][:, 2]}
-        theta = posterior_sampler(sample_shape)
-        nominal.update({str(v): theta[..., i] for i, v in enumerate(THETA_VARS)})
-        xs = SURR.sample_inputs(sample_shape, use_pdf=True, nominal=nominal, constants=CONSTANTS)
-        ys = SURR.predict(xs, qoi_ind=['Tc', 'I_D'], training=TRAINING)
-        nominal.update({str(v): v.nominal for i, v in enumerate(THETA_VARS)})
-        xmodel = SURR.sample_inputs(Nx, use_pdf=False, nominal=nominal,
-                                    constants=CONSTANTS.union({"design", "other", "operating"}))
-        ymodel = SURR.predict(xmodel, qoi_ind=['Tc', 'I_D'], use_model='best')
-        ymodel_surr = SURR.predict(xmodel, qoi_ind=['Tc', 'I_D'], training=TRAINING)
-        fd.create_dataset('thrust-test/posterior/xsurr', data=xs)
-        fd.create_dataset('thrust-test/posterior/ysurr', data=ys)
-        fd.create_dataset('thrust-test/posterior/xmodel', data=xmodel)
-        fd.create_dataset('thrust-test/posterior/ymodel', data=ymodel)
-        fd.create_dataset('thrust-test/posterior/ymodel_surr', data=ymodel_surr)
-
-        theta = prior_sampler(sample_shape)
-        nominal.update({str(v): theta[..., i] for i, v in enumerate(THETA_VARS)})
-        xs = SURR.sample_inputs(sample_shape, use_pdf=True, nominal=nominal, constants=CONSTANTS)
-        ys = SURR.predict(xs, qoi_ind=['Tc', 'I_D'], training=TRAINING)
-        nominal.update({str(v): v.mu if isinstance(v, NormalRV) else (v.bounds()[0] + v.bounds()[1]) / 2
-                        for i, v in enumerate(THETA_VARS)})
-        xmodel = SURR.sample_inputs(Nx, use_pdf=False, nominal=nominal,
-                                    constants=CONSTANTS.union({"design", "other", "operating"}))
-        ymodel = SURR.predict(xmodel, qoi_ind=['Tc', 'I_D'], use_model='best')
-        ymodel_surr = SURR.predict(xmodel, qoi_ind=['Tc', 'I_D'], training=TRAINING)
-        fd.create_dataset('thrust-test/prior/xsurr', data=xs)
-        fd.create_dataset('thrust-test/prior/ysurr', data=ys)
-        fd.create_dataset('thrust-test/prior/xmodel', data=xmodel)
-        fd.create_dataset('thrust-test/prior/ymodel', data=ymodel)
-        fd.create_dataset('thrust-test/prior/ymodel_surr', data=ymodel_surr)
 
         # Ion velocity
         print(f'Time: {(time.time() - t1) / 60:.2f} min. Running ion velocity predictions...')
@@ -348,10 +313,10 @@ def spt100_monte_carlo(Ns=1000, plot=True):
         idx = np.argsort(pb)
         ys_post = fd['vcc/posterior/ysurr']
         ys_prior = fd['vcc/prior/ysurr']
-        ym_post = fd['vcc/posterior/ymodel']
-        ym_prior = fd['vcc/prior/ymodel']
-        ym_surr_post = fd['vcc/posterior/ymodel_surr']
-        ym_surr_prior = fd['vcc/prior/ymodel_surr']
+        ym_post = np.squeeze(fd['vcc/posterior/ymodel'])
+        ym_prior = np.squeeze(fd['vcc/prior/ymodel'])
+        ym_surr_post = np.squeeze(fd['vcc/posterior/ymodel_surr'])
+        ym_surr_prior = np.squeeze(fd['vcc/prior/ymodel_surr'])
         yerr = 2 * np.sqrt(data['var_y'])
         ys_post_pred = np.squeeze(uq.normal_sample(np.array(ys_post)[..., np.newaxis], (np.mean(yerr)/2)**2), axis=-1)
 
@@ -367,6 +332,10 @@ def spt100_monte_carlo(Ns=1000, plot=True):
             leg = dict(handles=[(prior_h, prior_h2), exp_h], labels=['Model', 'Experiment'],
                        loc='upper left', fancybox=True, facecolor='white', framealpha=1)
             uq.ax_default(ax, 'Background pressure (Torr)', 'Cathode coupling voltage (V)', legend=leg)
+            #uq.ax_default(ax, 'x', 'y', legend=leg)
+            #ax.set_xticklabels([])
+            #ax.set_yticklabels([])
+            ax.set_title('Cathode Coupling Voltage Prior')
             fig.savefig('mc-vcc-prior.pdf', format='pdf', bbox_inches='tight')
             # plt.show()
 
@@ -383,6 +352,10 @@ def spt100_monte_carlo(Ns=1000, plot=True):
             leg = dict(handles=[(h3, h4), (h1, h4), h5], labels=['Model', 'Model w/noise', 'Experiment'],
                        loc='upper left', fancybox=True, facecolor='white', framealpha=1)
             uq.ax_default(ax, 'Background pressure (Torr)', 'Cathode coupling voltage (V)', legend=leg)
+            #uq.ax_default(ax, 'x', 'y', legend=leg)
+            #ax.set_xticklabels([])
+            #ax.set_yticklabels([])
+            ax.set_title('Cathode Coupling Voltage Posterior')
             fig.savefig('mc-vcc-post.pdf', format='pdf', bbox_inches='tight')
             # plt.show()
 
@@ -390,7 +363,8 @@ def spt100_monte_carlo(Ns=1000, plot=True):
         print_l2_error(ys_prior, ys_post, ym_prior, ym_post, ym_surr_prior, ym_surr_post, data['y'], 0.01)
 
         # Thrust (Diamant)
-        data = DATA['T'][0]
+        #data = DATA['T'][0]
+        data = DATA['gt_thrust'][0]
         pb = data['x'][:, 0]
         idx = np.argsort(pb)
         yerr = 2 * np.sqrt(data['var_y'])
@@ -412,9 +386,13 @@ def spt100_monte_carlo(Ns=1000, plot=True):
             h4 = ax.errorbar(10 ** pb, data['y'] * 1000, yerr=yerr*1000, fmt='ok', capsize=3, markerfacecolor='none', markersize=4)
             ax.set_xscale('log')
             ax.set_xlim(left=1e-6, right=1e-4)
-            ax.set_ylim(bottom=40, top=120)
-            leg = dict(handles=[(h1, h2), h3, h4], labels=['Surrogate', 'Model', 'Experiment'], loc='upper right')
+            ax.set_ylim(bottom=20, top=250)
+            leg = dict(handles=[(h1, h2), h3, h4], labels=['Surrogate', 'Model', 'GT Exp'], loc='lower left')
             uq.ax_default(ax, 'Background pressure (Torr)', 'Thrust (mN)', legend=leg)
+            #uq.ax_default(ax, 'x', 'y', legend=leg)
+            #ax.set_xticklabels([])
+            #ax.set_yticklabels([])
+            ax.set_title('Thrust Prior')
             fig.savefig('mc-thrust-prior.pdf', format='pdf', bbox_inches='tight')
             # plt.show()
 
@@ -428,11 +406,15 @@ def spt100_monte_carlo(Ns=1000, plot=True):
                 h4, = ax.plot(10 ** pb[idx], med[idx], ls='--', c='r')
                 h5, = ax.plot(10 ** pb[idx], ym_post[idx]*1000, ls='-', c='r')
                 h6 = ax.errorbar(10 ** pb, data['y'] * 1000, yerr=yerr*1000, fmt='ok', capsize=3, markerfacecolor='none', markersize=4)
-                leg = dict(handles=[(h3, h4), (h1, h4), h5, h6], labels=['Surrogate', 'Surrogate w/noise', 'Model', 'Experiment'], loc='upper right')
+                leg = dict(handles=[(h3, h4), (h1, h4), h5, h6], labels=['Surrogate', 'Surrogate w/noise', 'Model', 'GT Exp'], loc='lower left')
                 ax.set_xscale('log')
                 ax.set_xlim(left=1e-6, right=1e-4)
-                ax.set_ylim(bottom=40, top=120)
+                ax.set_ylim(bottom=20, top=250)
                 uq.ax_default(ax, 'Background pressure (Torr)', 'Thrust (mN)', legend=leg)
+                #uq.ax_default(ax, 'x', 'y', legend=leg)
+                #ax.set_xticklabels([])
+                #ax.set_yticklabels([])
+                ax.set_title('Thrust Posterior')
                 fig.savefig('mc-thrust-post.pdf', format='pdf', bbox_inches='tight')
                 # plt.show()
 
@@ -458,8 +440,12 @@ def spt100_monte_carlo(Ns=1000, plot=True):
             ax.set_xscale('log')
             ax.set_xlim([1e-6, 1e-4])
             ax.set_ylim([0, 35])
-            leg = dict(handles=[(h1, h2), h3, h4], labels=['Surrogate', 'Model', 'Experiment'], loc='upper right')
+            leg = dict(handles=[(h1, h2), h3, h4], labels=['Surrogate', 'Model', 'GT Exp'], loc='upper right')
             uq.ax_default(ax, 'Background pressure (Torr)', 'Discharge current (A)', legend=leg)
+            #uq.ax_default(ax, 'x', 'y', legend=leg)
+            #ax.set_xticklabels([])
+            #ax.set_yticklabels([])
+            ax.set_title('Discharge Current Prior')
             fig.savefig('mc-discharge-prior.pdf', format='pdf', bbox_inches='tight')
             # plt.show()
 
@@ -470,95 +456,19 @@ def spt100_monte_carlo(Ns=1000, plot=True):
             h3, = ax.plot(10 ** pb[idx], ym_post[idx], ls='-', c='r')
             h4 = ax.errorbar(10 ** pb, np.ones(pb.shape[0])*DISCHARGE_CURRENT, yerr=0.1*DISCHARGE_CURRENT,
                                 fmt='ok', markersize=4, markerfacecolor='none', capsize=3)
-            leg = dict(handles=[(h1, h2), h3, h4], labels=['Surrogate', 'Model', 'Experiment'], loc='upper right')
+            leg = dict(handles=[(h1, h2), h3, h4], labels=['Surrogate', 'Model', 'GT Exp'], loc='upper right')
             ax.set_xscale('log')
             ax.set_xlim([1e-6, 1e-4])
             ax.set_ylim([0, 35])
             uq.ax_default(ax, 'Background pressure (Torr)', 'Discharge current (A)', legend=leg)
+            #uq.ax_default(ax, 'x', 'y', legend=leg)
+            #ax.set_xticklabels([])
+            #ax.set_yticklabels([])
+            ax.set_title('Discharge Current Posterior')
             fig.savefig('mc-discharge-post.pdf', format='pdf', bbox_inches='tight')
             # plt.show()
-
         print('-------------Discharge current training set relative L2 scores----------------')
-        print_l2_error(ys_prior, ys_post, ym_prior, ym_post, ym_surr_prior, ym_surr_post, 4.5, 0.1)
-
-        # Thrust (Sankovic 1993)
-        data = DATA['T'][1]
-        ys_post = fd['thrust-test/posterior/ysurr'][..., 0]
-        ys_prior = fd['thrust-test/prior/ysurr'][..., 0]
-        ym_post = fd['thrust-test/posterior/ymodel'][..., 0]
-        ym_prior = fd['thrust-test/prior/ymodel'][..., 0]
-        ym_surr_post = fd['thrust-test/posterior/ymodel_surr'][..., 0]
-        ym_surr_prior = fd['thrust-test/prior/ymodel_surr'][..., 0]
-
-        if plot:
-            fig, ax = plt.subplots(figsize=figsize, layout='tight')
-            xerr = 2 * np.sqrt(data['var_y']) * 1000
-            p5, med, p95 = list(map(lambda x: 1000 * np.percentile(ys_prior, x, axis=0), (5, 50, 95)))
-            yerr = np.vstack((med - p5, p95 - med))
-            ax.errorbar(data['y'] * 1000, med, yerr=yerr, xerr=xerr, fmt='or', capsize=2, markerfacecolor='none',
-                        label='Surrogate', markersize=3, alpha=0.4)
-            ax.errorbar(data['y'] * 1000, ym_prior*1000, xerr=xerr, fmt='ok', capsize=2,
-                        label='Model', markersize=3, alpha=0.4)
-            ax.plot(np.sort(data['y'] * 1000), np.sort(data['y'] * 1000), '-k', alpha=0.6, linewidth=1.2)
-            uq.ax_default(ax, 'Experimental thrust (mN)', 'Predicted thrust (mN)', legend=False)
-            ax.set_ylim([15, 120])
-            fig.savefig('mc-thrust-test-prior.pdf', format='pdf', bbox_inches='tight')
-            # plt.show()
-
-            fig, ax = plt.subplots(figsize=figsize, layout='tight')
-            p5, med, p95 = list(map(lambda x: 1000 * np.percentile(ys_post, x, axis=0), (5, 50, 95)))
-            yerr = np.vstack((med - p5, p95 - med))
-            ax.errorbar(data['y'] * 1000, med, yerr=yerr, xerr=xerr, fmt='or', capsize=2, markerfacecolor='none',
-                           label='Surrogate', markersize=3, alpha=0.4)
-            ax.errorbar(data['y'] * 1000, ym_post * 1000, xerr=xerr, fmt='ok', capsize=2,
-                           label='Model', markersize=3, alpha=0.4)
-            ax.plot(np.sort(data['y'] * 1000), np.sort(data['y'] * 1000), '-k', alpha=0.6, linewidth=1.2)
-            uq.ax_default(ax, 'Experimental thrust (mN)', 'Predicted thrust (mN)', legend=True)
-            ax.set_ylim([15, 120])
-            fig.savefig('mc-thrust-test-post.pdf', bbox_inches='tight', format='pdf')
-            # plt.show()
-
-        print('-------------Thrust test set relative L2 scores----------------')
-        print_l2_error(ys_prior, ys_post, ym_prior, ym_post, ym_surr_prior, ym_surr_post, data['y'], 0.01)
-
-        # Discharge current (Sankovic)
-        data = DATA['I_D'][0]
-        ys_post = fd['thrust-test/posterior/ysurr'][..., 1]
-        ys_prior = fd['thrust-test/prior/ysurr'][..., 1]
-        ym_post = fd['thrust-test/posterior/ymodel'][..., 1]
-        ym_prior = fd['thrust-test/prior/ymodel'][..., 1]
-        ym_surr_post = fd['thrust-test/posterior/ymodel_surr'][..., 1]
-        ym_surr_prior = fd['thrust-test/prior/ymodel_surr'][..., 1]
-
-        if plot:
-            fig, ax = plt.subplots(figsize=figsize, layout='tight')
-            p5, med, p95 = list(map(lambda x: np.percentile(ys_prior, x, axis=0), (5, 50, 95)))
-            yerr = np.vstack((med - p5, p95 - med))
-            ax.errorbar(data['y'], med, yerr=yerr, fmt='or', capsize=2,
-                           markerfacecolor='none', label='Surrogate', markersize=3, alpha=0.4)
-            ax.errorbar(data['y'], ym_prior, fmt='ok', capsize=2,
-                           label='Model', markersize=3, alpha=0.4)
-            ax.plot(np.sort(data['y']), np.sort(data['y']), '-k', alpha=0.6, linewidth=1.2)
-            uq.ax_default(ax, 'Experimental discharge current (A)', 'Predicted discharge current (A)', legend=False)
-            ax.set_ylim([1, 34])
-            fig.savefig('mc-discharge-test-prior.pdf', bbox_inches='tight', format='pdf')
-            # plt.show()
-
-            fig, ax = plt.subplots(figsize=figsize, layout='tight')
-            p5, med, p95 = list(map(lambda x: np.percentile(ys_post, x, axis=0), (5, 50, 95)))
-            yerr = np.vstack((med - p5, p95 - med))
-            ax.errorbar(data['y'], med, yerr=yerr, fmt='or', capsize=2,
-                           markerfacecolor='none', label='Surrogate', markersize=3, alpha=0.4)
-            ax.errorbar(data['y'], ym_post, fmt='ok', capsize=2,
-                           label='Model', markersize=3, alpha=0.4)
-            ax.plot(np.sort(data['y']), np.sort(data['y']), '-k', alpha=0.6, linewidth=1.2)
-            uq.ax_default(ax, 'Experimental discharge current (A)', 'Predicted discharge current (A)', legend=True)
-            ax.set_ylim([1, 34])
-            fig.savefig('mc-discharge-test-post.pdf', bbox_inches='tight', format='pdf')
-            # plt.show()
-
-        print('-------------Discharge current test set relative L2 scores----------------')
-        print_l2_error(ys_prior, ys_post, ym_prior, ym_post, ym_surr_prior, ym_surr_post, data['y'], 0.1)
+        print_l2_error(ys_prior, ys_post, ym_prior, ym_post, ym_surr_prior, ym_surr_post, 15, 0.1)
 
         # Ion velocity (Macdonald)
         data = DATA['uion'][0]
@@ -572,42 +482,50 @@ def spt100_monte_carlo(Ns=1000, plot=True):
         z, ym_surr_post = uion_reconstruct(np.array(fd['uion/posterior/ymodel_surr'][..., :-1]))
         z, ym_surr_prior = uion_reconstruct(np.array(fd['uion/prior/ymodel_surr'][..., :-1]))
         zdata = data['loc']
-
         if plot:
             fig1, ax1 = plt.subplots(figsize=figsize, layout='tight')
             fig2, ax2 = plt.subplots(figsize=figsize, layout='tight')
             ax = [ax1, ax2]
-            colors = ['r', 'g', 'b']
+            colors = ['r', 'g', 'b', 'y', 'c']
             handles, labels = [], []
             for i in range(Nx):
                 yerr = 2 * np.sqrt(data['var_y'][i, :]) / 1000
-                ax[0].errorbar(data['loc'] * 1000, data['y'][i, :]/1000, yerr=yerr, fmt='o', color=colors[i], capsize=3,
+                ax[0].errorbar(data['loc'] * 1000/38, data['y'][i, :]/1000, yerr=yerr, fmt='o', color=colors[i], capsize=3,
                                markerfacecolor='none', markersize=4)
-                h = ax[1].errorbar(data['loc'] * 1000, data['y'][i, :]/1000, yerr=yerr, fmt='o', color=colors[i], capsize=3,
+                h = ax[1].errorbar(data['loc'] * 1000/38, data['y'][i, :]/1000, yerr=yerr, fmt='o', color=colors[i], capsize=3,
                                    markerfacecolor='none', markersize=4)
                 handles.append(h)
                 labels.append(f'{10 ** pb[i]:.2E} Torr')
                 p5, med, p95 = list(map(lambda x: np.percentile(ys_prior, x, axis=0)/1000, (5, 50, 95)))
-                ax[0].fill_between(z*1000, p5[i, :], p95[i, :], alpha=alpha, edgecolor=colors[i], facecolor=colors[i])
-                ax[0].plot(z*1000, med[i, :], ls='--', c=colors[i], alpha=0.6)
-                ax[0].plot(z*1000, ym_prior[i, :]/1000, ls='-', c=colors[i])
+                ax[0].fill_between(z*1000/38, p5[i, :], p95[i, :], alpha=alpha, edgecolor=colors[i], facecolor=colors[i])
+                ax[0].plot(z*1000/38, med[i, :], ls='--', c=colors[i], alpha=0.6)
+                ax[0].plot(z*1000/38, ym_prior[i, :]/1000, ls='-', c=colors[i])
                 p5, med, p95 = list(map(lambda x: np.percentile(ys_post, x, axis=0)/1000, (5, 50, 95)))
-                ax[1].fill_between(z*1000, p5[i, :], p95[i, :], alpha=alpha, edgecolor=colors[i], facecolor=colors[i])
-                ax[1].plot(z * 1000, med[i, :], ls='--', c=colors[i], alpha=0.6)
-                ax[1].plot(z * 1000, ym_post[i, :]/1000, ls='-', c=colors[i])
+                ax[1].fill_between(z*1000/38, p5[i, :], p95[i, :], alpha=alpha, edgecolor=colors[i], facecolor=colors[i])
+                ax[1].plot(z * 1000/38, med[i, :], ls='--', c=colors[i], alpha=0.6)
+                ax[1].plot(z * 1000/38, ym_post[i, :]/1000, ls='-', c=colors[i])
             h1, = ax[1].plot(np.nan, np.nan, ls='--', color=gray, alpha=0.6)
-            h2 = ax[1].fill_between(z*1000, np.nan, np.nan, alpha=alpha, edgecolor=gray, facecolor=gray)
+            h2 = ax[1].fill_between(z*1000/38, np.nan, np.nan, alpha=alpha, edgecolor=gray, facecolor=gray)
             h3, = ax[1].plot(np.nan, np.nan, ls='-', color=gray)
             h4 = ax[1].errorbar(np.nan, np.nan, yerr=0, fmt='o', color=gray, capsize=3, markerfacecolor='none', markersize=4)
-            leg = dict(handles=handles + [(h2, h1), h3, h4], labels=labels + ['Surrogate', 'Model', 'Experiment'])
-            uq.ax_default(ax[0], 'Axial distance from anode (mm)', 'Axial ion velocity (km/s)', legend=False)
-            uq.ax_default(ax[1], 'Axial distance from anode (mm)', 'Axial ion velocity (km/s)', legend=leg)
-            ax[0].set_ylim([-4, 22])
-            ax[1].set_ylim([-4, 22])
+            leg = dict(handles=handles + [(h2, h1), h3, h4], labels=labels + ['Surrogate', 'Model', 'Experiment'], loc='lower right', prop={'size': 12})
+            uq.ax_default(ax[0], 'Axial distance from anode (x)', 'Axial ion velocity (km/s)', legend=False)
+            uq.ax_default(ax[1], 'Axial distance from anode (x)', 'Axial ion velocity (km/s)', legend=leg)
+            ax[0].set_ylim([-2, 30])
+            ax[0].set_xlim([0,100/38])
+            ax[1].set_ylim([-2, 30])
+            ax[1].set_xlim([0,100/38])
+            #uq.ax_default(ax[0], 'x', 'y', legend=False)
+            #ax[0].set_xticklabels([])
+            #ax[0].set_yticklabels([])
+            ax[0].set_title('Ion Velocity Prior')
             fig1.savefig('mc-uion-prior.pdf', bbox_inches='tight', format='pdf')
+            #uq.ax_default(ax[1], 'x', 'y', legend=leg)
+            #ax[1].set_xticklabels([])
+            #ax[1].set_yticklabels([])
+            ax[1].set_title('Ion Velocity Posterior')
             fig2.savefig('mc-uion-post.pdf', bbox_inches='tight', format='pdf')
             # plt.show()
-
         print('-------------Ion velocity training set relative L2 scores----------------')
         Ns = ys_prior.shape[0]
         exp_data = np.ravel(data['y'])                                          # (Ndata, )
@@ -621,6 +539,7 @@ def spt100_monte_carlo(Ns=1000, plot=True):
 
         # Ion current density
         data = DATA['jion'][0]
+        gt_data = DATA['gt_jion'][0]
         pb = data['x'][:, 0]
         Nx = data['x'].shape[0]
         alpha_g = data['loc'][:, 1]
@@ -634,7 +553,9 @@ def spt100_monte_carlo(Ns=1000, plot=True):
         ym_post = fd['jion/posterior/ymodel'][..., :-1]
         ym_prior = fd['jion/prior/ymodel'][..., :-1]
         alpha_i = alpha_i*180/np.pi
+        gt_alpha = gt_data['loc'][:,1]*180/np.pi
         yerr = 2 * np.sqrt(data['var_y'][0, :])
+        gt_yerr = 2 * np.sqrt(gt_data['var_y'][0, :])
 
         if plot:
             fig, ax = plt.subplots(figsize=figsize, layout='tight')
@@ -643,10 +564,17 @@ def spt100_monte_carlo(Ns=1000, plot=True):
             h2, = ax.plot(alpha_i, med[0, :], ls='--', c='k')
             h3, = ax.plot(alpha_i, ym_prior[0, :], ls='-', c='k')
             h4 = ax.errorbar(alpha_i, data['y'][0, :], yerr=yerr, fmt='ok', capsize=3, markerfacecolor='none', markersize=4)
+            #h5 = ax.errorbar(gt_alpha, gt_data['y'][0, :], yerr=gt_yerr, fmt='og', capsize=3, markerfacecolor='none', markersize=4)
             ax.set_yscale('log')
             ax.set_ylim([1e-3, 18])
+            ax.set_xlim([-10,90])
+            #leg = dict(handles=[(h1, h2), h3, h4, h5], labels=['Surrogate', 'Model', 'Experiment', 'GT Exp'], borderaxespad=0.7, loc='lower left')
             leg = dict(handles=[(h1, h2), h3, h4], labels=['Surrogate', 'Model', 'Experiment'], borderaxespad=0.7, loc='lower left')
             uq.ax_default(ax, 'Angle from thruster centerline (deg)', r'Ion current density (A/$\mathrm{m}^2$)', legend=leg)
+            #uq.ax_default(ax, 'x', 'y', legend=leg)
+            #ax.set_xticklabels([])
+            #ax.set_yticklabels([])
+            ax.set_title('Current Density Prior')
             fig.savefig('mc-jion-prior.pdf', format='pdf', bbox_inches='tight')
             # plt.show()
 
@@ -659,11 +587,19 @@ def spt100_monte_carlo(Ns=1000, plot=True):
             h4, = ax.plot(alpha_i, med[0, :], ls='--', c='r')
             h5, = ax.plot(alpha_i, ym_post[0, :], ls='-', c='r')
             h6 = ax.errorbar(alpha_i, data['y'][0, :], yerr=yerr, fmt='ok', capsize=3, markerfacecolor='none', markersize=4)
+            #h7 = ax.errorbar(gt_alpha, gt_data['y'][0, :], yerr=gt_yerr, fmt='og', capsize=3, markerfacecolor='none', markersize=4)
+            #leg = dict(handles=[(h3, h4), (h1, h4), h5, h6, h7], labels=['Surrogate', 'Surrogate w/noise', 'Model', 'Experiment', 'GT Exp'],
+            #           loc='lower left', borderaxespad=0.7)
             leg = dict(handles=[(h3, h4), (h1, h4), h5, h6], labels=['Surrogate', 'Surrogate w/noise', 'Model', 'Experiment'],
                        loc='lower left', borderaxespad=0.7)
             ax.set_yscale('log')
-            ax.set_ylim([1e-3, 18])
+            ax.set_ylim([1e-3, 80])
+            ax.set_xlim([-10,90])
             uq.ax_default(ax, 'Angle from thruster centerline (deg)', r'Ion current density (A/$\mathrm{m}^2$)', legend=leg)
+            #uq.ax_default(ax, 'x', 'y', legend=leg)
+            #ax.set_xticklabels([])
+            #ax.set_yticklabels([])
+            ax.set_title('Current Density Posterior')
             fig.savefig('mc-jion-post.pdf', bbox_inches='tight', format='pdf')
             # plt.show()
 
@@ -674,22 +610,32 @@ def spt100_monte_carlo(Ns=1000, plot=True):
                 colors = plt.get_cmap('jet')(np.linspace(0, 1, Nx))
                 for i in range(Nx):
                     ax[0].plot(alpha_i, data['y'][i, :], '-o', color=colors[i], alpha=0.5, ms=3)
+                    #ax[0].plot(gt_alpha, gt_data['y'][i, :], '--', color=colors[i], alpha=0.5, ms=3)
                     ax[1].plot(alpha_i, ym_post[i, :], '-', color=colors[i], alpha=0.5)
                     ax[1].plot(alpha_i, med[i, :], '--', color=colors[i], alpha=0.5)
                     ax[1].plot(np.nan, np.nan, '-', color=colors[i], label=f'{10 ** pb[i]:.2E} Torr')
                 ax[1].plot(np.nan, np.nan, '-', color=gray, alpha=0.5, label='Model')
                 ax[1].plot(np.nan, np.nan, '--', color=gray, alpha=0.5, label='Surrogate')
                 ax[0].set_yscale('log')
-                ax[0].set_ylim([1e-3, 18])
+                ax[0].set_ylim([1e-3, 80])
+                ax[0].set_xlim([0,90])
                 ax[1].set_yscale('log')
-                ax[1].set_ylim([1e-3, 18])
+                ax[1].set_xlim([0,90])
+                #ax[1].set_ylim([1e-3, 18])
                 leg = dict(loc='lower left', borderaxespad=0.7)
                 uq.ax_default(ax[0], 'Angle from thruster centerline (deg)', r'Ion current density (A/$\mathrm{m}^2$)', legend=False)
                 uq.ax_default(ax[1], 'Angle from thruster centerline (deg)', r'Ion current density (A/$\mathrm{m}^2$)', legend=leg)
+                #uq.ax_default(ax[0], 'x', 'y', legend=False)
+                #ax[0].set_xticklabels([])
+                #ax[0].set_yticklabels([])
+                ax[0].set_title('Current Density Experiment')
                 fig1.savefig('mc-jion-exp.pdf', bbox_inches='tight', format='pdf')
+                #uq.ax_default(ax[1], 'x', 'y', legend=leg)
+                #ax[1].set_xticklabels([])
+                #ax[1].set_yticklabels([])
+                ax[1].set_title('Current Density Model')
                 fig2.savefig('mc-jion-model.pdf', bbox_inches='tight', format='pdf')
                 # plt.show()
-
         print('-------------Ion current density training set relative L2 scores----------------')
         Ns = ys_prior.shape[0]
         exp_data = np.ravel(data['y'])              # (Ndata, )
@@ -809,6 +755,273 @@ def plot_surrogate():
 
 
 if __name__ == '__main__':
-    run_models()
-    spt100_monte_carlo(plot=True)
+    #run_models()
+    #spt100_monte_carlo(plot=True)
     # plot_surrogate()
+    # exit()
+    # Cathode coupling voltage
+    gray = (0.5, 0.5, 0.5)
+    alpha = 0.2
+    figsize = (6, 5)
+    t1 = time.time()
+    print(f'Time: {(time.time()-t1)/60:.2f} min. Running cathode coupling voltage predictions...')
+    data = DATA['V_cc'][0]
+    pb = data['x'][:, 0]
+    Nx = data['x'].shape[0]
+    nominal = {'PB': pb, 'Va': data['x'][:, 1], 'mdot_a': data['x'][:, 2]}
+    nominal.update({str(v): v.nominal * np.ones(Nx) for v in THETA_VARS})
+    xs = SURR.sample_inputs((Nx,Nx), use_pdf=True, nominal=nominal, constants=CONSTANTS)
+    ys = np.squeeze(SURR.predict(xs, qoi_ind=QOI_MAP.get('Cathode'), training=TRAINING), axis=-1)
+    xmodel = SURR.sample_inputs(Nx, use_pdf=False, nominal=nominal, constants=CONSTANTS.union({"design", "other", "operating"}))
+    ymodel = SURR.predict(xmodel, qoi_ind=QOI_MAP.get('Cathode'), use_model='best')
+    ymodel_surr = SURR.predict(xmodel, qoi_ind=QOI_MAP.get('Cathode'), training=TRAINING)
+
+    # Cathode coupling voltage
+    data = DATA['V_cc'][0]
+    pb = data['x'][:, 0]
+    idx = np.argsort(pb)
+    ys_post = ys
+    ym_post = ymodel
+    ym_surr_post = ymodel_surr
+    yerr = 2 * np.sqrt(data['var_y'])
+    ys_post_pred = np.squeeze(uq.normal_sample(np.array(ys_post)[..., np.newaxis], (np.mean(yerr)/2)**2), axis=-1)
+
+    fig, ax = plt.subplots(figsize=figsize, layout='tight')
+    p5_pred, p95_pred = list(map(lambda x: np.percentile(ys_post_pred, x, axis=0), (5, 95)))
+    p5, med, p95 = list(map(lambda x: np.percentile(ys_post, x, axis=0), (5, 50, 95)))
+    h1 = ax.fill_between(10 ** pb[idx], p95[idx], p95_pred[idx], alpha=alpha, edgecolor='b', facecolor='b')
+    h2 = ax.fill_between(10 ** pb[idx], p5_pred[idx], p5[idx], alpha=alpha, edgecolor='b', facecolor='b')
+    h3 = ax.fill_between(10 ** pb[idx], p5[idx], p95[idx], alpha=alpha, edgecolor='r', facecolor='r')
+    h4, = ax.plot(10 ** pb[idx], med[idx], ls='-', c='r')
+    h5 = ax.errorbar(10 ** pb, data['y'], yerr=yerr, fmt='ok', capsize=3, markerfacecolor='none', markersize=4)
+    ax.set_xscale('log')
+    ax.set_xlim(left=1e-6, right=1e-4)
+    leg = dict(handles=[(h3, h4), (h1, h4), h5], labels=['Model', 'Model w/noise', 'Experiment'],
+                loc='upper left', fancybox=True, facecolor='white', framealpha=1)
+    uq.ax_default(ax, 'Background pressure (Torr)', 'Cathode coupling voltage (V)', legend=leg)
+    #uq.ax_default(ax, 'x', 'y', legend=leg)
+    #ax.set_xticklabels([])
+    #ax.set_yticklabels([])
+    ax.set_title('Cathode Coupling Voltage')
+    fig.savefig('mle-vcc.pdf', format='pdf', bbox_inches='tight')
+    # plt.show()
+
+    # Include discharge current (I_D) with all of these QoIs
+
+    # Thrust (Diamant)
+    print(f'Time: {(time.time() - t1) / 60:.2f} min. Running Diamant thrust predictions...')
+    # data = DATA['T'][0]
+    data = DATA['gt_thrust'][0]
+    pb = data['x'][:, 0]
+    idx = np.argsort(pb)
+    Nx = data['x'].shape[0]
+    sample_shape = (Nx, Nx)
+    nominal = {'PB': pb, 'Va': data['x'][:, 1], 'mdot_a': data['x'][:, 2]}
+    nominal.update({str(v): v.nominal * np.ones(Nx) for v in THETA_VARS})
+    xs = SURR.sample_inputs(sample_shape, use_pdf=True, nominal=nominal, constants=CONSTANTS)
+    ys = SURR.predict(xs, qoi_ind=['Tc', 'I_D'], training=TRAINING)
+    xmodel = SURR.sample_inputs(Nx, use_pdf=False, nominal=nominal,
+                                constants=CONSTANTS.union({"design", "other", "operating"}))
+    ymodel = SURR.predict(xmodel, qoi_ind=['Tc', 'I_D'], use_model='best')
+    ymodel_surr = SURR.predict(xmodel, qoi_ind=['Tc', 'I_D'], training=TRAINING)
+
+    # Thrust (Diamant)
+    data = DATA['gt_thrust'][0]
+    pb = data['x'][:, 0]
+    idx = np.argsort(pb)
+    yerr = 2 * np.sqrt(data['var_y'])
+    cov = np.expand_dims(data['var_y'], axis=(-1, -2))
+    ys_post = ys[..., 0]
+    ys_post_pred = np.squeeze(uq.normal_sample(np.array(ys_post)[..., np.newaxis], cov), axis=-1)
+    ym_post = ymodel[..., 0]
+    ym_surr_post = ymodel_surr[..., 0]
+
+    with matplotlib.rc_context(rc={'legend.fontsize': 13}):
+        fig, ax = plt.subplots(figsize=figsize, layout='tight')
+        p5_pred, p95_pred = list(map(lambda x: 1000 * np.percentile(ys_post_pred, x, axis=0), (5, 95)))
+        p5, med, p95 = list(map(lambda x: 1000 * np.percentile(ys_post, x, axis=0), (5, 50, 95)))
+        h1 = ax.fill_between(10 ** pb[idx], p95[idx], p95_pred[idx], alpha=alpha, edgecolor='b', facecolor='b')
+        h2 = ax.fill_between(10 ** pb[idx], p5_pred[idx], p5[idx], alpha=alpha, edgecolor='b', facecolor='b')
+        h3 = ax.fill_between(10 ** pb[idx], p5[idx], p95[idx], alpha=alpha, edgecolor='r', facecolor='r')
+        h4, = ax.plot(10 ** pb[idx], med[idx], ls='--', c='r')
+        h5, = ax.plot(10 ** pb[idx], ym_post[idx]*1000, ls='-', c='r')
+        h6 = ax.errorbar(10 ** pb, data['y'] * 1000, yerr=yerr*1000, fmt='ok', capsize=3, markerfacecolor='none', markersize=4)
+        leg = dict(handles=[(h3, h4), (h1, h4), h5, h6], labels=['Surrogate', 'Surrogate w/noise', 'Model', 'GT Exp'], loc='lower left')
+        ax.set_xscale('log')
+        ax.set_xlim(left=1e-6, right=1e-4)
+        ax.set_ylim(bottom=20, top=250)
+        uq.ax_default(ax, 'Background pressure (Torr)', 'Thrust (mN)', legend=leg)
+        #uq.ax_default(ax, 'x', 'y', legend=leg)
+        #ax.set_xticklabels([])
+        #ax.set_yticklabels([])
+        ax.set_title('Thrust')
+        fig.savefig('mle-thrust.pdf', format='pdf', bbox_inches='tight')
+        # plt.show()
+
+    # Discharge current (Diamant)
+    ys_post = ys[..., 1]
+    ym_post = ymodel[..., 1]
+    ym_surr_post = ymodel_surr[..., 1]
+
+    fig, ax = plt.subplots(figsize=figsize, layout='tight')
+    p5, med, p95 = list(map(lambda x: np.percentile(ys_post, x, axis=0), (5, 50, 95)))
+    h1 = ax.fill_between(10 ** pb[idx], p5[idx], p95[idx], alpha=alpha, edgecolor='r', facecolor='r')
+    h2, = ax.plot(10 ** pb[idx], med[idx], ls='--', c='r')
+    h3, = ax.plot(10 ** pb[idx], ym_post[idx], ls='-', c='r')
+    h4 = ax.errorbar(10 ** pb, np.ones(pb.shape[0])*DISCHARGE_CURRENT, yerr=0.1*DISCHARGE_CURRENT,
+                        fmt='ok', markersize=4, markerfacecolor='none', capsize=3)
+    leg = dict(handles=[(h1, h2), h3, h4], labels=['Surrogate', 'Model', 'GT Exp'], loc='upper right')
+    ax.set_xscale('log')
+    ax.set_xlim([1e-6, 1e-4])
+    ax.set_ylim([0, 35])
+    uq.ax_default(ax, 'Background pressure (Torr)', 'Discharge current (A)', legend=leg)
+    #uq.ax_default(ax, 'x', 'y', legend=leg)
+    #ax.set_xticklabels([])
+    #ax.set_yticklabels([])
+    ax.set_title('Discharge Current')
+    fig.savefig('mle-discharge.pdf', format='pdf', bbox_inches='tight')
+    # plt.show()
+
+    # Ion velocity
+    print(f'Time: {(time.time() - t1) / 60:.2f} min. Running ion velocity predictions...')
+    data = DATA['uion'][0]
+    pb = data['x'][:, 0]
+    Nx = data['x'].shape[0]
+    sample_shape = (Nx, Nx)
+    nominal = {'PB': pb, 'Va': data['x'][:, 1], 'mdot_a': data['x'][:, 2]}
+    nominal.update({str(v): v.nominal * np.ones(Nx) for v in THETA_VARS})
+    qois = [var for var in SURR.coupling_vars if str(var).startswith('uion')] + ['I_D']
+    xs = SURR.sample_inputs(sample_shape, use_pdf=True, nominal=nominal, constants=CONSTANTS)
+    ys = SURR.predict(xs, qoi_ind=qois, training=TRAINING)
+    xmodel = SURR.sample_inputs(Nx, use_pdf=False, nominal=nominal,
+                                constants=CONSTANTS.union({"design", "other", "operating"}))
+    vcc = SURR.predict(xmodel, qoi_ind=QOI_MAP.get('Cathode'), use_model='best')
+    thruster_in = np.concatenate((xmodel[..., SURR.graph.nodes['Thruster']['exo_in']], vcc), axis=-1)
+    ymodel = SURR['Thruster']._model(thruster_in, alpha=(2, 2), compress=False, svd_data=THRUSTER_SVD)['y']
+    ymodel_surr = SURR.predict(xmodel, qoi_ind=qois, training=TRAINING)
+    ymodel=np.concatenate((ymodel[..., 7:], ymodel[..., 1:2]), axis=-1)
+
+    # Ion velocity (Macdonald)
+    data = DATA['uion'][0]
+    pb = data['x'][:, 0]
+    idx = np.argsort(pb)
+    Nx = data['x'].shape[0]
+    z, ys_post = uion_reconstruct(np.array(ys[..., :-1]))
+    ym_post = ymodel[..., :-1]
+    z, ym_surr_post = uion_reconstruct(np.array(ymodel_surr[..., :-1]))
+    zdata = data['loc']
+
+    fig, ax = plt.subplots(figsize=figsize, layout='tight')
+    colors = ['r', 'g', 'b', 'y', 'c']
+    handles, labels = [], []
+    for i in range(Nx):
+        yerr = 2 * np.sqrt(data['var_y'][i, :]) / 1000
+        h = ax.errorbar(data['loc'] * 1000, data['y'][i, :]/1000, yerr=yerr, fmt='o', color=colors[i], capsize=3,
+                            markerfacecolor='none', markersize=4)
+        handles.append(h)
+        labels.append(f'{10 ** pb[i]:.2E} Torr')
+        p5, med, p95 = list(map(lambda x: np.percentile(ys_post, x, axis=0)/1000, (5, 50, 95)))
+        ax.fill_between(z*1000, p5[i, :], p95[i, :], alpha=alpha, edgecolor=colors[i], facecolor=colors[i])
+        ax.plot(z * 1000, med[i, :], ls='--', c=colors[i], alpha=0.6)
+        ax.plot(z * 1000, ym_post[i, :]/1000, ls='-', c=colors[i])
+    h1, = ax.plot(np.nan, np.nan, ls='--', color=gray, alpha=0.6)
+    h2 = ax.fill_between(z*1000, np.nan, np.nan, alpha=alpha, edgecolor=gray, facecolor=gray)
+    h3, = ax.plot(np.nan, np.nan, ls='-', color=gray)
+    h4 = ax.errorbar(np.nan, np.nan, yerr=0, fmt='o', color=gray, capsize=3, markerfacecolor='none', markersize=4)
+    leg = dict(handles=handles + [(h2, h1), h3, h4], labels=labels + ['Surrogate', 'Model', 'Experiment'])
+    uq.ax_default(ax, 'Axial distance from anode (mm)', 'Axial ion velocity (km/s)', legend=leg)
+    #uq.ax_default(ax, 'x', 'y', legend=leg)
+    ax.set_ylim([-2, 30])
+    ax.set_xlim([0,100])
+    ax.set_xticklabels([])
+    #ax.set_yticklabels([])
+    ax.set_title('Ion Velocity')
+    fig.savefig('mle-uion.pdf', bbox_inches='tight', format='pdf')
+    # plt.show()
+
+    # Ion current density
+    print(f'Time: {(time.time() - t1) / 60:.2f} min. Running ion current density predictions...')
+    data = DATA['jion'][0]
+    pb = data['x'][:, 0]
+    Nx = data['x'].shape[0]
+    sample_shape = (Nx, Nx)
+    nominal = {'PB': pb, 'Va': data['x'][:, 1], 'mdot_a': data['x'][:, 2]}
+    nominal.update({str(v): v.nominal * np.ones(Nx) for v in THETA_VARS})
+    qois = [var for var in SURR.coupling_vars if str(var).startswith('jion')] + ['I_D']
+    xs = SURR.sample_inputs(sample_shape, use_pdf=True, nominal=nominal, constants=CONSTANTS)
+    ys = SURR.predict(xs, qoi_ind=qois, training=TRAINING)
+    xmodel = SURR.sample_inputs(Nx, use_pdf=False, nominal=nominal,
+                                constants=CONSTANTS.union({"design", "other", "operating"}))
+    I_B0 = SURR.predict(xmodel, qoi_ind=['I_B0', 'I_D', 'T'], use_model='best')
+    plume_in = np.concatenate((xmodel[..., SURR.graph.nodes['Plume']['exo_in']], I_B0[..., [0, 2]]), axis=-1)
+    ymodel = SURR['Plume']._model(plume_in, compress=False, svd_data=PLUME_SVD)['y']
+    alpha_g = np.linspace(0, np.pi / 2, 100)
+    jion_g = ymodel[..., 2:]
+    alpha_g2 = np.concatenate((-np.flip(alpha_g)[:-1], alpha_g))  # (2M-1,)
+    jion_g2 = np.concatenate((np.flip(jion_g, axis=-1)[..., :-1], jion_g), axis=-1)  # (..., 2M-1)
+    f = interp1d(alpha_g2, jion_g2, axis=-1)
+    jion_interp = f(data['loc'][:, 1])  # (..., Nx)
+    ymodel_surr = SURR.predict(xmodel, qoi_ind=qois, training=TRAINING)
+    ymodel = np.concatenate((jion_interp, I_B0[..., 1:2]), axis=-1)
+
+    # Ion current density
+    data = DATA['jion'][0]
+    gt_data = DATA['gt_jion'][0]
+    pb = data['x'][:, 0]
+    Nx = data['x'].shape[0]
+    alpha_g = data['loc'][:, 1]
+    print(f'Ion current density results given at PB={10**pb[0]:.2E} Torr')
+    cov = np.expand_dims(data['var_y'], axis=(-1, -2))
+    alpha_i, ys_post = jion_reconstruct(np.array(ys[..., :-1]), alpha=alpha_g)
+    ys_post_pred = np.squeeze(uq.normal_sample(ys_post[..., np.newaxis], cov), axis=-1)
+    alpha_i, ym_surr_post = jion_reconstruct(np.array(ymodel_surr[..., :-1]), alpha=alpha_g)
+    ym_post = ymodel[..., :-1]
+    alpha_i = alpha_i*180/np.pi
+    yerr = 2 * np.sqrt(data['var_y'][0, :])
+    gt_yerr = 2 * np.sqrt(gt_data['var_y'][0, :])
+    gt_alpha = gt_data['loc'][:,1]*180/np.pi
+
+    fig, ax = plt.subplots(figsize=figsize, layout='tight')
+    p5_pred, p95_pred = list(map(lambda x: np.percentile(ys_post_pred, x, axis=0), (5, 95)))
+    p5, med, p95 = list(map(lambda x: np.percentile(ys_post, x, axis=0), (5, 50, 95)))
+    h1 = ax.fill_between(alpha_i, p95[0, :], p95_pred[0, :], alpha=alpha, edgecolor='b', facecolor='b')
+    h2 = ax.fill_between(alpha_i, p5_pred[0, :], p5[0, :], alpha=alpha, edgecolor='b', facecolor='b')
+    h3 = ax.fill_between(alpha_i, p5[0, :], p95[0, :], alpha=alpha, edgecolor='r', facecolor='r')
+    h4, = ax.plot(alpha_i, med[0, :], ls='--', c='r')
+    h5, = ax.plot(alpha_i, ym_post[0, :], ls='-', c='r')
+    h6 = ax.errorbar(alpha_i, data['y'][0, :], yerr=yerr, fmt='ok', capsize=3, markerfacecolor='none', markersize=4)
+    h7 = ax.errorbar(gt_alpha, gt_data['y'][0, :], yerr=gt_yerr, fmt='og', capsize=3, markerfacecolor='none', markersize=4)
+    leg = dict(handles=[(h3, h4), (h1, h4), h5, h6, h7], labels=['Surrogate', 'Surrogate w/noise', 'Model', 'Experiment', 'GT Exp'],
+                loc='lower left', borderaxespad=0.7)
+    ax.set_yscale('log')
+    #ax.set_ylim([1e-3, 1e2])
+    ax.set_xlim([-10, 90])
+    uq.ax_default(ax, 'Angle from thruster centerline (deg)', r'Ion current density (A/$\mathrm{m}^2$)', legend=leg)
+    #uq.ax_default(ax, 'x', 'y', legend=leg)
+    #ax.set_xticklabels([])
+    #ax.set_yticklabels([])
+    ax.set_title('Current Density')
+    fig.savefig('mle-jion.pdf', bbox_inches='tight', format='pdf')
+    # plt.show()
+
+    with matplotlib.rc_context(rc={'legend.fontsize': 13}):
+        fig, ax = plt.subplots(figsize=figsize, layout='tight')
+        colors = plt.get_cmap('jet')(np.linspace(0, 1, Nx))
+        for i in range(Nx):
+            ax.plot(alpha_i, ym_post[i, :], '-', color=colors[i], alpha=0.5)
+            ax.plot(alpha_i, med[i, :], '--', color=colors[i], alpha=0.5)
+            ax.plot(np.nan, np.nan, '-', color=colors[i], label=f'{10 ** pb[i]:.2E} Torr')
+        ax.plot(np.nan, np.nan, '-', color=gray, alpha=0.5, label='Model')
+        ax.plot(np.nan, np.nan, '--', color=gray, alpha=0.5, label='Surrogate')
+        ax.set_yscale('log')
+        #ax.set_ylim([1e-3, 18])
+        #ax.set_xlim([0, 90])
+        leg = dict(loc='lower left', borderaxespad=0.7)
+        uq.ax_default(ax, 'Angle from thruster centerline (deg)', r'Ion current density (A/$\mathrm{m}^2$)', legend=leg)
+        #uq.ax_default(ax, 'x', 'y', legend=leg)
+        #ax.set_xticklabels([])
+        #ax.set_yticklabels([])
+        ax.set_title('Ion Density Model')
+        fig.savefig('mle-jion-model.pdf', bbox_inches='tight', format='pdf')
+        # plt.show()
+

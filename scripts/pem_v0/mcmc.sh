@@ -6,7 +6,7 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=4G
 #SBATCH --partition=standard
-#SBATCH --time=14:00:00
+#SBATCH --time=10:00:00
 #SBATCH --output=./logs/mcmc_job.%j.out
 #SBATCH --error=./logs/mcmc_job.%j.err
 #SBATCH --mail-type=BEGIN,END,FAIL

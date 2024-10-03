@@ -66,7 +66,7 @@ def test_hallthruster_jl(plots=False):
     for i, var in enumerate(variables):
         x[:, i] = var.sample_domain(2)
     alpha = (0, 0)
-    res = hallthruster_jl_wrapper(x, alpha, n_jobs=2, config=CONFIG_DIR / 'hallthruster_jl.json')
+    res = hallthruster_jl_wrapper(x, alpha, n_jobs=2, config='/home/morag/h9-data/hallthruster_jl_h9.json')
 
     if plots:
         fig, ax = plt.subplots()

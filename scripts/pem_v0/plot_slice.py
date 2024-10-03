@@ -22,7 +22,7 @@ def slice_1d(surr_dir):
 
     # 1d slice test set(s) for plotting
     N = 25
-    slice_idx = ['f_n', 'vAN1', 'vAN2', 'vAN3', 'vAN4']
+    slice_idx = ['u_n', 'f_n', 'vAN1', 'vAN2', 'vAN3', 'vAN4', 'delta_z', 'z0']
     qoi_idx = ['I_D', 'T', 'uion0', 'uion1']
     nominal = {str(var): var.sample_domain((1,)) for var in surr.exo_vars}  # Random nominal test point
     fig, ax = surr.plot_slice(slice_idx, qoi_idx, show_model=['best', 'worst'], show_surr=True, N=N,

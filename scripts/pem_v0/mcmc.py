@@ -12,7 +12,7 @@ import skopt
 import h5py
 from joblib import Parallel
 
-from hallmd.data.loader import spt100_data
+# from hallmd.data.loader import spt100_data
 from hallmd.data.loader import h9_data
 from hallmd.models.thruster import uion_reconstruct
 from hallmd.models.plume import jion_reconstruct
@@ -23,13 +23,13 @@ OPTIMIZER_ITER = 1
 START_TIME = 0
 PROJECT_ROOT = Path('../..')
 TRAINING = False
-surr_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-06-26T18.04.11' / 'multi-fidelity').glob('amisc_*'))[0]
+surr_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-09-21T02.15.55' / 'multi-fidelity').glob('amisc_*'))[0]
 SURR = pem_v0(from_file=surr_dir / 'sys' / f'sys_final{"_train" if TRAINING else "_test"}.pkl')
-DATA = spt100_data()
-# DATA = h9_data(['V_cc', 'jion', 'uion'])
+# DATA = spt100_data()
+DATA = h9_data(['V_cc', 'jion', 'uion'])
 COMP = 'System'
 THETA_VARS = [v for v in SURR[COMP].x_vars if v.param_type == 'calibration']
-QOI_MAP = {'Cathode': ['V_cc'], 'Thruster': ['uion'], 'Plume': ['T', 'jion'], 'System': ['V_cc', 'uion', 'T', 'jion']}
+QOI_MAP = {'Cathode': ['V_cc'], 'Thruster': ['uion'], 'Plume': ['T', 'jion'], 'System': ['V_cc', 'uion', 'jion']} # 'T' Taken out
 QOIS = QOI_MAP.get(COMP)
 
 # Parse experimental data
@@ -49,7 +49,7 @@ for qoi in QOIS:
 NOMINAL = {'r_m': 1, 'PB': XE_ARRAY[:, 0], 'Va': XE_ARRAY[:, 1], 'mdot_a': XE_ARRAY[:, 2]}
 CONSTANTS = {'calibration', 'other', 'operating'}
 DISCHARGE_CURRENT = 15     # Experimental discharge current for all cases (A): 4.5 for SPT, 15 for H9
-DISCHARGE_SIGMA = 0.2      # Be within this range of the correct value (smaller = more weight in likelihood)
+DISCHARGE_SIGMA = 0.1      # Be within this range of the correct value (smaller = more weight in likelihood)
 
 with open(model_config_dir() / 'plume_svd.pkl', 'rb') as fd:
     PLUME_SVD = pickle.load(fd)
@@ -95,7 +95,15 @@ def spt100_log_likelihood(theta, M=100, ppool=None):
         std = std.reshape(y_curr.shape[-2:]).astype(theta.dtype)
 
         # Evaluate the log likelihood for this qoi
+        #log_likelihood_term = -0.5 * ((ye - y_curr) / std) ** 2
+
+        # Apply additional weight for jion
+        #if qoi == 'jion':
+        #    log_likelihood_term *= 10000.0
+
+        # Evaluate the log likelihood for this qoi
         log_likelihood[..., k] = np.sum(-0.5 * ((ye - y_curr) / std) ** 2, axis=(-1, -2))
+        #log_likelihood[..., k] = np.sum(log_likelihood_term, axis=(-1, -2))
 
     # Combine over QOIs
     log_likelihood = np.sum(log_likelihood, axis=-1)  # (..., M)
@@ -175,23 +183,25 @@ def run_mle(optimizer='nelder-mead', M=100):
     """Compute maximum likelihood estimate for the PEM."""
     global START_TIME
 
-    nominal = {'V_vac': 3.093303,
-               'P_star': 1500,
-               'PT': 7.34673,
-               'u_n': 440,
-               'f_n': 6.23341,
-               'vAN1': -2.15392,
-               'vAN2': 10.01271,
-               'vAN3': 0.04,
-               'vAN4': 0.00650,
-               'delta_z': 0.35940,
-               'z0': -0.17682,
-               'c0': 0.40159,
-               'c1': 0.35365,
-               'c2': 0.058398,
-               'c3': 0.36468,
-               'c4': 19.31920,
-               'c5': 16.09474}
+    nominal = {
+        'V_vac': 3.2025,
+        'P_star': 1530.0,
+        'PT': 6.75,
+        'u_n': 440.78,
+        'f_n': 6.15,
+        'vAN1': -2.43,
+        'vAN2': 14.005,
+        'vAN3': 0.033,
+        'vAN4': 0.013525,
+        'delta_z': 0.185,
+        'z0': -0.095,
+        'c0': 0.26,
+        'c1': 0.39,
+        'c2': 0.051,
+        'c3': 0.386,
+        'c4': 19.7,
+        'c5': 16.37
+    }
 
     # nominal = {str(v): (v.bounds()[0] + v.bounds()[1])/2 for v in THETA_VARS}
     bds = [v.bounds() for v in THETA_VARS]
@@ -207,7 +217,7 @@ def run_mle(optimizer='nelder-mead', M=100):
 
     res = None
     tol = 1e-4
-    maxfev = 5000
+    maxfev = 20000
     START_TIME = time.time()
     match optimizer:
         case 'nelder-mead':
@@ -294,49 +304,49 @@ def run_mcmc(file='dram-system.h5', clean=False, n_jobs=1, M=100):
     nwalk, niter = 1, 50000
 
     cov_pct = {
-        'V_vac': 0.005,
-        'P*': 0.06,
-        'PT': 0.08,
-        'u_n': 0.025,
-        'f_n': 0.08,
-        'vAN1': 0.02,
-        'vAN2': 0.01,
-        'vAN3': 0.02,
-        'vAN4': 0.012,
-        'delta_z': 0.02,
-        'z0': 0.06,
+        'V_vac': 0.018,
+        'P*': 0.07,
+        'PT': 0.09,
+        'u_n': 0.0001,
+        'f_n': 0.075,
+        'vAN1': 0.035,
+        'vAN2': 0.03,
+        'vAN3': 0.04,
+        'vAN4': 0.04,
+        'delta_z': 0.07,
+        'z0': 0.13,
         'c0': 0.08,
-        'c1': 0.06,
-        'c2': 0.095,
-        'c3': 0.06,
-        'c4': 0.01,
-        'c5': 0.09
-    } # *= 0.05
+        'c1': 0.07,
+        'c2': 0.18,
+        'c3': 0.02,
+        'c4': 0.07,
+        'c5': 0.01
+    } # *= 0.000035
     nominal = {
-        'V_vac': 6.808,
-        'P_star': 1505.0,
-        'PT': 8.00,
-        'u_n': 480.0,
-        'f_n': 5.95,
-        'vAN1': -2.3,
-        'vAN2': 12.9,
-        'vAN3': 0.036,
-        'vAN4': 0.0099,
-        'delta_z': 0.296,
-        'z0': -0.00564,
-        'c0': 0.7,
-        'c1': 0.340,
-        'c2': 0.05,
-        'c3': 1.3,
-        'c4': 21.40,
-        'c5': 14.20
+        'V_vac': 3.21,
+        'P_star': 1444.4,
+        'PT': 6.725,
+        'u_n': 460.10,
+        'f_n': 6.35,
+        'vAN1': -2.2,
+        'vAN2': 14.3,
+        'vAN3': 0.0365,
+        'vAN4': 0.01397,
+        'delta_z': 0.165,
+        'z0': -0.135,
+        'c0': 0.28,
+        'c1': 0.35,
+        'c2': 0.049,
+        'c3': 0.3895,
+        'c4': 20.27,
+        'c5': 15.89
     }
 
     # p0 = np.array([(v.bounds()[0] + v.bounds()[1])/2 for v in THETA_VARS]).astype(np.float32)
     p0 = np.array([nominal.get(str(v), v.nominal) for v in THETA_VARS]).astype(np.float32)
     p0[np.isclose(p0, 0)] = 1
     cov0 = np.eye(p0.shape[0]) * np.array([(cov_pct.get(str(v), 0.08) * np.abs(p0[i]) / 2)**2 for i, v in enumerate(THETA_VARS)])
-    cov0 *= 0.000005 # MF *= 0.005, SF *= 0.0061
+    cov0 *= 0.000035 # MF *= 0.005, SF *= 0.0061
     # p0 = uq.normal_sample(p0, cov0, nwalk).astype(np.float32)
 
     with Parallel(n_jobs=n_jobs, verbose=0) as ppool:
@@ -418,9 +428,9 @@ def journal_plots(file, burnin=0.1):
                 # plt.show()
 
                 # Thruster marginals
-                str_use = ['u_n', 'f_n', 'vAN1', 'vAN2', 'vAN3', 'vAN4', 'delta_z', 'z0']
+                str_use = ['f_n', 'vAN4', 'delta_z', 'z0']
                 idx_use = sorted([THETA_VARS.index(v) for v in str_use])
-                labels = [r'$u_n$ (m/s)', r'$f_n$ (m/s)', r'$a_1$ (-)', r'$a_2$ (-)', r'$a_3$ (-)', r'$a_4$ (-)', r'$\Delta z$ (-)', r'$z_0$ (-)']
+                labels = [r'$f_n$ (m/s)', r'$a_2$ (-)', r'$a_4$ (-)', r'$\Delta z$ (-)', r'$z_0$ (-)']
                 fig, ax = uq.ndscatter(samples[:, idx_use], subplot_size=2, labels=labels, plot1d='kde', plot2d='hex',
                                        cmap='viridis', cmin=mincnt, bins=bins)
                 fig.savefig('mcmc-thruster.pdf', bbox_inches='tight', format='pdf')

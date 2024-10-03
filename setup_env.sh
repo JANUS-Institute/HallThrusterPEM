@@ -60,3 +60,4 @@ if [[ -z "${SLURM_ACCOUNT}" || -z "${SLURM_MAIL}" ]]; then
 fi
 
 echo "Environment setup complete! Use 'pdm train <scripts_folder>' to build a surrogate."
+source .venv/bin/activate
