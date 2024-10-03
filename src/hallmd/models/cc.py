@@ -24,11 +24,10 @@ def cc_feedforward(x: np.ndarray):
     x = np.atleast_1d(x)
     PB = 10 ** (x[..., 0, np.newaxis]) * TORR_2_PA      # Background Pressure (log10 Torr)
     Va = x[..., 1, np.newaxis]                          # Anode voltage
-    # Te = x[..., 2, np.newaxis]                          # Electron temperature (eV)
-    Te = np.ones(Va.shape)*3                            # Constant electron temperature held at 3eV
-    V_vac = x[..., 2, np.newaxis]                       # Vacuum coupling voltage (V) 3
-    Pstar = x[..., 3, np.newaxis] * 1e-6 * TORR_2_PA    # Model parameter P* 4
-    PT = x[..., 4, np.newaxis] * 1e-6 * TORR_2_PA       # Model parameter P_T 5
+    Te = x[..., 2, np.newaxis]                          # Electron temperature (eV)
+    V_vac = x[..., 3, np.newaxis]                       # Vacuum coupling voltage (V) 3
+    Pstar = x[..., 4, np.newaxis] * 1e-6 * TORR_2_PA    # Model parameter P* 4
+    PT = x[..., 5, np.newaxis] * 1e-6 * TORR_2_PA       # Model parameter P_T 5
 
 
     # Compute cathode coupling voltage

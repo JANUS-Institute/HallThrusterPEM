@@ -13,7 +13,7 @@
         "num_cells": 150,
         "dt_s": 2e-08,
         "duration_s": 0.002,
-        "max_charge": 1,
+        "max_charge": 3,
         "num_save": 1000,
         "time_avg_frame_start": 100,
         "flux_function": "rusanov",

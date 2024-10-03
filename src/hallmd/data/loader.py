@@ -119,8 +119,14 @@ def h9_data(qois: list[str] = None) -> dict[str: list[ExpData]]:
         from h9dataloader import load_jion
         exp_data['jion'] = [load_jion()]
 
+    if 'GT' in qois:
+        from h9dataloader import load_gt_thurst
+        from h9dataloader import load_gt_jion
+        exp_data['gt_jion'] = [load_gt_jion()]
+        exp_data['gt_thrust'] = [load_gt_thurst()]
+
     return exp_data
 
 if __name__ == '__main__':
-    data = h9_data(['V_cc', 'uion', 'jion'])
+    data = spt100_data()
     print(data)

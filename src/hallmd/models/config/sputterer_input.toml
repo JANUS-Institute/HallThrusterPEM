@@ -1,0 +1,114 @@
+[simulation]
+timestep_s = 200e-6
+max_time_s = 100e-3
+output_interval_s = 0.1
+particle_weight = 5e11
+
+[plume_model]
+plume_origin = { x = 0.0, y = 0.0, z = -2.0 }
+plume_direction = { x = 0.0, y = 0.0, z = 1.0 }
+background_pressure_Torr = 5e-6
+ion_current_A = 4.0
+model_parameters = [0.7, 0.5, 14.0, 0.2, 6.31e18, 1.259e15, 55.0]
+beam_energy_eV = 300.0
+scattered_energy_eV = 200.0
+cex_energy_eV = 50.0
+
+[chamber]
+radius_m = 3
+length_m = 6
+
+[[material]]
+name = "carbon"
+color = { x = 0.3, y = 0.3, z = 0.3 }
+sticking_coeff = 0.2
+diffuse_coeff = 0.8
+temperature_K = 300
+
+[[geometry]]
+name = "Emitter"
+file = "o_rect.obj"
+material = "carbon"
+emit = true
+scale = { x = 0.25, y = 0.25, z = 0.25 }
+translate = { x = 0.0, y = 0.0, z = -2.0 }
+color = { x = 0.2, y = 0.2, z = 0.8 }
+
+[geometry.emitter]
+flux = 5_000_000
+velocity = 300
+spread = 0.1
+reverse_direction = false
+
+[[geometry]]
+name = "Reflector l2"
+file = "o_rect.obj"
+material = "carbon"
+scale = { x = 0.25, y = 1.0, z = 1.0 }
+translate = { x = 1.25, y = 0.0, z = 2.0 }
+rotate = { axis = { x = 0.0, y = 1.0, z = 0.0 }, angle = -15 }
+
+[[geometry]]
+name = "Reflector l1"
+file = "o_rect.obj"
+material = "carbon"
+scale = { x = 0.25, y = 1.0, z = 1.0 }
+translate = { x = 0.75, y = 0.0, z = 2.0 }
+rotate = { axis = { x = 0.0, y = 1.0, z = 0.0 }, angle = -15 }
+
+[[geometry]]
+name = "Reflector l0"
+file = "o_rect.obj"
+material = "carbon"
+scale = { x = 0.25, y = 1.0, z = 1.0 }
+translate = { x = 0.25, y = 0.0, z = 2.0 }
+rotate = { axis = { x = 0.0, y = 1.0, z = 0.0 }, angle = -15 }
+
+[[geometry]]
+name = "Reflector r0"
+file = "o_rect.obj"
+material = "carbon"
+scale = { x = 0.25, y = 1.0, z = 1.0 }
+translate = { x = -0.25, y = 0.0, z = 2.0 }
+rotate = { axis = { x = 0.0, y = 1.0, z = 0.0 }, angle = 15 }
+
+[[geometry]]
+name = "Reflector r1"
+file = "o_rect.obj"
+material = "carbon"
+scale = { x = 0.25, y = 1.0, z = 1.0 }
+translate = { x = -0.75, y = 0.0, z = 2.0 }
+rotate = { axis = { x = 0.0, y = 1.0, z = 0.0 }, angle = 15 }
+
+[[geometry]]
+name = "Reflector r2"
+file = "o_rect.obj"
+material = "carbon"
+scale = { x = 0.25, y = 1.0, z = 1.0 }
+translate = { x = -1.25, y = 0.0, z = 2.0 }
+rotate = { axis = { x = 0.0, y = 1.0, z = 0.0 }, angle = 15 }
+
+[[geometry]]
+name = "Reflector"
+file = "o_rect.obj"
+material = "carbon"
+scale = { x = 3.0, y = 3.0, z = 3.0 }
+translate = { x = 0.0, y = 0.0, z = 2.0 }
+
+[[geometry]]
+name = "Collector"
+file = "o_rect.obj"
+material = "carbon"
+collect = true
+scale = { x = 0.15, y = 0.15, z = 0.15 }
+color = { x = 0.9, y = 0.1, z = 0.1 }
+translate = { x = 1.5, y = 0.0, z = -1.0 }
+rotate = { angle = -45 }
+
+[[geometry]]
+name = "Thruster"
+file = "o_thruster.obj"
+material = "carbon"
+collect = false
+translate = { x = 0.0, y = 0.0, z = -2.05 }
+rotate = { axis = { x = 0.0, y = 1.0, z = 0.0 }, angle = -90 }

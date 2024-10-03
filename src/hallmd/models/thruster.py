@@ -73,15 +73,14 @@ def hallthruster_jl_input(thruster_input: dict) -> dict:
         'inner_radius': thruster_input['inner_radius'],
         'outer_radius': thruster_input['outer_radius'],
         'channel_length': thruster_input['channel_length'],
-        # 'magnetic_field_file': str(CONFIG_DIR / thruster_input['magnetic_field_file']),
-        'magnetic_field_file': '/home/morag/h9-data/' + thruster_input['magnetic_field_file'], # CONFIG_DIR, need to find better way of loading secure directory
+        'magnetic_field_file': str(CONFIG_DIR / thruster_input['magnetic_field_file']),
         'wall_material': thruster_input['wall_material'],
         'magnetically_shielded': thruster_input['magnetically_shielded'],
         'anode_potential': thruster_input['Va'],
         'cathode_potential': thruster_input['V_cc'],
         'anode_mass_flow_rate': thruster_input['mdot_a'] * 1e-6,
         'propellant': thruster_input['propellant_material'],
-        # simulation                  
+        # simulation
         'num_cells': thruster_input['num_cells'],
         'dt_s': thruster_input['dt_s'],
         'duration_s': thruster_input['duration_s'],
@@ -102,8 +101,6 @@ def hallthruster_jl_input(thruster_input: dict) -> dict:
                           'pressure_z0': thruster_input['z0'] * thruster_input['channel_length'],
                           'pressure_pstar': thruster_input['p0'] * 1e-6,
                           'pressure_alpha': thruster_input['alpha']})
-    # with open(Path('.') / 'variables.json', 'w', encoding='utf-8') as fd:
-    #     json.dump(json_data, fd, ensure_ascii=False, indent=4)
     return json_data
 
 
@@ -129,7 +126,7 @@ def hallthruster_jl_model(thruster_input: dict, jl=None) -> dict:
         json.dump(json_data, fd, ensure_ascii=False, indent=4)
         fd.close()
         t1 = time.time()
-        sol = jl.HallThruster.run_simulation(fd.name, verbose=False)
+        sol = jl.seval(f'sol = HallThruster.run_simulation("{repr(fd.name)[1:-1]}", verbose=false)')
         os.unlink(fd.name)   # delete the tempfile
     except juliacall.JuliaError as e:
         raise ModelRunException(f"Julicall error in Hallthruster.jl: {e}")
@@ -137,26 +134,27 @@ def hallthruster_jl_model(thruster_input: dict, jl=None) -> dict:
     if str(sol.retcode).lower() != "success":
         raise ModelRunException(f"Exception in Hallthruster.jl: Retcode = {sol.retcode}")
 
+    # Average simulation results
+    avg = jl.seval(f"avg = HallThruster.time_average(sol, {thruster_input['time_avg_frame_start']})")
+
+    # Extract needed data
+    I_B0 = jl.HallThruster.ion_current(avg)[0]
+    niui_exit = 0.0
+    ni_exit = 0.0
+    for Z in range(avg.params.ncharge):
+        ni_exit += jl.seval(f"avg[:ni, {Z+1}][][end]")
+        niui_exit += jl.seval(f"avg[:niui, {Z+1}][][end]")
+    ui_avg = niui_exit / ni_exit
+
     # Load simulation results
     fd = tempfile.NamedTemporaryFile(suffix='.json', encoding='utf-8', mode='w', delete=False)
     fd.close()
-    jl.HallThruster.write_to_json(fd.name, jl.HallThruster.time_average(sol, thruster_input['time_avg_frame_start']))
+
+    jl.HallThruster.write_to_json(fd.name, avg)
     with open(fd.name, 'r') as f:
         thruster_output = json.load(f)
     os.unlink(fd.name)  # delete the tempfile
 
-    j_exit = 0      # Current density at thruster exit
-    ui_exit = 0     # Ion velocity at thruster exit
-    for param, grid_sol in thruster_output[0].items():
-        if 'niui' in param:
-            charge_num = int(param.split('_')[1])
-            j_exit += Q_E * charge_num * grid_sol[-1]
-        if param.split('_')[0] == 'ui':
-            ui_exit += grid_sol[-1]
-
-    A = np.pi * (thruster_input['outer_radius'] ** 2 - thruster_input['inner_radius'] ** 2)
-    ui_avg = ui_exit / thruster_input['max_charge']
-    I_B0 = j_exit * A           # Total current (A) at thruster exit
     thrust = thruster_output[0]['thrust']
     discharge_current = thruster_output[0]['discharge_current']
 
@@ -176,7 +174,7 @@ def hallthruster_jl_wrapper(x: np.ndarray, alpha: tuple = (2, 2), *, compress: b
                             config: str | Path = CONFIG_DIR / 'hallthruster_jl.json',
                             variables: str | Path = CONFIG_DIR / 'variables_v0.json',
                             svd_data: dict | str | Path = CONFIG_DIR / 'thruster_svd.pkl',
-                            hf_override: tuple | bool = None, thruster: str = 'H9'):
+                            hf_override: tuple | bool = None, thruster: str = 'SPT-100'):
     """Wrapper function for Hallthruster.jl.
 
     !!! Note "Defining input variables"
@@ -359,7 +357,10 @@ def hallthruster_jl_wrapper(x: np.ndarray, alpha: tuple = (2, 2), *, compress: b
         batch_files, batch_costs = res[flat_idx % num_batches]
         if output_dir is not None:
             files.append(batch_files.pop(0))
-        costs.append(batch_costs.pop(0))
+        if not batch_costs:
+            pass
+        else:
+            costs.append(batch_costs.pop(0))
         flat_idx += 1
 
     # Save model eval summary to file
@@ -451,7 +452,6 @@ def uion_reconstruct(xr: np.ndarray, z: np.ndarray = None, L: float | np.ndarray
         return z, uion_interp
     else:
         return zg, uion_g
-
 
 if __name__ == '__main__':
     with open(Path(CONFIG_DIR / 'hallthruster_jl.json'), 'r') as fd:

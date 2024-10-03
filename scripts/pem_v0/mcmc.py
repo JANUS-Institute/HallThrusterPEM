@@ -23,13 +23,13 @@ OPTIMIZER_ITER = 1
 START_TIME = 0
 PROJECT_ROOT = Path('../..')
 TRAINING = False
-surr_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-07-27T02.35.59' / 'multi-fidelity').glob('amisc_*'))[0]
-SURR = pem_v0(from_file=surr_dir / 'sys' / f'sys_final{"_train" if TRAINING else ""}.pkl')
+surr_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-06-26T18.04.11' / 'multi-fidelity').glob('amisc_*'))[0]
+SURR = pem_v0(from_file=surr_dir / 'sys' / f'sys_final{"_train" if TRAINING else "_test"}.pkl')
 DATA = spt100_data()
 # DATA = h9_data(['V_cc', 'jion', 'uion'])
 COMP = 'System'
 THETA_VARS = [v for v in SURR[COMP].x_vars if v.param_type == 'calibration']
-QOI_MAP = {'Cathode': ['V_cc'], 'Thruster': ['uion'], 'Plume': ['T', 'jion'], 'System': ['V_cc', 'uion', 'jion']} # 'T' Taken out
+QOI_MAP = {'Cathode': ['V_cc'], 'Thruster': ['uion'], 'Plume': ['T', 'jion'], 'System': ['V_cc', 'uion', 'T', 'jion']}
 QOIS = QOI_MAP.get(COMP)
 
 # Parse experimental data
