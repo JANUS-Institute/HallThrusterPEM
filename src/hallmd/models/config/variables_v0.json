@@ -4,8 +4,8 @@
         "tex": "$T_e$",
         "description": "Cathode electron temperature",
         "units": "eV",
-        "param_type": "calibration",
-        "nominal": 3.26173,
+        "param_type": "other",
+        "nominal": 3,
         "domain": [1, 5],
         "rv_type": "uniform_bds",
         "rv_params": [1, 5]
@@ -17,9 +17,9 @@
         "units": "V",
         "param_type": "calibration",
         "nominal": 30.93303,
-        "domain": [0, 60],
+        "domain": [26, 36],
         "rv_type": "uniform_bds",
-        "rv_params": [0, 60]
+        "rv_params": [26, 36]
     },
     "P*": {
         "id": "P*",
@@ -28,9 +28,9 @@
         "units": "$\\mu$-Torr",
         "param_type": "calibration",
         "nominal": 29.90806,
-        "domain": [10, 100],
+        "domain": [20, 40],
         "rv_type": "uniform_bds",
-        "rv_params": [10, 100]
+        "rv_params": [20, 40]
     },
     "PT": {
         "id": "PT",
@@ -39,9 +39,9 @@
         "units": "$\\mu$-Torr",
         "param_type": "calibration",
         "nominal": 10.60412,
-        "domain": [10, 100],
+        "domain": [1, 20],
         "rv_type": "uniform_bds",
-        "rv_params": [10, 100]
+        "rv_params": [1, 20]
     },
     "PB": {
         "id": "PB",
@@ -72,17 +72,17 @@
         "units": "m/s",
         "param_type": "calibration",
         "nominal": 278.01331,
-        "domain": [100, 500],
+        "domain": [200, 450],
         "rv_type": "uniform_bds",
-        "rv_params": [100, 500]
+        "rv_params": [200, 450]
     },
     "c_w": {
         "id": "c_w",
         "tex": "$c_w$",
         "description": "Wall sheath loss coefficient",
         "units": "-",
-        "param_type": "calibration",
-        "nominal": 0.86904,
+        "param_type": "other",
+        "nominal": 1.0,
         "domain": [0.2, 2.0],
         "rv_type": "uniform_bds",
         "rv_params": [0.2, 2.0]
@@ -92,7 +92,7 @@
         "tex": "$l_t$",
         "description": "Inner-outer transition length",
         "units": "mm",
-        "param_type": "calibration",
+        "param_type": "other",
         "nominal": 4.14740,
         "domain": [1, 20],
         "rv_type": "uniform_bds",
@@ -105,9 +105,9 @@
         "units": "m/s",
         "param_type": "calibration",
         "nominal": 6.23341,
-        "domain": [0.5, 10.0],
+        "domain": [0.5, 8.0],
         "rv_type": "uniform_bds",
-        "rv_params": [0.5, 10.0]
+        "rv_params": [0.5, 8.0]
     },
     "vAN1": {
         "id": "vAN1",
@@ -116,9 +116,9 @@
         "units": "-",
         "param_type": "calibration",
         "nominal": -2.15392,
-        "domain": [-2.5, -1],
+        "domain": [-2.5, -1.5],
         "rv_type": "uniform_bds",
-        "rv_params": [-2.5, -1]
+        "rv_params": [-2.5, -1.5]
     },
     "vAN2": {
         "id": "vAN2",
@@ -127,9 +127,9 @@
         "units": "-",
         "param_type": "calibration",
         "nominal": 10.01271,
-        "domain": [10, 100],
+        "domain": [1, 20],
         "rv_type": "uniform_bds",
-        "rv_params": [10, 100]
+        "rv_params": [1, 20]
     },
     "vAN3": {
         "id": "vAN3",
@@ -138,9 +138,9 @@
         "units": "-",
         "param_type": "calibration",
         "nominal": 0.02506,
-        "domain": [0.02, 0.035],
+        "domain": [0.02, 0.03],
         "rv_type": "uniform_bds",
-        "rv_params": [0.02, 0.035]
+        "rv_params": [0.02, 0.03]
     },
     "vAN4": {
         "id": "vAN4",
@@ -180,7 +180,7 @@
         "tex": "$p_0$",
         "description": "Anomalous transport pressure shift upper bound",
         "units": "$\\mu$-Torr",
-        "param_type": "calibration",
+        "param_type": "other",
         "nominal": 47.35361,
         "domain": [25, 65],
         "rv_type": "normal",
@@ -281,9 +281,9 @@
         "units": "-",
         "param_type": "calibration",
         "nominal": 19.31920,
-        "domain": [18, 22],
+        "domain": [18, 21],
         "rv_type": "uniform_bds",
-        "rv_params": [18, 22]
+        "rv_params": [18, 21]
     },
     "c5": {
         "id": "c5",

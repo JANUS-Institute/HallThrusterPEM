@@ -1,6 +1,6 @@
 {
     "default_inputs": ["PB", "Va", "mdot_a", "T_ec", "u_n", "c_w", "l_t", "f_n", "vAN1", "vAN2", "vAN3", "vAN4", "delta_z", "z0", "p0", "alpha", "l_c", "V_cc"],
-    "required_inputs": ["PB", "Va", "mdot_a", "T_ec", "u_n", "c_w", "l_t", "f_n", "vAN1", "vAN2", "vAN3", "vAN4", "delta_z", "z0", "p0", "V_cc"],
+    "required_inputs": ["PB", "Va", "mdot_a", "u_n", "f_n", "vAN1", "vAN2", "vAN3", "vAN4", "delta_z", "z0", "V_cc"],
     "outputs": ["I_B0", "I_D", "T", "eta_v", "eta_c", "eta_m", "ui_avg", "uion"],
     "SPT-100": {
         "channel_length": 0.025,
@@ -12,7 +12,7 @@
         "thruster_name": "SPT-100",
         "num_cells": 150,
         "dt_s": 2e-08,
-        "duration_s": 0.002,
+        "duration_s": 0.001,
         "max_charge": 3,
         "num_save": 1000,
         "time_avg_frame_start": 100,
