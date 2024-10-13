@@ -19,16 +19,13 @@ import os
 from pathlib import Path
 import pickle
 import shutil
-
 import numpy as np
 import matplotlib.pyplot as plt
 from uqtils import ax_default
-
 from hallmd.models.pem import pem_v0
 from hallmd.utils import model_config_dir
 
 CONFIG_DIR = model_config_dir()
-
 
 def gen_svd_data(N=500, r_pct=0.95):
     """Generate data matrices for SVD dimension reduction."""
