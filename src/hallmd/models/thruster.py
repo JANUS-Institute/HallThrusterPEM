@@ -180,9 +180,6 @@ def hallthruster_jl_model(thruster_input: dict, jl=None, job_num=0) -> dict:
     return thruster_output[0]
 
 
-
-
-
 def hallthruster_jl_wrapper(x: np.ndarray, alpha: tuple = (2, 2), *, compress: bool = False,
                             output_dir: str | Path = None, n_jobs: int = -1,
                             config: str | Path = CONFIG_DIR / 'hallthruster_jl.json',
@@ -393,7 +390,7 @@ def hallthruster_jl_wrapper(x: np.ndarray, alpha: tuple = (2, 2), *, compress: b
     return {'y': y_ret, 'files': files, 'cost': avg_model_cpu_time}
 
 
-def uion_reconstruct(xr: np.ndarray, z: np.ndarray = None, L: float | np.ndarray = 0.08,
+def uion_reconstruct(xr: np.ndarray, z: np.ndarray = None, L: float | np.ndarray = 0.08,   # 0.08 SPT, 0.152 H9
                      svd_data: dict | str | Path = CONFIG_DIR / 'thruster_svd.pkl') -> tuple[np.ndarray, np.ndarray]:
     """Reconstruct an ion velocity profile, interpolate to `z` if provided.
 
