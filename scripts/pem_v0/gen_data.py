@@ -21,7 +21,6 @@ import pickle
 import shutil
 import numpy as np
 import matplotlib.pyplot as plt
-
 from uqtils import ax_default
 from hallmd.models.pem import pem_v0
 from hallmd.utils import model_config_dir
