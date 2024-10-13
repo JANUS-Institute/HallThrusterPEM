@@ -13,22 +13,31 @@ Includes
 - `gen_svd_data()` - generate SVD training data for the thruster and plume models.
 - `gen_test_set()` - generate a test set for PEM v0.
 """
+print("1")
 import datetime
+print("2")
 from datetime import timezone
+print("3")
 import os
+print("4")
 from pathlib import Path
+print("5")
 import pickle
+print("6")
 import shutil
-
+print("7")
 import numpy as np
+print("8")
 import matplotlib.pyplot as plt
+print("9")
 from uqtils import ax_default
-
+print("10")
 from hallmd.models.pem import pem_v0
+print("11")
 from hallmd.utils import model_config_dir
-
+print("12")
 CONFIG_DIR = model_config_dir()
-
+print("13")
 
 def gen_svd_data(N=500, r_pct=0.95):
     """Generate data matrices for SVD dimension reduction."""

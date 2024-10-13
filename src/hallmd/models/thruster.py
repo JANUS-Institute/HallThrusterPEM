@@ -131,8 +131,8 @@ def hallthruster_jl_model(thruster_input: dict, jl=None, job_num=0) -> dict:
         fd.close()
         t1 = time.time()
         print(f"Job {job_num}: Running Simulation")
-        # sol = jl.seval(f'sol = HallThruster.run_simulation("{repr(fd.name)[1:-1]}", verbose=false)')
-        sol = jl.seval(f'sol = HallThruster.run_simulation("{repr(fd.name)[1:-1]}", verbose=true)')
+        sol = jl.seval(f'sol = HallThruster.run_simulation("{repr(fd.name)[1:-1]}", verbose=false)')
+        # sol = jl.seval(f'sol = HallThruster.run_simulation("{repr(fd.name)[1:-1]}", verbose=true)')
         print(f"Job {job_num}: Simulation Done, unlinking tempfile")
         os.unlink(fd.name)   # delete the tempfile
     except juliacall.JuliaError as e:
@@ -264,8 +264,8 @@ def hallthruster_jl_wrapper(x: np.ndarray, alpha: tuple = (2, 2), *, compress: b
 
     def run_batch(job_num, index_batches, y):
         """Run a batch of indices into the input matrix `x`."""
-        # from juliacall import Main as jl
-        # jl.seval("using HallThruster")
+        from juliacall import Main as jl
+        jl.seval("using HallThruster")
         thruster_input = copy.deepcopy(base_input)
         curr_batch = index_batches[job_num]
         files = []  # Return an ordered list of output filenames corresponding to input indices
@@ -281,7 +281,7 @@ def hallthruster_jl_wrapper(x: np.ndarray, alpha: tuple = (2, 2), *, compress: b
             t1 = time.time()
             try:
                 print(f"Job {job_num}: Running model")
-                res = hallthruster_jl_model(thruster_input, jl=None, job_num=job_num)
+                res = hallthruster_jl_model(thruster_input, jl=jl, job_num=job_num)
             except ModelRunException as e:
                 print(f"Job {job_num}: exception")
                 logger = get_logger(__name__)

@@ -40,8 +40,6 @@ def pem_v0(save_dir: str | Path = None, executor: Executor = None, init: bool = 
     :param from_file: the `.pkl` save file to load the surrogate from, (instead of building from scratch)
     :returns: the `SystemSurrogate` object
     """
-    # exo_vars = load_variables(['PB', 'Va', 'mdot_a', 'T_ec', 'V_vac', 'P*', 'PT', 'u_n', 'c_w', 'l_t', 'f_n', 'vAN1', 'vAN2', 'vAN3',
-    #                            'vAN4', 'delta_z', 'z0', 'p0', 'c0', 'c1', 'c2', 'c3', 'c4', 'c5', 'sigma_cex', 'r_m'], var_file)
     exo_vars = load_variables(['PB', 'Va', 'mdot_a', 'V_vac', 'P*', 'PT', 'u_n', 'f_n', 'vAN1', 'vAN2', 'vAN3',
                                'vAN4', 'delta_z', 'z0', 'c0', 'c1', 'c2', 'c3', 'c4', 'c5', 'sigma_cex', 'r_m'], var_file)
     coupling_vars = load_variables(['V_cc', 'I_B0', 'I_D', 'T', 'eta_v', 'eta_c', 'eta_m', 'ui_avg', 'theta_d', 'Tc'], var_file)
@@ -50,11 +48,8 @@ def pem_v0(save_dir: str | Path = None, executor: Executor = None, init: bool = 
         surr = SystemSurrogate.load_from_file(Path(from_file), stdout=False, executor=executor)
         for v in exo_vars:
             # Make sure nominal values are up to date with the current config file
-            try:
-                j = surr.exo_vars.index(v)
-                surr.exo_vars[j] = v
-            except:
-                continue  # Skip if surrogate doesn't have this exo var anymore
+            j = surr.exo_vars.index(v)
+            surr.exo_vars[j] = v
             for node, node_obj in surr.graph.nodes.items():
                 try:
                     j = surr[node].x_vars.index(v)
@@ -63,12 +58,9 @@ def pem_v0(save_dir: str | Path = None, executor: Executor = None, init: bool = 
                     pass
 
         for v in coupling_vars:
-            try:
-                j = surr.coupling_vars.index(v)
-                surr.coupling_vars[j].tex = v.tex
-                surr.coupling_vars[j].nominal = v.nominal
-            except:
-                continue
+            j = surr.coupling_vars.index(v)
+            surr.coupling_vars[j].tex = v.tex
+            surr.coupling_vars[j].nominal = v.nominal
 
         return surr
 
@@ -91,8 +83,6 @@ def pem_v0(save_dir: str | Path = None, executor: Executor = None, init: bool = 
                                     param_type='coupling') for i in range(r2)])
 
     # Component inputs
-    # cathode_exo = ['PB', 'Va', 'T_ec', 'V_vac', 'P*', 'PT']
-    # thruster_exo = ['PB', 'Va', 'mdot_a', 'T_ec', 'u_n', 'c_w', 'l_t', 'f_n', 'vAN1', 'vAN2', 'vAN3', 'vAN4', 'delta_z', 'z0', 'p0']
     cathode_exo = ['PB', 'Va', 'V_vac', 'P*', 'PT']
     thruster_exo = ['PB', 'Va', 'mdot_a', 'u_n', 'f_n', 'vAN1', 'vAN2', 'vAN3', 'vAN4', 'delta_z', 'z0']
     plume_exo = ['PB', 'c0', 'c1', 'c2', 'c3', 'c4', 'c5', 'sigma_cex', 'r_m']
