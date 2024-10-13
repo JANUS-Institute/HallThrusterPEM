@@ -33,15 +33,19 @@ CONFIG_DIR = model_config_dir()
 def gen_svd_data(N=500, r_pct=0.95):
     """Generate data matrices for SVD dimension reduction."""
     # Thruster svd dataset for uion velocity profile
+    print("Generate ion velocity svd data matrices")
     timestamp = datetime.datetime.now(tz=timezone.utc).isoformat().split('.')[0].replace(':', '.')
     root_dir = Path('results') / f'svd_{timestamp}'
     os.mkdir(root_dir)
     surr = pem_v0(executor=None, init=False, save_dir=root_dir)
+    print("Sampling inputs")
     xt = surr.sample_inputs(N, comp='Thruster', use_pdf=True)
     comp = surr['Thruster']
     comp._model_kwargs['compress'] = False
+    print("Making Predictions")
     yt = comp(xt, use_model='best', model_dir=comp._model_kwargs.get('output_dir'))
     nan_idx = np.any(np.isnan(yt), axis=-1)
+    print("Getting rid of NaN")
     yt = yt[~nan_idx, :]
     A = yt[:, 7:]       # Data matrix, uion (N x M)
     u, s, vt = np.linalg.svd((A - np.mean(A, axis=0)) / np.std(A, axis=0))
@@ -50,10 +54,12 @@ def gen_svd_data(N=500, r_pct=0.95):
     r = idx + 1         # Number of singular values to keep
     vtr = vt[:r, :]     # (r x M)
     save_dict = {'A': A, 'r_pct': r_pct, 'r': r, 'vtr': vtr}
+    print("Saving PKL")
     with open(root_dir / 'thruster_svd.pkl', 'wb') as fd:
         pickle.dump(save_dict, fd)
 
     # Plot and save some results
+    print("Plot and save some results")
     fig, ax = plt.subplots()
     ax.plot(s, '.k')
     ax.plot(s[:r], 'or')
@@ -73,6 +79,7 @@ def gen_svd_data(N=500, r_pct=0.95):
     fig.savefig(str(root_dir/'uion.png'), dpi=300, format='png')
 
     # Generate SVD data matrix for Plume
+    print("Generate plume svd data matrix")
     xt = surr.sample_inputs(N, comp='Plume', use_pdf=True)
     comp = surr['Plume']
     comp._model_kwargs['compress'] = False
@@ -90,6 +97,7 @@ def gen_svd_data(N=500, r_pct=0.95):
         pickle.dump(save_dict, fd)
 
     # Plot and save some results
+    print("Plot and save some results")
     fig, ax = plt.subplots()
     ax.plot(s, '.k')
     ax.plot(s[:r], 'or')
@@ -133,8 +141,12 @@ def gen_test_set(N=500):
 
 if __name__ == '__main__':
     # Generate SVD and test set files
-    svd_dir = gen_svd_data()
+    print("Generating svd data")
+    svd_dir = gen_svd_data(10, 0.95)
+    print("Saving pkl files")
     shutil.copyfile(svd_dir / 'plume_svd.pkl', CONFIG_DIR / 'plume_svd.pkl')
     shutil.copyfile(svd_dir / 'thruster_svd.pkl', CONFIG_DIR / 'thruster_svd.pkl')
-    test_dir = gen_test_set()
+    print("Test set generation")
+    test_dir = gen_test_set(10)
+    print("Saving test set")
     shutil.copyfile(test_dir / 'test_set.pkl', CONFIG_DIR / 'test_set.pkl')

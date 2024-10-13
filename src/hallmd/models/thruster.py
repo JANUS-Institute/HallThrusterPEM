@@ -104,7 +104,7 @@ def hallthruster_jl_input(thruster_input: dict) -> dict:
     return json_data
 
 
-def hallthruster_jl_model(thruster_input: dict, jl=None) -> dict:
+def hallthruster_jl_model(thruster_input: dict, jl=None, job_num=0) -> dict:
     """Run a single Hallthruster.jl simulation for a given set of inputs.
 
     :param thruster_input: named key-value pairs of thruster inputs
@@ -113,31 +113,41 @@ def hallthruster_jl_model(thruster_input: dict, jl=None) -> dict:
     :returns: `dict` of Hallthruster.jl outputs for this input
     """
     # Import Julia
+    print(f"Job {job_num}: Importing JL")
     if jl is None:
         from juliacall import Main as jl
         jl.seval("using HallThruster")
 
     # Format inputs for Hallthruster.jl
+    print(f"Job {job_num}: Formatting JSON data")
     json_data = hallthruster_jl_input(thruster_input)
 
     # Run simulation
     try:
+        print(f"Job {job_num}: Creating Tempfile for Simulation")
         fd = tempfile.NamedTemporaryFile(suffix='.json', encoding='utf-8', mode='w', delete=False)
+        print(f"Job {job_num}: Dumping initial conditions into json tempfile")
         json.dump(json_data, fd, ensure_ascii=False, indent=4)
         fd.close()
         t1 = time.time()
-        sol = jl.seval(f'sol = HallThruster.run_simulation("{repr(fd.name)[1:-1]}", verbose=false)')
+        print(f"Job {job_num}: Running Simulation")
+        # sol = jl.seval(f'sol = HallThruster.run_simulation("{repr(fd.name)[1:-1]}", verbose=false)')
+        sol = jl.seval(f'sol = HallThruster.run_simulation("{repr(fd.name)[1:-1]}", verbose=true)')
+        print(f"Job {job_num}: Simulation Done, unlinking tempfile")
         os.unlink(fd.name)   # delete the tempfile
     except juliacall.JuliaError as e:
+        print(f"Job {job_num}: Raising Model Error")
         raise ModelRunException(f"Julicall error in Hallthruster.jl: {e}")
 
     if str(sol.retcode).lower() != "success":
         raise ModelRunException(f"Exception in Hallthruster.jl: Retcode = {sol.retcode}")
 
     # Average simulation results
+    print(f"Job {job_num}: Averaging simulation results")
     avg = jl.seval(f"avg = HallThruster.time_average(sol, {thruster_input['time_avg_frame_start']})")
 
     # Extract needed data
+    print(f"Job {job_num}: Extracting Needed Data (marksta julia code)")
     I_B0 = jl.HallThruster.ion_current(avg)[0]
     niui_exit = 0.0
     ni_exit = 0.0
@@ -147,6 +157,7 @@ def hallthruster_jl_model(thruster_input: dict, jl=None) -> dict:
     ui_avg = niui_exit / ni_exit
 
     # Load simulation results
+    print(f"Job {job_num}: Load Simulation Results")
     fd = tempfile.NamedTemporaryFile(suffix='.json', encoding='utf-8', mode='w', delete=False)
     fd.close()
 
@@ -161,12 +172,15 @@ def hallthruster_jl_model(thruster_input: dict, jl=None) -> dict:
     thruster_output[0].update({'ui_avg': ui_avg / 1000.0, 'I_B0': I_B0, 'T': thrust, 'I_D': discharge_current,
                                'eta_c': thruster_output[0]['current_eff'], 'eta_m': thruster_output[0]['mass_eff'],
                                'eta_v': thruster_output[0]['voltage_eff']})
-
     # Raise an exception if thrust or beam current are negative (non-physical cases)
     if thrust < 0 or I_B0 < 0:
+        print(f"Job {job_num}: Nonphysical case error")
         raise ModelRunException(f'Exception due to non-physical case: thrust={thrust} N, beam current={I_B0} A')
-
+    print(f"Job {job_num}: Returning output")
     return thruster_output[0]
+
+
+
 
 
 def hallthruster_jl_wrapper(x: np.ndarray, alpha: tuple = (2, 2), *, compress: bool = False,
@@ -250,22 +264,26 @@ def hallthruster_jl_wrapper(x: np.ndarray, alpha: tuple = (2, 2), *, compress: b
 
     def run_batch(job_num, index_batches, y):
         """Run a batch of indices into the input matrix `x`."""
-        from juliacall import Main as jl
-        jl.seval('using HallThruster')
+        # from juliacall import Main as jl
+        # jl.seval("using HallThruster")
         thruster_input = copy.deepcopy(base_input)
         curr_batch = index_batches[job_num]
         files = []  # Return an ordered list of output filenames corresponding to input indices
         costs = []  # Time to evaluate hallthruster.jl for a single input
 
+        print(f"Job {job_num}: running Batches")
         for i, index in enumerate(curr_batch):
+            print(f"Job {job_num}: Iteration {i}")
             x_curr = [float(x[index + (i,)]) for i in range(x.shape[-1])]   # (xdim,)
             thruster_input.update({input_list[i]: x_curr[i] for i in range(x.shape[-1])})
 
             # Run hallthruster.jl
             t1 = time.time()
             try:
-                res = hallthruster_jl_model(thruster_input, jl=jl)
+                print(f"Job {job_num}: Running model")
+                res = hallthruster_jl_model(thruster_input, jl=None, job_num=job_num)
             except ModelRunException as e:
+                print(f"Job {job_num}: exception")
                 logger = get_logger(__name__)
                 logger.warning(f'Skipping index {index} due to caught exception: {e}')
                 y[index + (slice(None),)] = np.nan
@@ -276,7 +294,7 @@ def hallthruster_jl_wrapper(x: np.ndarray, alpha: tuple = (2, 2), *, compress: b
                     costs.append(0)
                     data_write(save_dict, fname, output_dir)
                 continue
-
+            print(f"Job {job_num}: Saving QOIs, Iteration {i}")
             # Save QoIs
             curr_idx = 0
             for i, qoi_str in enumerate(output_list):
@@ -325,7 +343,7 @@ def hallthruster_jl_wrapper(x: np.ndarray, alpha: tuple = (2, 2), *, compress: b
                 fname = f'{eval_id}_{index}.json'
                 files.append(fname)
                 data_write(save_dict, fname, output_dir)
-
+        print(f"Finished Job {job_num}, Files: {files}, costs {costs}")
         return files, costs
 
     # Evenly distribute input indices across batches
