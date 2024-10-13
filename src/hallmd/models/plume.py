@@ -102,7 +102,7 @@ def plume_feedforward(x: np.ndarray, compress: bool = False,
         den_int = np.flip(j.real, axis=-1) * np.cos(alpha_rad)
 
         with np.errstate(divide='ignore'):
-            cos_div = simpson(num_int, alpha_rad, axis=-1) / simpson(den_int, alpha_rad, axis=-1)
+            cos_div = simpson(num_int, x=alpha_rad, axis=-1) / simpson(den_int, x=alpha_rad, axis=-1)
             cos_div[cos_div == np.inf] = np.nan
 
         y[..., 0] = np.arccos(cos_div)  # Divergence angle (rad)
