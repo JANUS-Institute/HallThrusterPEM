@@ -1,4 +1,5 @@
-{ "T_ec": {
+{ 
+    "T_ec": {
         "id": "T_ec",
         "tex": "$T_e$",
         "description": "Cathode electron temperature",
@@ -417,4 +418,3 @@
         "rv_params": []
     }
 }
-
