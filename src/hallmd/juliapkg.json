@@ -4,8 +4,8 @@
 		"HallThruster": {
 			"uuid": "2311f341-5e6d-4941-9e3e-3ce0ae0d9ed6",
 			"url": "https://github.com/UM-PEPL/HallThruster.jl",
-			"rev": "f6d2a5d9cb9c5b0c5f8eb24cd74e8e340ef8125d",
-			"version": "0.16.6"
+			"rev": "d5f64c23d11b3b61002ed99e90e579b69f016493",
+			"version": "0.17.0"
 		}
 	}
 }
