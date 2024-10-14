@@ -104,11 +104,17 @@ def pem_v0(save_dir: str | Path = None, executor: Executor = None, init: bool = 
     return surr
 
 
-if __name__ == '__main__':
-    surr = pem_v0(from_file='sys_final.pkl')
-    num_samples = 1
+def make_surr_test(root: str = '.'):
+    """Convert a training file surrogate into testing mode.
 
+    :param root: where to load and save the surrogate from
+    """
+    surr = pem_v0(from_file=root + '/sys_final.pkl')
+    num_samples = 1
     x = surr.sample_inputs(num_samples)
-    y = surr.predict(x)                      # implicitly runs with training=False, which will recompute and save MISC coefficients in the background
-                                         # this will take on the order of 10 min to run
-    surr.save_to_file('sys_final_test.pkl')  # then use this save file from here on in MC, MCMC, etc.
+    y = surr.predict(x)                      # runs with training=False, recomputes and saves MISC coefficients
+    surr.save_to_file(root+'/sys_final_test.pkl')  # then use this save file from here on in MC, MCMC, etc.
+
+
+if __name__ == '__main__':
+    make_surr_test()
