@@ -195,6 +195,90 @@ def get_test_set_error(surr, qoi_ind):
     return np.cumsum(cost_cum), test_error, dt, num_active, num_cand
 
 
+def get_slice_plots(surr, qoi_ind, slice_idx):
+    """Simulate training surrogate to generate plot slices during training.
+
+    :param surr: the SystemSurrogate object
+    :param qoi_ind: list of system QoI variables to make plot_slices on
+    :param slice_idx: list of parameters to make slice plots with
+    :returns: 
+    """
+    qoi_ind = surr._get_qoi_ind(qoi_ind)
+    Nqoi = len(qoi_ind)
+    max_iter = surr.refine_level  # Iterate up to last surrogate refinement level
+    xt, yt = surr.build_metrics['xt'], surr.build_metrics['yt']  # Same as the ones in test_set.pkl
+    comp = surr['Thruster'] # TODO: should generalize this to arbitrary components and put in convenience amisc function
+    index_set = []          # The active index set for Thruster component
+    candidate_set = []      # The candidate indices for Thruster component
+
+    def activate_index(alpha, beta):
+        # Add all possible new candidates (distance of one unit vector away)
+        ele = (alpha, beta)
+        ind = list(alpha + beta)
+        new_candidates = []
+        for i in range(len(ind)):
+            ind_new = ind.copy()
+            ind_new[i] += 1
+
+            # Don't add if we surpass a refinement limit
+            if np.any(np.array(ind_new) > np.array(comp.max_refine)):
+                continue
+
+            # Add the new index if it maintains downward-closedness
+            new_cand = (tuple(ind_new[:len(alpha)]), tuple(ind_new[len(alpha):]))
+            down_closed = True
+            for j in range(len(ind)):
+                ind_check = ind_new.copy()
+                ind_check[j] -= 1
+                if ind_check[j] >= 0:
+                    tup_check = (tuple(ind_check[:len(alpha)]), tuple(ind_check[len(alpha):]))
+                    if tup_check not in index_set and tup_check != ele:
+                        down_closed = False
+                        break
+            if down_closed:
+                new_candidates.append(new_cand)
+
+        # Move to the active index set
+        if ele in candidate_set:
+            candidate_set.remove(ele)
+        index_set.append(ele)
+        new_candidates = [cand for cand in new_candidates if cand not in candidate_set]
+        candidate_set.extend(new_candidates)
+
+        # Return total cost of activation
+        total_cost = 0.0
+        for a, b in new_candidates:
+            total_cost += comp.get_cost(a, b)
+        return total_cost
+
+    num_active = []                                # Number of active indices
+    num_cand = []                                  # Number of candidate indices
+
+    # Initial cost and test set error
+    base_alpha = (0,) * len(comp.truth_alpha)
+    base_beta = (0,) * (len(comp.max_refine) - len(comp.truth_alpha))
+    activate_index(base_alpha, base_beta)
+    num_active.append(len(index_set))
+    num_cand.append(len(candidate_set))
+
+    # Iterate back over each step of surrogate training history and compute test set error
+    for i in range(5): # for i in range(max_iter):
+        err_indicator, node, alpha, beta, num_evals, cost = surr.build_metrics['train_record'][i]
+        activate_index(alpha, beta)  # Updates index_set with (alpha, beta) for Thruster node
+        surr.graph.nodes['Thruster']['surrogate'].index_set = index_set
+        # ysurr = surr.predict(xt, index_set={'Thruster': index_set})  # (Ntest, Nqoi)
+        nominal = {str(var): var.sample_domain((1,)) for var in surr.exo_vars}  # Random nominal test point
+        fig, ax = surr.plot_slice(slice_idx, qoi_ind, show_model=['best', 'worst'], show_surr=True, N=1,
+                              random_walk=True, nominal=nominal, model_dir=None)
+        ax.set_title(f'Plot Iteration {i}')
+        fig.savefig(f'plot_slice_{i}.pdf', format='png', bbox_inches='tight')
+        num_active.append(len(index_set))
+        num_cand.append(len(candidate_set))
+        # print(f'i={i}, time={(t3-t1)/60.0:.2f} min, dt={(t3-t2)/60.0:.2f} min')
+
+    return num_active, num_cand
+
+
 def plot_test_set_error():
     """Simulate surrogate training and plot test set error v. cost"""
     mf_sys = SystemSurrogate.load_from_file('sys_final.pkl')
@@ -305,4 +389,8 @@ def continue_mf(max_runtime_hr=16):
 if __name__ == '__main__':
     # train_mf()
     # plot_test_set_error()
-    continue_mf()
+    # continue_mf()
+    mf_sys = SystemSurrogate.load_from_file(CONFIG_DIR / 'sys_final.pkl')
+    slice_idx = ['u_n', 'f_n', 'vAN1', 'vAN2', 'vAN3', 'vAN4', 'delta_z', 'z0']
+    qoi_idx = ['I_D', 'T', 'uion0', 'uion1']
+    get_slice_plots(mf_sys, qoi_idx, slice_idx)

@@ -8,6 +8,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=36
 #SBATCH --output=./scripts/pem_v0/logs/%x-%j.log
+#SBATCH --error=./scripts/pem_v1/logs/%x-%j.err
 #SBATCH --export=ALL
 #SBATCH --mail-type=BEGIN,END,FAIL
 

@@ -28,7 +28,7 @@ CONFIG_DIR = model_config_dir()
 
 
 def pem_v0(save_dir: str | Path = None, executor: Executor = None, init: bool = True,
-           hf_override: bool = False, var_file: str | Path = CONFIG_DIR / 'variables_v1.json',
+           hf_override: bool = False, var_file: str | Path = CONFIG_DIR / 'variables_v1.json', # variables_v0/1
            from_file: str | Path = None) -> SystemSurrogate:
     """Return a `SystemSurrogate` object for the feedforward v0 PEM system.
 
