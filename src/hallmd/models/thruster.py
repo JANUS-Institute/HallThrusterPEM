@@ -249,6 +249,7 @@ def hallthruster_jl_wrapper(x: np.ndarray, alpha: tuple = (2, 2), *, compress: b
 
     def run_batch(job_num, index_batches, y):
         """Run a batch of indices into the input matrix `x`."""
+        print(f"Starting Job {job_num}")
         from juliacall import Main as jl
         jl.seval("using HallThruster")
         thruster_input = copy.deepcopy(base_input)

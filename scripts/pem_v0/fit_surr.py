@@ -31,7 +31,7 @@ from hallmd.utils import model_config_dir
 CONFIG_DIR = model_config_dir()
 
 
-def train_mf(max_runtime_hr=8):
+def train_mf(max_runtime_hr=12):
     """Train and compare MF v. SF surrogates."""
     with MPICommExecutor(MPI.COMM_WORLD, root=0) as executor:
         if executor is not None:

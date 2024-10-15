@@ -3,13 +3,14 @@
 
 #SBATCH --job-name=fit_surr_v0
 #SBATCH --partition=standard
-#SBATCH --time=00-17:30:00
+#SBATCH --time=01-01:30:00
 #SBATCH --nodes=1
 #SBATCH --mem-per-cpu=4g
 #SBATCH --ntasks-per-node=4
 #SBATCH --cpus-per-task=6
 #SBATCH --export=ALL
 #SBATCH --output=./scripts/pem_v0/logs/%x-%j.log
+#SBATCH --error=./scripts/pem_v0/logs/%x-%j.err
 #SBATCH --mail-type=BEGIN,END,FAIL
 
 set -e
