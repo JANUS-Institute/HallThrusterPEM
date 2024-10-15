@@ -130,8 +130,8 @@ def gen_test_set(N=500):
 
 if __name__ == '__main__':
     # Generate SVD and test set files
-    svd_dir = gen_svd_data(10, 0.95)
+    svd_dir = gen_svd_data()
     shutil.copyfile(svd_dir / 'plume_svd.pkl', CONFIG_DIR / 'plume_svd.pkl')
     shutil.copyfile(svd_dir / 'thruster_svd.pkl', CONFIG_DIR / 'thruster_svd.pkl')
-    test_dir = gen_test_set(10)
+    test_dir = gen_test_set()
     shutil.copyfile(test_dir / 'test_set.pkl', CONFIG_DIR / 'test_set.pkl')
