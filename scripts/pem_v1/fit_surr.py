@@ -295,15 +295,15 @@ def get_slice_plots(surr, qoi_ind, slice_idx):
         if i % 15 == 0: # plot slice every 15 iterations
             index_sliceidx = [surr.exo_vars.index(var) for var in slice_idx]
             xs = np.zeros((N, len(index_sliceidx), len(surr.exo_vars)))
-            for i in range(len(index_sliceidx)):
+            for j in range(len(index_sliceidx)):
                 # Make a random straight-line walk across d-cube
                 r0 = np.squeeze(surr.sample_inputs((1,), use_pdf=False), axis=0)
-                r0[index_sliceidx[i]] = exo_bds[index_sliceidx[i]][0]             # Start slice at this lower bound
+                r0[index_sliceidx[j]] = exo_bds[index_sliceidx[j]][0]             # Start slice at this lower bound
                 rf = np.squeeze(surr.sample_inputs((1,), use_pdf=False), axis=0)
-                rf[index_sliceidx[i]] = exo_bds[index_sliceidx[i]][1]             # Slice up to this upper bound
-                xs[0, i, :] = r0
+                rf[index_sliceidx[j]] = exo_bds[index_sliceidx[j]][1]             # Slice up to this upper bound
+                xs[0, j, :] = r0
                 for k in range(1, N):
-                    xs[k, i, :] = xs[k-1, i, :] + (rf-r0)/(N-1)
+                    xs[k, j, :] = xs[k-1, j, :] + (rf-r0)/(N-1)
             ys_surr = surr.predict(xs, index_set={'Thruster': index_set})
             ys_surr = surr.predict(xs, index_set={'Thruster': index_set})
             ys_model = list()
