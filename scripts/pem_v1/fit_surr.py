@@ -259,20 +259,25 @@ def get_slice_plots(surr, qoi_ind, slice_idx):
     activate_index(base_alpha, base_beta)
     nominal = {str(var): var.sample_domain((1,)) for var in surr.exo_vars}  # Random nominal test point
     N = 25
-    exo_bds = [rv.bounds() for rv in surr.exo_vars]
-    xs = np.zeros((N, len(slice_idx), len(surr.exo_vars)))
-    for i in range(len(slice_idx)):
+    exo_bds = [var.bounds() for var in surr.exo_vars]
+    index_sliceidx = [surr.exo_vars.index(var) for var in slice_idx]
+    xs = np.zeros((N, len(index_sliceidx), len(surr.exo_vars)))
+    for i in range(len(index_sliceidx)):
         # Make a random straight-line walk across d-cube
         r0 = np.squeeze(surr.sample_inputs((1,), use_pdf=False), axis=0)
-        r0[slice_idx[i]] = exo_bds[slice_idx[i]][0]             # Start slice at this lower bound
+        r0[index_sliceidx[i]] = exo_bds[index_sliceidx[i]][0]             # Start slice at this lower bound
         rf = np.squeeze(surr.sample_inputs((1,), use_pdf=False), axis=0)
-        rf[slice_idx[i]] = exo_bds[slice_idx[i]][1]             # Slice up to this upper bound
+        rf[index_sliceidx[i]] = exo_bds[index_sliceidx[i]][1]             # Slice up to this upper bound
         xs[0, i, :] = r0
         for k in range(1, N):
             xs[k, i, :] = xs[k-1, i, :] + (rf-r0)/(N-1)
     ys_surr = surr.predict(xs, index_set={'Thruster': index_set})
+    ys_model = list()
+    for model in ['best', 'worst']:
+        output_dir = None
+        ys_model.append(surr(xs, use_model=model, model_dir=output_dir))
     save_dict = {'slice_idx': slice_idx, 'qoi_idx': qoi_idx, 'show_model': ['best', 'worst'], 'show_surr': True,
-                    'nominal': nominal, 'random_walk': True, 'xs': xs, 'ys_model': None, 'ys_surr': ys_surr}
+                    'nominal': nominal, 'random_walk': True, 'xs': xs, 'ys_model': ys_model, 'ys_surr': ys_surr}
     fname = 'temp.pkl'
     with open(fname, 'wb') as fd:
         pickle.dump(save_dict, fd)
@@ -288,19 +293,25 @@ def get_slice_plots(surr, qoi_ind, slice_idx):
         print(f"{i}: Alpha = ", alpha, "Beta =", beta)
         activate_index(alpha, beta)  # Updates index_set with (alpha, beta) for Thruster node
         if i % 15 == 0: # plot slice every 15 iterations
-            xs = np.zeros((N, len(slice_idx), len(surr.exo_vars)))
-            for j in range(len(slice_idx)):
+            index_sliceidx = [surr.exo_vars.index(var) for var in slice_idx]
+            xs = np.zeros((N, len(index_sliceidx), len(surr.exo_vars)))
+            for i in range(len(index_sliceidx)):
                 # Make a random straight-line walk across d-cube
                 r0 = np.squeeze(surr.sample_inputs((1,), use_pdf=False), axis=0)
-                r0[slice_idx[j]] = exo_bds[slice_idx[j]][0]             # Start slice at this lower bound
+                r0[index_sliceidx[i]] = exo_bds[index_sliceidx[i]][0]             # Start slice at this lower bound
                 rf = np.squeeze(surr.sample_inputs((1,), use_pdf=False), axis=0)
-                rf[slice_idx[j]] = exo_bds[slice_idx[j]][1]             # Slice up to this upper bound
-                xs[0, j, :] = r0
+                rf[index_sliceidx[i]] = exo_bds[index_sliceidx[i]][1]             # Slice up to this upper bound
+                xs[0, i, :] = r0
                 for k in range(1, N):
-                    xs[k, j, :] = xs[k-1, j, :] + (rf-r0)/(N-1)
+                    xs[k, i, :] = xs[k-1, i, :] + (rf-r0)/(N-1)
             ys_surr = surr.predict(xs, index_set={'Thruster': index_set})
+            ys_surr = surr.predict(xs, index_set={'Thruster': index_set})
+            ys_model = list()
+            for model in ['best', 'worst']:
+                output_dir = None
+                ys_model.append(surr(xs, use_model=model, model_dir=output_dir))
             save_dict = {'slice_idx': slice_idx, 'qoi_idx': qoi_idx, 'show_model': ['best', 'worst'], 'show_surr': True,
-                            'nominal': nominal, 'random_walk': True, 'xs': xs, 'ys_model': None, 'ys_surr': ys_surr}
+                            'nominal': nominal, 'random_walk': True, 'xs': xs, 'ys_model': ys_model, 'ys_surr': ys_surr}
             fname = 'temp.pkl'
             with open(fname, 'wb') as fd:
                 pickle.dump(save_dict, fd)
