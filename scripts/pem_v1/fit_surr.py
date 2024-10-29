@@ -31,7 +31,7 @@ from hallmd.utils import model_config_dir
 CONFIG_DIR = model_config_dir()
 
 
-def train_mf(max_runtime_hr=8):
+def train_mf(max_runtime_hr=12):
     """Train and compare MF v. SF surrogates."""
     with MPICommExecutor(MPI.COMM_WORLD, root=0) as executor:
         if executor is not None:
@@ -201,7 +201,6 @@ def get_slice_plots(surr, qoi_ind, slice_idx):
     :param surr: the SystemSurrogate object
     :param qoi_ind: list of system QoI variables to make plot_slices on
     :param slice_idx: list of parameters to make slice plots with
-    :returns: 
     """
     qoi_ind = surr._get_qoi_ind(qoi_ind)
     Nqoi = len(qoi_ind)
@@ -258,24 +257,58 @@ def get_slice_plots(surr, qoi_ind, slice_idx):
     base_alpha = (0,) * len(comp.truth_alpha)
     base_beta = (0,) * (len(comp.max_refine) - len(comp.truth_alpha))
     activate_index(base_alpha, base_beta)
+    nominal = {str(var): var.sample_domain((1,)) for var in surr.exo_vars}  # Random nominal test point
+    N = 25
+    exo_bds = [rv.bounds() for rv in surr.exo_vars]
+    xs = np.zeros((N, len(slice_idx), len(surr.exo_vars)))
+    for i in range(len(slice_idx)):
+        # Make a random straight-line walk across d-cube
+        r0 = np.squeeze(surr.sample_inputs((1,), use_pdf=False), axis=0)
+        r0[slice_idx[i]] = exo_bds[slice_idx[i]][0]             # Start slice at this lower bound
+        rf = np.squeeze(surr.sample_inputs((1,), use_pdf=False), axis=0)
+        rf[slice_idx[i]] = exo_bds[slice_idx[i]][1]             # Slice up to this upper bound
+        xs[0, i, :] = r0
+        for k in range(1, N):
+            xs[k, i, :] = xs[k-1, i, :] + (rf-r0)/(N-1)
+    ys_surr = surr.predict(xs, index_set={'Thruster': index_set})
+    save_dict = {'slice_idx': slice_idx, 'qoi_idx': qoi_idx, 'show_model': ['best', 'worst'], 'show_surr': True,
+                    'nominal': nominal, 'random_walk': True, 'xs': xs, 'ys_model': None, 'ys_surr': ys_surr}
+    fname = 'temp.pkl'
+    with open(fname, 'wb') as fd:
+        pickle.dump(save_dict, fd)
+    fig, axs = surr.plot_slice(slice_idx, qoi_ind, show_model=['best', 'worst'], show_surr=True, N=25,
+                                    random_walk=True, nominal=nominal, model_dir=None, from_file=fname)
+    fig.savefig(f'plot_slice_initial.png', format='png', bbox_inches='tight')
     num_active.append(len(index_set))
     num_cand.append(len(candidate_set))
 
     # Iterate back over each step of surrogate training history and compute test set error
-    for i in range(5): # for i in range(max_iter):
+    for i in range(max_iter): # for i in range(max_iter):
         err_indicator, node, alpha, beta, num_evals, cost = surr.build_metrics['train_record'][i]
+        print(f"{i}: Alpha = ", alpha, "Beta =", beta)
         activate_index(alpha, beta)  # Updates index_set with (alpha, beta) for Thruster node
-        surr.graph.nodes['Thruster']['surrogate'].index_set = index_set
-        # ysurr = surr.predict(xt, index_set={'Thruster': index_set})  # (Ntest, Nqoi)
-        nominal = {str(var): var.sample_domain((1,)) for var in surr.exo_vars}  # Random nominal test point
-        fig, ax = surr.plot_slice(slice_idx, qoi_ind, show_model=['best', 'worst'], show_surr=True, N=1,
-                              random_walk=True, nominal=nominal, model_dir=None)
-        ax.set_title(f'Plot Iteration {i}')
-        fig.savefig(f'plot_slice_{i}.pdf', format='png', bbox_inches='tight')
+        if i % 15 == 0: # plot slice every 15 iterations
+            xs = np.zeros((N, len(slice_idx), len(surr.exo_vars)))
+            for j in range(len(slice_idx)):
+                # Make a random straight-line walk across d-cube
+                r0 = np.squeeze(surr.sample_inputs((1,), use_pdf=False), axis=0)
+                r0[slice_idx[j]] = exo_bds[slice_idx[j]][0]             # Start slice at this lower bound
+                rf = np.squeeze(surr.sample_inputs((1,), use_pdf=False), axis=0)
+                rf[slice_idx[j]] = exo_bds[slice_idx[j]][1]             # Slice up to this upper bound
+                xs[0, j, :] = r0
+                for k in range(1, N):
+                    xs[k, j, :] = xs[k-1, j, :] + (rf-r0)/(N-1)
+            ys_surr = surr.predict(xs, index_set={'Thruster': index_set})
+            save_dict = {'slice_idx': slice_idx, 'qoi_idx': qoi_idx, 'show_model': ['best', 'worst'], 'show_surr': True,
+                            'nominal': nominal, 'random_walk': True, 'xs': xs, 'ys_model': None, 'ys_surr': ys_surr}
+            fname = 'temp.pkl'
+            with open(fname, 'wb') as fd:
+                pickle.dump(save_dict, fd)
+            fig, axs = surr.plot_slice(slice_idx, qoi_ind, show_model=['best', 'worst'], show_surr=True, N=25,
+                                            random_walk=True, nominal=nominal, model_dir=None, from_file=fname)
+            fig.savefig(f'plot_slice_{i}.png', format='png', bbox_inches='tight')
         num_active.append(len(index_set))
         num_cand.append(len(candidate_set))
-        # print(f'i={i}, time={(t3-t1)/60.0:.2f} min, dt={(t3-t2)/60.0:.2f} min')
-
     return num_active, num_cand
 
 
@@ -391,6 +424,6 @@ if __name__ == '__main__':
     # plot_test_set_error()
     # continue_mf()
     mf_sys = SystemSurrogate.load_from_file(CONFIG_DIR / 'sys_final.pkl')
-    slice_idx = ['u_n', 'f_n', 'vAN1', 'vAN2', 'vAN3', 'vAN4', 'delta_z', 'z0']
+    slice_idx = ['u_n', 'f_n', 'vAN2', 'vAN4', 'z0']
     qoi_idx = ['I_D', 'T', 'uion0', 'uion1']
     get_slice_plots(mf_sys, qoi_idx, slice_idx)
