@@ -7,7 +7,8 @@ UNIQNAME    = morag
 # This is the path in Great Lakes to where projects will be
 # uploaded. By default goes to user's home directory.
 # Change this to select your preferred path.
-REMOTE_PATH := /nfs/turbo/coe-goroda/JANUS/GabrielMora/HallThrusterPem
+# REMOTE_PATH := /nfs/turbo/coe-goroda/JANUS/GabrielMora/HallThrusterPem
+REMOTE_PATH := /home/morag/HallThrusterPem
 
 #######################
 # TODO (end) #
