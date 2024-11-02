@@ -195,6 +195,133 @@ def get_test_set_error(surr, qoi_ind):
     return np.cumsum(cost_cum), test_error, dt, num_active, num_cand
 
 
+def get_slice_plots(surr, qoi_ind, slice_idx):
+    """Simulate training surrogate to generate plot slices during training.
+
+    :param surr: the SystemSurrogate object
+    :param qoi_ind: list of system QoI variables to make plot_slices on
+    :param slice_idx: list of parameters to make slice plots with
+    """
+    qoi_ind = surr._get_qoi_ind(qoi_ind)
+    Nqoi = len(qoi_ind)
+    max_iter = surr.refine_level  # Iterate up to last surrogate refinement level
+    xt, yt = surr.build_metrics['xt'], surr.build_metrics['yt']  # Same as the ones in test_set.pkl
+    comp = surr['Thruster'] # TODO: should generalize this to arbitrary components and put in convenience amisc function
+    index_set = []          # The active index set for Thruster component
+    candidate_set = []      # The candidate indices for Thruster component
+
+    def activate_index(alpha, beta):
+        # Add all possible new candidates (distance of one unit vector away)
+        ele = (alpha, beta)
+        ind = list(alpha + beta)
+        new_candidates = []
+        for i in range(len(ind)):
+            ind_new = ind.copy()
+            ind_new[i] += 1
+
+            # Don't add if we surpass a refinement limit
+            if np.any(np.array(ind_new) > np.array(comp.max_refine)):
+                continue
+
+            # Add the new index if it maintains downward-closedness
+            new_cand = (tuple(ind_new[:len(alpha)]), tuple(ind_new[len(alpha):]))
+            down_closed = True
+            for j in range(len(ind)):
+                ind_check = ind_new.copy()
+                ind_check[j] -= 1
+                if ind_check[j] >= 0:
+                    tup_check = (tuple(ind_check[:len(alpha)]), tuple(ind_check[len(alpha):]))
+                    if tup_check not in index_set and tup_check != ele:
+                        down_closed = False
+                        break
+            if down_closed:
+                new_candidates.append(new_cand)
+
+        # Move to the active index set
+        if ele in candidate_set:
+            candidate_set.remove(ele)
+        index_set.append(ele)
+        new_candidates = [cand for cand in new_candidates if cand not in candidate_set]
+        candidate_set.extend(new_candidates)
+
+        # Return total cost of activation
+        total_cost = 0.0
+        for a, b in new_candidates:
+            total_cost += comp.get_cost(a, b)
+        return total_cost
+
+    num_active = []                                # Number of active indices
+    num_cand = []                                  # Number of candidate indices
+
+    # Initial cost and test set error
+    base_alpha = (0,) * len(comp.truth_alpha)
+    base_beta = (0,) * (len(comp.max_refine) - len(comp.truth_alpha))
+    activate_index(base_alpha, base_beta)
+    nominal = {str(var): var.sample_domain((1,)) for var in surr.exo_vars}  # Random nominal test point
+    N = 25
+    exo_bds = [var.bounds() for var in surr.exo_vars]
+    index_sliceidx = [surr.exo_vars.index(var) for var in slice_idx]
+    xs = np.zeros((N, len(index_sliceidx), len(surr.exo_vars)))
+    for i in range(len(index_sliceidx)):
+        # Make a random straight-line walk across d-cube
+        r0 = np.squeeze(surr.sample_inputs((1,), use_pdf=False), axis=0)
+        r0[index_sliceidx[i]] = exo_bds[index_sliceidx[i]][0]             # Start slice at this lower bound
+        rf = np.squeeze(surr.sample_inputs((1,), use_pdf=False), axis=0)
+        rf[index_sliceidx[i]] = exo_bds[index_sliceidx[i]][1]             # Slice up to this upper bound
+        xs[0, i, :] = r0
+        for k in range(1, N):
+            xs[k, i, :] = xs[k-1, i, :] + (rf-r0)/(N-1)
+    ys_surr = surr.predict(xs, index_set={'Thruster': index_set})
+    ys_model = list()
+    for model in ['best', 'worst']:
+        output_dir = None
+        ys_model.append(surr(xs, use_model=model, model_dir=output_dir))
+    save_dict = {'slice_idx': slice_idx, 'qoi_idx': qoi_idx, 'show_model': ['best', 'worst'], 'show_surr': True,
+                    'nominal': nominal, 'random_walk': True, 'xs': xs, 'ys_model': ys_model, 'ys_surr': ys_surr}
+    fname = 'temp.pkl'
+    with open(fname, 'wb') as fd:
+        pickle.dump(save_dict, fd)
+    fig, axs = surr.plot_slice(slice_idx, qoi_ind, show_model=['best', 'worst'], show_surr=True, N=25,
+                                    random_walk=True, nominal=nominal, model_dir=None, from_file=fname)
+    fig.savefig(f'plot_slice_initial.png', format='png', bbox_inches='tight')
+    num_active.append(len(index_set))
+    num_cand.append(len(candidate_set))
+
+    # Iterate back over each step of surrogate training history and compute test set error
+    for i in range(max_iter): # for i in range(max_iter):
+        err_indicator, node, alpha, beta, num_evals, cost = surr.build_metrics['train_record'][i]
+        print(f"{i}: Alpha = ", alpha, "Beta =", beta)
+        activate_index(alpha, beta)  # Updates index_set with (alpha, beta) for Thruster node
+        if i % 15 == 0: # plot slice every 15 iterations
+            index_sliceidx = [surr.exo_vars.index(var) for var in slice_idx]
+            xs = np.zeros((N, len(index_sliceidx), len(surr.exo_vars)))
+            for j in range(len(index_sliceidx)):
+                # Make a random straight-line walk across d-cube
+                r0 = np.squeeze(surr.sample_inputs((1,), use_pdf=False), axis=0)
+                r0[index_sliceidx[j]] = exo_bds[index_sliceidx[j]][0]             # Start slice at this lower bound
+                rf = np.squeeze(surr.sample_inputs((1,), use_pdf=False), axis=0)
+                rf[index_sliceidx[j]] = exo_bds[index_sliceidx[j]][1]             # Slice up to this upper bound
+                xs[0, j, :] = r0
+                for k in range(1, N):
+                    xs[k, j, :] = xs[k-1, j, :] + (rf-r0)/(N-1)
+            ys_surr = surr.predict(xs, index_set={'Thruster': index_set})
+            ys_model = list()
+            for model in ['best', 'worst']:
+                output_dir = None
+                ys_model.append(surr(xs, use_model=model, model_dir=output_dir))
+            save_dict = {'slice_idx': slice_idx, 'qoi_idx': qoi_idx, 'show_model': ['best', 'worst'], 'show_surr': True,
+                            'nominal': nominal, 'random_walk': True, 'xs': xs, 'ys_model': ys_model, 'ys_surr': ys_surr}
+            fname = 'temp.pkl'
+            with open(fname, 'wb') as fd:
+                pickle.dump(save_dict, fd)
+            fig, axs = surr.plot_slice(slice_idx, qoi_ind, show_model=['best', 'worst'], show_surr=True, N=25,
+                                            random_walk=True, nominal=nominal, model_dir=None, from_file=fname)
+            fig.savefig(f'plot_slice_{i}.png', format='png', bbox_inches='tight')
+        num_active.append(len(index_set))
+        num_cand.append(len(candidate_set))
+    return num_active, num_cand
+
+
 def plot_test_set_error():
     """Simulate surrogate training and plot test set error v. cost"""
     mf_sys = SystemSurrogate.load_from_file('sys_final.pkl')
@@ -303,5 +430,10 @@ def continue_mf(max_runtime_hr=16):
 
 
 if __name__ == '__main__':
-    train_mf()
+    # train_mf()
     # plot_test_set_error()
+    # continue_mf()
+    mf_sys = SystemSurrogate.load_from_file(CONFIG_DIR / 'sys_final.pkl')
+    slice_idx = ["u_n", "f_n", "vAN1", "vAN2", "vAN3", "vAN4", "delta_z", "z0"]
+    qoi_idx = ['uion0', 'uion1']
+    get_slice_plots(mf_sys, qoi_idx, slice_idx)
