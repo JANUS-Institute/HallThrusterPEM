@@ -171,7 +171,7 @@ def hallthruster_jl_model(thruster_input: dict, jl=None) -> dict:
 def hallthruster_jl_wrapper(x: np.ndarray, alpha: tuple = (2, 2), *, compress: bool = False,
                             output_dir: str | Path = None, n_jobs: int = -1,
                             config: str | Path = CONFIG_DIR / 'hallthruster_jl.json',
-                            variables: str | Path = CONFIG_DIR / 'variables_v0.json',
+                            variables: str | Path = CONFIG_DIR / 'variables_v2.json',
                             svd_data: dict | str | Path = CONFIG_DIR / 'thruster_svd.pkl',
                             hf_override: tuple | bool = None, thruster: str = 'SPT-100'):
     """Wrapper function for Hallthruster.jl.
@@ -260,7 +260,7 @@ def hallthruster_jl_wrapper(x: np.ndarray, alpha: tuple = (2, 2), *, compress: b
         for i, index in enumerate(curr_batch):
             x_curr = [float(x[index + (i,)]) for i in range(x.shape[-1])]   # (xdim,)
             thruster_input.update({input_list[i]: x_curr[i] for i in range(x.shape[-1])})
-            print(f"Job {job_num} : Thruster input {thruster_input}")
+            # print(f"Job {job_num} : Thruster input {thruster_input}")
 
             # Run hallthruster.jl
             t1 = time.time()
@@ -325,8 +325,8 @@ def hallthruster_jl_wrapper(x: np.ndarray, alpha: tuple = (2, 2), *, compress: b
                 fname = f'{eval_id}_{index}.json'
                 files.append(fname)
                 data_write(save_dict, fname, output_dir)
-            print(f"Job {job_num} : Progression, Files: {files}, Costs: {costs}, Time: {t1}")
-        print(f"Job {job_num} : Completed Job, Files: {files}, Costs: {costs}, Time: {t1}")
+            # print(f"Job {job_num} : Progression, Files: {files}, Costs: {costs}, Time: {t1}")
+        # print(f"Job {job_num} : Completed Job, Files: {files}, Costs: {costs}, Time: {t1}")
         return files, costs
 
     # Evenly distribute input indices across batches
@@ -455,17 +455,13 @@ def uion_reconstruct(xr: np.ndarray, z: np.ndarray = None, L: float | np.ndarray
         return zg, uion_g
 
 if __name__ == '__main__':
-    # with open(Path(CONFIG_DIR / 'hallthruster_jl.json'), 'r') as fd:
-    #     config_data = json.load(fd)
-    #     default_inputs = load_variables(config_data['default_inputs'], Path(CONFIG_DIR / "variables_v0.json"))
-    #     base_input = {var.id: var.nominal for var in default_inputs}  # Set default values for variables.json RV inputs
-    #     base_input.update(config_data['H9'])                      # Set all other simulation configs
-    #     input_list = config_data['required_inputs']  # Needs to match xdim and correspond with str input ids to hallthruster.jl
-    #     output_list = config_data['outputs']
-    # base_input.update({'num_cells': 200, 'dt_s': 2e-08, 'max_charge': 3})  # Update model fidelity params
-    # with open(Path('.') / 'variables.json', 'w', encoding='utf-8') as fd:
-    #     json.dump(hallthruster_jl_input(base_input), fd, ensure_ascii=False, indent=4)
-    out1 = hallthruster_jl_model({'PB': -6.266282849972184, 'Va': 377.4053282245832, 'mdot_a': 2.5124609483855744, 'T_ec': 3, 'u_n': 194.48022318807296, 'c_w': 1.0, 'l_t': 4.1474, 'f_n': 8.368665576352544, 'vAN1': -1.2762866507369681, 'vAN2': 96.03258078181196, 'vAN3': 0.043996732778298325, 'vAN4': 0.01232519828448964, 'delta_z': 0.17297916847323186, 'z0': -0.11084631415081451, 'p0': 47.35361, 'alpha': 15, 'l_c': 0.08, 'V_cc': 23.36331684004538, 'channel_length': 0.025, 'inner_radius': 0.035, 'outer_radius': 0.05, 'wall_material': 'BNSiO2', 'propellant_material': 'Xenon', 'magnetic_field_file': 'bfield_spt100.csv', 'thruster_name': 'SPT-100', 'num_cells': 200, 'dt_s': np.float64(5.143928459844674e-09), 'duration_s': 0.001, 'max_charge': 3, 'num_save': 1000, 'time_avg_frame_start': 100, 'flux_function': 'rusanov', 'limiter': 'van_leer', 'magnetically_shielded': False, 'reconstruct': True, 'ion_wall_losses': True, 'electron_ion_collisions': True, 'anom_model': 'ShiftedGaussianBohm', 'neutral_temp_K': 300, 'ion_temp_K': 1000, 'background_temperature_K': 300, 'apply_thrust_divergence_correction': False})
-    out2 = hallthruster_jl_model({'PB': -4.69293520467977, 'Va': 336.65929265450916, 'mdot_a': 6.711251415884461, 'T_ec': 3, 'u_n': 141.26642668434974, 'c_w': 1.0, 'l_t': 4.1474, 'f_n': 6.970197081584589, 'vAN1': -1.279534638012819, 'vAN2': 34.244472025510014, 'vAN3': 0.03706671287596762, 'vAN4': 0.0048559696382862935, 'delta_z': 0.18692389527718517, 'z0': -0.14407803983850045, 'p0': 47.35361, 'alpha': 15, 'l_c': 0.08, 'V_cc': 42.09444833368371, 'channel_length': 0.025, 'inner_radius': 0.035, 'outer_radius': 0.05, 'wall_material': 'BNSiO2', 'propellant_material': 'Xenon', 'magnetic_field_file': 'bfield_spt100.csv', 'thruster_name': 'SPT-100', 'num_cells': 200, 'dt_s': np.float64(5.143928459844674e-09), 'duration_s': 0.001, 'max_charge': 3, 'num_save': 1000, 'time_avg_frame_start': 100, 'flux_function': 'rusanov', 'limiter': 'van_leer', 'magnetically_shielded': False, 'reconstruct': True, 'ion_wall_losses': True, 'electron_ion_collisions': True, 'anom_model': 'ShiftedGaussianBohm', 'neutral_temp_K': 300, 'ion_temp_K': 1000, 'background_temperature_K': 300, 'apply_thrust_divergence_correction': False})
-    print(out1)
-    print(out2)
+    with open(Path(CONFIG_DIR / 'hallthruster_jl.json'), 'r') as fd:
+        config_data = json.load(fd)
+        default_inputs = load_variables(config_data['default_inputs'], Path(CONFIG_DIR / "variables_v2.json"))
+        base_input = {var.id: var.nominal for var in default_inputs}  # Set default values for variables.json RV inputs
+        base_input.update(config_data['H9'])                      # Set all other simulation configs
+        input_list = config_data['required_inputs']  # Needs to match xdim and correspond with str input ids to hallthruster.jl
+        output_list = config_data['outputs']
+    base_input.update({'num_cells': 200, 'dt_s': 2e-08, 'max_charge': 3})  # Update model fidelity params
+    with open(Path('.') / 'variables.json', 'w', encoding='utf-8') as fd:
+        json.dump(hallthruster_jl_input(base_input), fd, ensure_ascii=False, indent=4)

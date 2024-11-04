@@ -276,7 +276,7 @@ def get_slice_plots(surr, qoi_ind, slice_idx):
     for model in ['best', 'worst']:
         output_dir = None
         ys_model.append(surr(xs, use_model=model, model_dir=output_dir))
-    save_dict = {'slice_idx': slice_idx, 'qoi_idx': qoi_idx, 'show_model': ['best', 'worst'], 'show_surr': True,
+    save_dict = {'slice_idx': slice_idx, 'qoi_idx': qoi_ind, 'show_model': ['best', 'worst'], 'show_surr': True,
                     'nominal': nominal, 'random_walk': True, 'xs': xs, 'ys_model': ys_model, 'ys_surr': ys_surr}
     fname = 'temp.pkl'
     with open(fname, 'wb') as fd:
@@ -309,7 +309,7 @@ def get_slice_plots(surr, qoi_ind, slice_idx):
             for model in ['best', 'worst']:
                 output_dir = None
                 ys_model.append(surr(xs, use_model=model, model_dir=output_dir))
-            save_dict = {'slice_idx': slice_idx, 'qoi_idx': qoi_idx, 'show_model': ['best', 'worst'], 'show_surr': True,
+            save_dict = {'slice_idx': slice_idx, 'qoi_idx': qoi_ind, 'show_model': ['best', 'worst'], 'show_surr': True,
                             'nominal': nominal, 'random_walk': True, 'xs': xs, 'ys_model': ys_model, 'ys_surr': ys_surr}
             fname = 'temp.pkl'
             with open(fname, 'wb') as fd:
@@ -391,7 +391,7 @@ def continue_mf(max_runtime_hr=16):
             test_set['xt'] = test_set['xt'][keep_idx, :]
             test_set['yt'] = test_set['yt'][keep_idx, :]
 
-            qoi_ind = ['I_D', 'T', 'uion0']
+            qoi_ind = ['uion0']
             # sf_sys.fit(qoi_ind=qoi_ind, num_refine=1000, max_iter=200, max_runtime=max_runtime_hr,
             #            save_interval=50, test_set=test_set, n_jobs=-1)
             mf_sys.fit(qoi_ind=qoi_ind, num_refine=1000, max_iter=300, max_runtime=max_runtime_hr,
@@ -430,10 +430,10 @@ def continue_mf(max_runtime_hr=16):
 
 
 if __name__ == '__main__':
-    # train_mf()
+    train_mf()
     # plot_test_set_error()
     # continue_mf()
-    mf_sys = SystemSurrogate.load_from_file(CONFIG_DIR / 'sys_final.pkl')
-    slice_idx = ["u_n", "f_n", "vAN1", "vAN2", "vAN3", "vAN4", "delta_z", "z0"]
-    qoi_idx = ['uion0', 'uion1']
-    get_slice_plots(mf_sys, qoi_idx, slice_idx)
+    # mf_sys = SystemSurrogate.load_from_file(CONFIG_DIR / 'sys_final.pkl')
+    # slice_idx = ["u_n", "f_n", "vAN1", "vAN2", "vAN3", "vAN4", "delta_z", "z0"]
+    # qoi_idx = ['uion0', 'uion1']
+    # get_slice_plots(mf_sys, qoi_idx, slice_idx)

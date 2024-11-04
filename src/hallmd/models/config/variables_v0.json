@@ -17,9 +17,9 @@
         "units": "V",
         "param_type": "calibration",
         "nominal": 30.93303,
-        "domain": [0, 60],
+        "domain": [26, 36],
         "rv_type": "uniform_bds",
-        "rv_params": [0, 60]
+        "rv_params": [26, 36]
     },
     "P*": {
         "id": "P*",
@@ -28,9 +28,9 @@
         "units": "$\\mu$-Torr",
         "param_type": "calibration",
         "nominal": 29.90806,
-        "domain": [1, 100],
+        "domain": [20, 40],
         "rv_type": "uniform_bds",
-        "rv_params": [1, 100]
+        "rv_params": [20, 40]
     },
     "PT": {
         "id": "PT",
@@ -39,9 +39,9 @@
         "units": "$\\mu$-Torr",
         "param_type": "calibration",
         "nominal": 10.60412,
-        "domain": [1, 100],
+        "domain": [1, 20],
         "rv_type": "uniform_bds",
-        "rv_params": [1, 100]
+        "rv_params": [1, 20]
     },
     "PB": {
         "id": "PB",
@@ -72,9 +72,9 @@
         "units": "m/s",
         "param_type": "calibration",
         "nominal": 278.01331,
-        "domain": [100, 500],
+        "domain": [200, 450],
         "rv_type": "uniform_bds",
-        "rv_params": [100, 500]
+        "rv_params": [200, 450]
     },
     "c_w": {
         "id": "c_w",
@@ -105,9 +105,9 @@
         "units": "m/s",
         "param_type": "calibration",
         "nominal": 6.23341,
-        "domain": [0.5, 10.0],
+        "domain": [0.5, 8.0],
         "rv_type": "uniform_bds",
-        "rv_params": [0.5, 10.0]
+        "rv_params": [0.5, 8.0]
     },
     "vAN1": {
         "id": "vAN1",
@@ -116,9 +116,9 @@
         "units": "-",
         "param_type": "calibration",
         "nominal": -2.15392,
-        "domain": [-2.5, -1],
+        "domain": [-2.5, -1.5],
         "rv_type": "uniform_bds",
-        "rv_params": [-2.5, -1]
+        "rv_params": [-2.5, -1.5]
     },
     "vAN2": {
         "id": "vAN2",
@@ -127,9 +127,9 @@
         "units": "-",
         "param_type": "calibration",
         "nominal": 10.01271,
-        "domain": [10, 100],
+        "domain": [1, 20],
         "rv_type": "uniform_bds",
-        "rv_params": [10, 100]
+        "rv_params": [1, 20]
     },
     "vAN3": {
         "id": "vAN3",
@@ -137,10 +137,10 @@
         "description": "Anomalous transport coefficient 3",
         "units": "-",
         "param_type": "calibration",
-        "nominal": 0.03506,
-        "domain": [0.03, 0.05],
+        "nominal": 0.02506,
+        "domain": [0.02, 0.03],
         "rv_type": "uniform_bds",
-        "rv_params": [0.03, 0.05]
+        "rv_params": [0.02, 0.03]
     },
     "vAN4": {
         "id": "vAN4",
@@ -281,9 +281,9 @@
         "units": "-",
         "param_type": "calibration",
         "nominal": 19.31920,
-        "domain": [18, 22],
+        "domain": [18, 21],
         "rv_type": "uniform_bds",
-        "rv_params": [18, 22]
+        "rv_params": [18, 21]
     },
     "c5": {
         "id": "c5",
@@ -303,7 +303,7 @@
         "units": "A",
         "param_type": "coupling",
         "nominal": 3.6,
-        "domain": [0, 20],
+        "domain": [0, 10],
         "rv_type": "none",
         "rv_params": []
     },
@@ -324,8 +324,8 @@
         "description": "Plume measurement axial distance from channel exit",
         "units": "m",
         "param_type": "other",
-        "nominal": 1.0,
-        "domain": [0.5, 2.0],
+        "nominal": 1,
+        "domain": [0.5, 1.5],
         "rv_type": "none",
         "rv_params": []
     },
@@ -336,7 +336,7 @@
         "units": "N",
         "param_type": "coupling",
         "nominal": 0.08,
-        "domain": [0, 0.4],
+        "domain": [0, 0.2],
         "rv_type": "none",
         "rv_params": []
     },
@@ -347,7 +347,7 @@
         "units": "N",
         "param_type": "coupling",
         "nominal": 0.08,
-        "domain": [0, 0.4],
+        "domain": [0, 0.2],
         "rv_type": "none",
         "rv_params": []
     },
@@ -358,7 +358,7 @@
         "units": "A",
         "param_type": "coupling",
         "nominal": 4.5,
-        "domain": [0, 20],
+        "domain": [0, 10],
         "rv_type": "none",
         "rv_params": []
     },
@@ -402,7 +402,7 @@
         "units": "km/s",
         "param_type": "coupling",
         "nominal": 18,
-        "domain": [14, 25],
+        "domain": [14, 22],
         "rv_type": "none",
         "rv_params": []
     },
