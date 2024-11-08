@@ -8,7 +8,6 @@ import uqtils as uq
 import matplotlib.pyplot as plt
 import matplotlib
 from scipy.optimize import direct, minimize, differential_evolution, OptimizeResult
-import skopt
 import h5py
 from joblib import Parallel
 
@@ -224,10 +223,6 @@ def run_mle(optimizer='nelder-mead', M=100):
         #     res = -spt100_log_likelihood(pts, DATA, SURR, comp=comp)
         #     i = np.argmin(res)
         #     res = {'fun': res[i], 'x': pts[i, :]}
-        # case 'bopt':
-        #     res = skopt.gp_minimize(obj_fun, bds, x0=x0, n_calls=100,
-        #                             acq_func="gp_hedge", acq_optimizer='lbfgs', n_initial_points=50,
-        #                             initial_point_generator='lhs', verbose=False, xi=0.01, noise=0.001)
 
     # res_dict = {'x0': x0, 'bds': bds, 'res': res}
     # with open(Path(surr_dir) / 'mle-result.pkl', 'wb') as fd:

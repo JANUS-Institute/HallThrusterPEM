@@ -1,6 +1,6 @@
 [project]
 name = "hallmd"
-dynamic = ["version"]
+version = "0.2.0"
 description = "Prototype of a multidisciplinary predictive engineering model (PEM) for a Hall thruster."
 authors = [
     {name = "Joshua Eckels", email = "eckelsjd@umich.edu"},
@@ -11,23 +11,21 @@ authors = [
     {name = "Benjamin Jorns", email = "bjorns@umich.edu"}
 ]
 dependencies = [
-    "numpy>=1.26.2",
-    "juliacall>=0.9.15",
+    "numpy>=2.0",
     "joblib>=1.3.2",
     "dill>=0.3.7",
-    "matplotlib>=3.8.2",
+    "matplotlib>=3.9",
     "scikit-optimize>=0.9.0",
-    "scipy>=1.11.4",
-    "amisc>=0.2.1",
+    "scipy>=1.14",
     "h5py>=3.10.0",
-    "uqtils>=0.3.1",
+    "uqtils>=0.4.2",
+    "amisc>=0.5.2",
 ]
 requires-python = ">=3.11"
-readme = "docs/README.md"
-license = {file = "LICENSE"}
-keywords = ["multidisciplinary", "Hall thruster", "modeling", "facility effects", "anomalous transport"]
+readme = "README.md"
+license = {text = "GPL-3.0"}
+keywords = ["multidisciplinary", "Hall thruster model", "facility effects", "anomalous transport"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
     "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
@@ -37,33 +35,43 @@ classifiers = [
 
 [project.urls]
 Repository = "https://github.com/JANUS-Institute/HallThrusterPEM.git"
+Documentation = "https://JANUS-Institute.github.io/HallThrusterPEM/"
 
 [build-system]
 requires = ["pdm-backend"]
 build-backend = "pdm.backend"
 
-[tool.pylint.MASTER]
-ignore-paths = [ "^.venv/.*$", "^docs/*" ]
+[tool.pdm]
+distribution = true
 
-[tool.pylint."MESSAGES CONTROL"]
-disable = '''
-missing-module-docstring,
-missing-class-docstring,
-missing-function-docstring
-'''
+[tool.pdm.install]
+cache = true
 
-[tool.pytest.ini_options]
-filterwarnings = [
-    "ignore::DeprecationWarning"
-]
+[tool.ruff.lint]
+select = ['E', 'F', 'I']
+ignore = ['E731']  # allow lambda definitions
 
-[tool.pdm.version]
-source = "file"
-path = "src/hallmd/__init__.py"
+[tool.ruff]
+line-length = 120
+extend-exclude = ["*.ipynb"]
+
+[tool.commitizen]
+version_scheme = "pep440"
+version_provider = "pep621"
+version_files = ["src/hallmd/__init__.py:__version__"]
+update_changelog_on_bump = true
+tag_format = "v$version"
+changelog_file = "CHANGELOG.md"
+major_version_zero = true
+annotated_tag = true
+post_bump_hooks = ["git push --follow-tags"]
+changelog_start_rev = "v0.2.0"
 
 [tool.pdm.scripts]
-test = "pytest --cov=hallmd tests"
+bump = "cz bump {args}"
+test = "pytest --cov=hallmd --cov-report html:htmlcov tests"
 docs = "mkdocs serve"
+lint = "ruff check src tests {args}"
 gen_data = {shell = "echo JOBID1=$(sbatch --account=${SLURM_ACCOUNT} --mail-user=${SLURM_MAIL} ./scripts/{args}/gen_data.sh | awk '{print $4}') > .env", help = "Usage: pdm run gen_data <scripts_folder>"}
 fit = {shell = "export $(cat .env | xargs) && sbatch --account=${SLURM_ACCOUNT} --mail-user=${SLURM_MAIL} --dependency=afterok:${JOBID1} ./scripts/{args}/fit_surr.sh", help = "Usage: pdm run fit <scripts_folder>"}
 train = {composite = ["gen_data {args}", "fit {args}"], help = "Usage: pdm run train <scripts_folder>. For example: pdm run train pem_v0"}
@@ -71,10 +79,26 @@ slice = {shell = 'read -a array <<< "{args}" && export MF_DIR="${array[1]}" && s
 
 [tool.pdm.dev-dependencies]
 dev = [
-    "pytest>=7.4.3",
-    "pytest-cov>=4.1.0",
-    "mkdocs>=1.5.3",
-    "mkdocs-material>=9.5.2",
-    "mkdocstrings[python]>=0.24.0",
-    "GitPython>=3.1.40",
+    "copier>=9.3",
+    "copier-templates-extensions>=0.3",
+    "ruff>=0.6",
+    "pre-commit>=3.8",
+    "commitizen>=3.29",
+    "nbstripout>=0.7.1",
+]
+test = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+]
+doc = [
+    "mkdocs>=1.5",
+    "mkdocs-material>=9.5",
+    "mkdocstrings[python]>=0.24",
+    "markdown-exec[ansi]>=1.9",
+    "mkdocs-gen-files>=0.5",
+    "mkdocs-literate-nav>=0.6",
+    "mkdocs-redirects>=1.2",
+    "mkdocs-git-committers-plugin-2>=2.3",
+    "mkdocs-git-revision-date-localized-plugin>=1.2",
+    "mkdocs-coverage>=1.0",
 ]

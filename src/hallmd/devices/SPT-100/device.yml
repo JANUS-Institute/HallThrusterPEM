@@ -1,0 +1,7 @@
+name: SPT-100
+geometry:
+  channel_length: 0.025
+  inner_radius: 0.035
+  outer_radius: 0.05
+magnetic_field: bfield_spt100.csv
+shielded: false

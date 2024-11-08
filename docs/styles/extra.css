@@ -1,0 +1,14 @@
+:root {
+    --md-tooltip-width: 500px;
+    --doc-symbol-package-fg-color: #7C4700;
+    --doc-symbol-package-bg-color: #7C47001a;
+}
+
+code.doc-symbol-package::after {
+    content: "pack";
+}
+
+code.doc-symbol-package {
+  color: var(--doc-symbol-package-fg-color);
+  background-color: var(--doc-symbol-package-bg-color);
+}
