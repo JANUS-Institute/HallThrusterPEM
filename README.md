@@ -1,13 +1,18 @@
-![Logo](assets/hallmd_logo_text.svg)
+![Logo](https://raw.githubusercontent.com/JANUS-Institute/HallThrusterPEM/main/docs/assets/hallmd_logo_text.svg)
+
 [![pdm-managed](https://img.shields.io/badge/pdm-managed-blueviolet)](https://pdm-project.org)
-[![Python 3.11](https://img.shields.io/badge/python-3.11+-blue.svg?logo=python&logoColor=cccccc)](https://www.python.org/downloads/)
+[![Python version](https://img.shields.io/badge/python-3.11+-blue.svg?logo=python&logoColor=cccccc)](https://www.python.org/downloads/)
+[![Copier](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/copier-org/copier/master/img/badge/badge-grayscale-inverted-border-orange.json)](https://github.com/eckelsjd/copier-numpy)
+![build](https://img.shields.io/github/actions/workflow/status/JANUS-Institute/HallThrusterPEM/deploy.yml?logo=github)
+![docs](https://img.shields.io/github/actions/workflow/status/JANUS-Institute/HallThrusterPEM/docs.yml?logo=materialformkdocs&logoColor=%2523cccccc&label=docs)
+![tests](https://img.shields.io/github/actions/workflow/status/JANUS-Institute/HallThrusterPEM/tests.yml?logo=github&logoColor=%2523cccccc&label=tests)
+![Code Coverage](https://img.shields.io/badge/coverage-89%25-yellowgreen?logo=codecov)
+[![Journal article](https://img.shields.io/badge/DOI-10.1007/s44205-024-00079-w-blue)](https://rdcu.be/dVmim)
 
-Prototype of a predictive engineering model (PEM) of a Hall thruster. Integrates sub-models from multiple disciplines
-to simulate a Hall thruster operating in a vacuum chamber. Uses uncertainty quantification techniques to extrapolate model
-predictions to a space-like environment.
+Prototype of a predictive engineering model (PEM) of a Hall thruster. Integrates sub-models from multiple disciplines to simulate a Hall thruster operating in a vacuum chamber. Uses uncertainty quantification techniques to extrapolate model predictions to a space-like environment.
 
-## Installation
-We highly recommend using [pdm](https://github.com/pdm-project/pdm):
+## ⚙️ Installation
+Using [pdm](https://github.com/pdm-project/pdm):
 ```shell
 pip install --user pdm
 git clone https://github.com/JANUS-Institute/HallThrusterPEM.git
@@ -15,7 +20,9 @@ cd HallThrusterPEM
 pdm install
 ```
 
-## Quickstart
+You may also download the source from the releases.
+
+## 📍 Quickstart
 ```python
 import numpy as np
 import matplotlib.pyplot as plt
@@ -49,16 +56,8 @@ plot_qoi(ax, pressure[idx], ys[idx, :], 'Background pressure (Torr)', 'Thrust (m
 plt.show()
 ```
 
-## Viewing the docs
-The documentation can be viewed locally with the `mkdocs` utility:
-```shell
-cd HallThrusterPEM
-pdm run docs         # Open http://127.0.0.1:8000/ in a browser to view
-```
-Eventually this will be made public when the project is made open-source.
-
 ## Project structure
-```
+```tree
 HallThrusterPEM                 # Root project directory
 |- docs                         # Documentation and references
 |- scripts                      # Scripts for building PEM surrogates
@@ -84,8 +83,10 @@ HallThrusterPEM                 # Root project directory
 |- setup_env.sh                 # Convenience script for setting up pdm environment
 ```
 
-## Contributing
-See the [contribution](CONTRIBUTING.md) guidelines.
+## 🏗️ Contributing
+See the [contribution](https://github.com/JANUS-Institute/HallThrusterPEM/blob/main/CONTRIBUTING.md) guidelines.
 
-## Citations
-Coming soon.
+## 📖 Reference
+[[1](https://rdcu.be/dVmim)] Eckels, J. et al., "Hall thruster model improvement by multidisciplinary uncertainty quantification," Journal of Electric Propulsion, September 2024.
+
+<sup><sub>Made with the [copier-numpy](https://github.com/eckelsjd/copier-numpy.git) template.</sub></sup>

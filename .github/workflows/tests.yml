@@ -1,23 +1,38 @@
-name: Run PR test matrix
+name: Lint and test
 on:
   pull_request:
     branches: [ main ]
 permissions:
   contents: write
 jobs:
+  check-lint:
+    name: Lint check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pdm-project/setup-pdm@v4
+        with:
+          python-version: 3.11
+          cache: true
+      - run: pdm sync -G dev --no-default
+      - run: pdm run lint
+
   pr-tests:
+    name: PR tests
     runs-on: ${{ matrix.os }}
+    needs: check-lint
     strategy:
       matrix:
         python-version: ['3.11', '3.12']
-        os: [ ubuntu-latest, macOS-latest, windows-latest ]
+        os: [ ubuntu-latest, windows-latest ]
     steps:
       - uses: actions/checkout@v4
       - name: Set up PDM
         uses: pdm-project/setup-pdm@v4
         with:
+          cache: true
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
-        run: pdm install
+        run: pdm sync -G test
       - name: Run tests
         run: pdm run -v test
