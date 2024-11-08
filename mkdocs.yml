@@ -1,9 +1,10 @@
 site_name: Multidisciplinary Hall thruster modeling
-#site_url: https://eckelsjd.github.io/amisc/
+site_url: https://JANUS-Institute.github.io/HallThrusterPEM/
 site_author: Joshua Eckels
 repo_name: JANUS-Institute/HallThrusterPEM
-repo_url: https://github.com/JANUS-Institute/HallThrusterPEM.git
+repo_url: https://github.com/JANUS-Institute/HallThrusterPEM
 copyright: Copyright &copy 2024 Joshua Eckels
+watch: [mkdocs.yml, README.md, CONTRIBUTING.md, CHANGELOG.md, src]
 
 theme:
   name: material
@@ -18,9 +19,14 @@ theme:
   features:
     - content.code.annotate
     - content.code.copy
+    - content.code.select
+    - content.tabs.link
+    - content.tooltips
     - navigation.footer
     - navigation.instant
-    - navigation.tabs
+    - navigation.tabs       # Tab navigation at top of page
+    - navigation.sections   # Extra layer in the left navigation panel
+    - navigation.indexes    # Allow section titles to be clickable with an "index.md" file
     - navigation.top
     - navigation.tracking
     - search.highlight
@@ -39,46 +45,88 @@ plugins:
             docstring_style: sphinx
             docstring_section_style: spacy
             merge_init_into_class: true
-            filters: ["!^_"]
-            show_symbol_type_heading: true  # not available to public right now
+            filters: [ "!^_" ]
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
             group_by_category: true
+            show_root_heading: true
+            heading_level: 1
+  - coverage:
+      html_report_dir: htmlcov
+  - git-committers:
+      repository: JANUS-Institute/HallThrusterPEM
+      branch: main
+      exclude:
+        - reference/*
+        - abbreviations.md
+        - coverage.md
+        - changelog.md
+  - git-revision-date-localized:
+      enable_creation_date: true
+      type: timeago
+      exclude:
+        - reference/*
+        - abbreviations.md
+        - coverage.md
+        - changelog.md
+  - markdown-exec
+  - gen-files:
+      scripts:
+        - docs/gen_ref_pages.py
+  - literate-nav:
+      nav_file: SUMMARY.md
+  - redirects:
+      redirect_maps:
+        index.md: start.md  # Force index page to be the "getting started" page, which is actually the README
 
 nav:
   - Home:
-      - Getting started: README.md
-      - Tutorials: tutorials.md
-      - How-to Guides: how-to-guides.md
-      - Contributing: CONTRIBUTING.md
-  - API Reference:
-      - Overview: reference/overview.md
-      - Experimental data:
-          - Summary: reference/data.md
-          - SPT-100: reference/spt100.md
-      - Models:
-          - Summary: reference/models.md
-          - Cathode: reference/cathode.md
-          - Thruster: reference/thruster.md
-          - Plume: reference/plume.md
-          - PEM: reference/pem.md
-      - Utilities: reference/utils.md
+      - Getting started: start.md
+      - Tutorial: tutorial.md
+      - Examples: examples.md
+      - Contributing: contributing.md
+      - Coverage report: coverage.md
+      - Changelog: changelog.md
+  - How-to Guides:
+      - Old: guides/how-to-guides.md
+      - Load experimental data: guides/data.md
+      - Run a Hall thruster model: guides/model.md
+      - Build a surrogate: guides/surrogate.md
+      - Calibrate a model: guides/calibrate.md
+      - Validate a model: guides/validate.md
+  - API reference: reference/  # literate-nav + gen-files
   - Theory:
-      - Overview: theory.md
+      - Experimental data:
+          - Summary: theory/data.md
+          - SPT-100: theory/spt100.md
+      - Models:
+          - Summary: theory/models.md
+
+exclude_docs: |
+  abbreviations.md
+  gen_ref_pages.py
 
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/eckelsjd
+      link: https://github.com/JANUS-Institute
 
 extra_javascript:
-  - javascripts/mathjax.js
+  - javascript/mathjax.js
   - https://polyfill.io/v3/polyfill.min.js?features=es6
-  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
 
-#extra_css:
-#  - css/extra.css
+extra_css:
+  - styles/extra.css
 
 markdown_extensions:
+  - abbr                      # Abbreviations
   - admonition
+  - attr_list                 # Add HTML/CSS attributes to markdown elements
+  - md_in_html
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
   - pymdownx.superfences:
       custom_fences:
         - name: mermaid
@@ -91,6 +139,13 @@ markdown_extensions:
   - pymdownx.arithmatex:
       generic: true
   - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
   - pymdownx.snippets:
       dedent_subsections: true
       base_path: ['.', './src']
+      auto_append:
+        - docs/abbreviations.md

@@ -1,0 +1,32 @@
+default_install_hook_types: [ pre-commit, commit-msg ]
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0  # Use the latest version available
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-added-large-files
+      - id: check-merge-conflict
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.1   # Use the desired version of ruff
+    hooks:
+      - id: ruff
+        files: ^src/|^tests/
+        args: [ --exit-non-zero-on-fix ]
+
+  - repo: local
+    hooks:
+      - id: pytest-status
+        name: pytest-status
+        description: "Make sure all tests have passed since last source code change."
+        entry: pdm run python _pre_commit_checks.py
+        args: [ --pytest-status ]
+        language: system
+        pass_filenames: false
+        require_serial: true
+
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v3.29.0
+    hooks:
+      - id: commitizen

@@ -34,9 +34,7 @@ if [ -d "../amisc" ]; then
     pdm add -e ../amisc --dev
 fi
 
-# Run juliacall update (can't do in sbatch for some GitError)
-echo "Initializing juliacall..."
-pdm run python -c "import juliacall"
+# TODO: install julia and HallThruster.jl in the venv
 
 # Add slurm user account info to .bashrc
 if [[ -z "${SLURM_ACCOUNT}" || -z "${SLURM_MAIL}" ]]; then

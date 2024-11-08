@@ -1,0 +1,15 @@
+# Changes here will be overwritten by Copier (DO NOT EDIT MANUALLY)
+_commit: v0.5.1
+_src_path: gh:eckelsjd/copier-numpy
+author_email: eckelsjd@umich.edu
+author_name: Joshua Eckels
+copyright_license: GPL-3.0
+include_docs: true
+init_github: false
+install_jupyter: false
+is_distributable: false
+project_description: Prototype of a multidisciplinary predictive engineering model
+    (PEM) for a Hall thruster.
+project_name: HallThrusterPEM
+repository_namespace: JANUS-Institute
+requires_python: '>=3.11'
