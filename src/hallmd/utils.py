@@ -15,6 +15,10 @@ from importlib import resources
 import numpy as np
 from uqtils import ax_default
 
+FUNDAMENTAL_CHARGE = 1.602176634e-19   # Fundamental charge (C)
+BOLTZMANN_CONSTANT = 1.380649e-23      # Boltzmann constant (J/K)
+TORR_2_PA = 133.322                    # Conversion factor from Torr to Pa
+
 
 def model_config_dir():
     """Return a path to the model configuration directory"""

@@ -18,9 +18,9 @@ dependencies = [
     "matplotlib>=3.9",
     "scikit-optimize>=0.9.0",
     "scipy>=1.14",
-    "amisc>=0.5.2",
     "h5py>=3.10.0",
     "uqtils>=0.4.2",
+    "amisc>=0.5.2"
 ]
 requires-python = ">=3.11"
 readme = "README.md"
