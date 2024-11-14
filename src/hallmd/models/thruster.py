@@ -1,451 +1,271 @@
-""" `thruster.py`
-
-Module for Hall thruster models.
+"""Module for Hall thruster models.
 
 !!! Note
     Only current implementation is for the 1d fluid [Hallthruster.jl code](https://github.com/UM-PEPL/HallThruster.jl).
-    Other thruster codes can be implemented similarly here. Place extra resources needed by the model in the `config`
-    directory.
+    Other thruster codes can be implemented similarly here.
 
-Includes
---------
-- `hallthruster_jl_input()` - Used to format inputs for Hallthruster.jl
-- `hallthruster_jl_model()` - Used to run Hallthruster.jl for a single set of inputs
-- `hallthruster_jl_wrapper()` - The main wrapper function that is compatible with `SystemSurrogate`
-- `uion_reconstruct()` - Convenience function for reconstructing ion velocity profiles from compressed data
+Includes:
+
+- `hallthruster_jl_model()` - Wrapper to run HallThruster.jl for a single set of inputs
+- `INPUTS_TO_JL` - Mapping of PEM input names to HallThruster.jl input names
+- `OUTPUTS_TO_JL` - Mapping of PEM output names to HallThruster.jl output names
 """
+import subprocess
+from importlib import resources
 from pathlib import Path
 import time
-import pickle
 import copy
 import json
 import tempfile
 import os
 import random
 import string
+from typing import Literal
 
-import juliacall
 import numpy as np
-from joblib import Parallel, delayed, cpu_count
-from joblib.externals.loky import set_loky_pickler
-from amisc.utils import load_variables, get_logger
+from amisc.typing import Dataset
+from scipy.interpolate import interp1d
 
-from hallmd.utils import ModelRunException, data_write, model_config_dir
+from hallmd.utils import load_device
 
-Q_E = 1.602176634e-19   # Fundamental charge (C)
-CONFIG_DIR = model_config_dir()
+__all__ = ['hallthruster_jl_model']
 
 
-def hallthruster_jl_input(thruster_input: dict) -> dict:
-    """Format inputs for Hallthruster.jl.
+INPUTS_TO_JL = {
+    'P_b': 'background_pressure',       # Torr
+    'mdot_a': 'anode_mass_flow_rate',   # kg/s
+    'V_cc': 'cathode_potential',        # V
+    'u_n': 'neutral_velocity',          # m/s
+    'T_e': 'cathode_Te',                # eV
+    'l_t': 'transition_length',         # m
+    'V_a': 'discharge_voltage',         # V
+    # anom coefficients are handled separately
+}
 
-    :param thruster_input: dictionary with all named thruster inputs and values
-    :returns: a nested `dict` in the format that Hallthruster.jl expects to be called
-    """
-    anom_model = thruster_input['anom_model']
-    anom_model_coeffs = []
-    if anom_model == "ShiftedTwoZoneBohm" or anom_model == "TwoZoneBohm":
-        vAN1 = 10 ** thruster_input['vAN1']
-        vAN2 = vAN1 * thruster_input['vAN2']
-        anom_model_coeffs = [vAN1, vAN2]
-    elif anom_model == "ShiftedGaussianBohm":
-        vAN1 = 10 ** thruster_input['vAN1']
-        vAN2 = vAN1 * thruster_input['vAN2']
-        vAN3 = thruster_input['vAN3']
-        vAN4 = thruster_input['vAN4']
-        anom_model_coeffs = [vAN1, vAN2, vAN3, vAN4]
+OUTPUTS_TO_JL = {
+    'I_B0': 'ion_current',       # A
+    'I_d': 'discharge_current',  # A
+    'T': 'thrust',               # N
+    'eta_c': 'current_eff',      # -
+    'eta_m': 'mass_eff',         # -
+    'eta_v': 'voltage_eff',      # -
+    'eta_a': 'anode_eff',        # -
+    'u_ion': 'ui_1',             # m/s
+}
 
-    json_data = {
-        # parameters
-        'neutral_temp_K': thruster_input['neutral_temp_K'],
-        'neutral_velocity_m_s': thruster_input['u_n'],
-        'ion_temp_K': thruster_input['ion_temp_K'],
-        'cathode_electron_temp_eV': thruster_input['T_ec'],
-        'sheath_loss_coefficient': thruster_input['c_w'],
-        'inner_outer_transition_length_m': thruster_input['l_t'] * 1e-3,
-        'anom_model_coeffs': anom_model_coeffs,
-        'background_pressure_Torr': 10 ** thruster_input['PB'],
-        'background_temperature_K': thruster_input['background_temperature_K'],
-        'neutral_ingestion_multiplier': thruster_input['f_n'],
-        'apply_thrust_divergence_correction': thruster_input['apply_thrust_divergence_correction'],
-        # design
-        'thruster_name': thruster_input['thruster_name'],
-        'inner_radius': thruster_input['inner_radius'],
-        'outer_radius': thruster_input['outer_radius'],
-        'channel_length': thruster_input['channel_length'],
-        'magnetic_field_file': str(CONFIG_DIR / thruster_input['magnetic_field_file']),
-        'wall_material': thruster_input['wall_material'],
-        'magnetically_shielded': thruster_input['magnetically_shielded'],
-        'anode_potential': thruster_input['Va'],
-        'cathode_potential': thruster_input['V_cc'],
-        'anode_mass_flow_rate': thruster_input['mdot_a'] * 1e-6,
-        'propellant': thruster_input['propellant_material'],
-        # simulation                  
-        'num_cells': thruster_input['num_cells'],
-        'dt_s': thruster_input['dt_s'],
-        'duration_s': thruster_input['duration_s'],
-        'num_save': thruster_input['num_save'],
-        'cathode_location_m': thruster_input['l_c'],
-        'max_charge': thruster_input['max_charge'],
-        'flux_function': thruster_input['flux_function'],
-        'limiter': thruster_input['limiter'],
-        'reconstruct': thruster_input['reconstruct'],
-        'ion_wall_losses': thruster_input['ion_wall_losses'],
-        'electron_ion_collisions': thruster_input['electron_ion_collisions'],
-        'anom_model': thruster_input['anom_model'],
+
+def _format_hallthruster_jl_input(thruster_inputs: dict, thruster: dict | str, config: dict, simulation: dict,
+                                  postprocess: dict, model_fidelity: tuple, output_path: str | Path) -> dict:
+    """Helper function to format inputs for `Hallthruster.jl` as a `dict` writeable to `json`. See the call
+    signature of `hallthruster_jl_model` for more details on arguments.
+
+    The return `dict` has the format:
+    ```json
+    {
+        "config": {
+            "thruster": {...},
+            "discharge_voltage": 300,
+            "domain": [0, 0.08],
+            "anode_mass_flow_rate": 1e-6,
+            "background_pressure": 1e-5,
+            etc.
+        },
+        "simulation": {
+            "ncells": 202,
+            "dt": 8.4e-9
+            "duration": 1e-3,
+            etc.
+        }
+        "postprocess": {...}
     }
-    
-    if anom_model == 'ShiftedTwoZone' or anom_model == 'ShiftedGaussianBohm':
-        # Add extra parameters for anomalous transport models that depend on pressure
-        json_data.update({'pressure_dz': thruster_input['delta_z'] * thruster_input['channel_length'],
-                          'pressure_z0': thruster_input['z0'] * thruster_input['channel_length'],
-                          'pressure_pstar': thruster_input['p0'] * 1e-6,
-                          'pressure_alpha': thruster_input['alpha']})
-    return json_data
+    ```
 
-
-def hallthruster_jl_model(thruster_input: dict, jl=None) -> dict:
-    """Run a single Hallthruster.jl simulation for a given set of inputs.
-
-    :param thruster_input: named key-value pairs of thruster inputs
-    :param jl: an instance of `julicall.Main` for running Julia code from within Python
-    :raises ModelRunException: if anything fails in `juliacall`
-    :returns: `dict` of Hallthruster.jl outputs for this input
+    :returns: a json `dict` in the format that `HallThruster.run_simulation()` expects to be called
     """
-    # Import Julia
-    if jl is None:
-        from juliacall import Main as jl
-        jl.seval("using HallThruster")
+    json_config = {'config': {} if config is None else copy.deepcopy(config),
+                   'simulation': {} if simulation is None else copy.deepcopy(simulation),
+                   'postprocess': {} if postprocess is None else copy.deepcopy(postprocess)}
 
-    # Format inputs for Hallthruster.jl
-    json_data = hallthruster_jl_input(thruster_input)
+    # Necessary to load thruster specs separately from the simulation config (to protect sensitive data)
+    if isinstance(thruster, str):
+        thruster = load_device(thruster)
+    if thruster is not None:
+        json_config['config']['thruster'] = thruster  # override
+
+    # Override model fidelity quantities
+    if model_fidelity is not None:
+        ncells = 50 * (model_fidelity[0] + 2)
+        ncharge = model_fidelity[1] + 1
+        dt_map = [12.5e-9, 8.4e-9, 6.3e-9]
+        dt_s = dt_map[model_fidelity[0]] if ncharge <= 2 else dt_map[model_fidelity[0]] / np.sqrt(3 / 2)
+        json_config['simulation']['ncells'] = ncells
+        json_config['simulation']['dt'] = dt_s
+        json_config['config']['ncharge'] = ncharge
+
+    # Update/override config with PEM thruster inputs
+    for pem_key, jl_key in INPUTS_TO_JL.items():
+        if pem_val := thruster_inputs.get(pem_key):
+            json_config['config'][jl_key] = pem_val
+
+    # Handle anomalous transport model
+    if anom_model := json_config['config'].get('anom_model'):
+        match anom_model.get('type', 'TwoZoneBohm'):
+            case 'TwoZoneBohm':
+                c1, c2 = anom_model.get('params', (0.00625, 0.0625))
+                c1 = thruster_inputs.get('a_1', c1)
+                c2 = thruster_inputs.get('a_2', c2)
+                anom_model['params'] = [c1, c2]
+            case 'ShiftedTwoZoneBohm':
+                c1, c2, z0, dz, alpha, pstar = anom_model.get('params', (0.00625, 0.0625, -0.12, 0.2, 15, 45e-6))
+                c1 = thruster_inputs.get('a_1', c1)
+                c2 = thruster_inputs.get('a_2', c2)
+                z0 = thruster_inputs.get('z0', z0)
+                dz = thruster_inputs.get('delta_z', dz)
+                alpha = thruster_inputs.get('alpha', alpha)
+                pstar = thruster_inputs.get('p0', pstar)
+                anom_model['params'] = [c1, c2, z0, dz, alpha, pstar]
+            case _:
+                raise ValueError(f"Unknown anomalous transport model: {anom_model['type']}")
+
+    def _random_filename():
+        fname = f'hallthruster_jl'
+        if name := json_config['config'].get('thruster', {}).get('name'):
+            fname += f'_{name}'
+        if vd := json_config['config'].get('discharge_voltage'):
+            fname += f'_{round(vd)}V'
+        if mdot := json_config['config'].get('anode_mass_flow_rate'):
+            fname += f'_{mdot:.1e}kg_s'
+
+        fname += '_' + ''.join(random.choices(string.ascii_uppercase + string.digits, k=4)) + '.json'
+        return fname
+
+    # Make sure we request performance metrics, time-averaged, and output file name
+    duration = json_config['simulation'].get('duration', 1e-3)
+    avg_start_time = json_config['postprocess'].get('average_start_time', 0.5 * duration)
+    metrics = json_config['postprocess'].get('metrics', [])
+    for required_metric in ['thrust', 'discharge_current', 'ion_current', 'current_eff', 'mass_eff', 'voltage_eff',
+                            'anode_eff']:
+        if required_metric not in metrics:
+            metrics.append(required_metric)
+    json_config['postprocess']['metrics'] = metrics
+    json_config['postprocess']['average_start_time'] = avg_start_time
+
+    output_file = _random_filename()
+    if output_path is not None:
+        output_file = str((Path(output_path) / output_file).resolve())
+    json_config['postprocess']['output_file'] = output_file
+
+    # Make sure we have all required simulation configs
+    for required_config in ['thruster', 'discharge_voltage', 'domain', 'anode_mass_flow_rate']:
+        if required_config not in json_config['config']:
+            raise ValueError(f"Missing required simulation config: {required_config}")
+    for required_config in ['duration', 'ncells', 'dt']:
+        if required_config not in json_config['simulation']:
+            raise ValueError(f"Missing required simulation config: {required_config}")
+
+    return json_config
+
+
+def hallthruster_jl_model(thruster_inputs: Dataset,
+                          thruster: Literal['SPT-100'] | str | dict = 'SPT-100',
+                          config: dict = None,
+                          simulation: dict = None,
+                          postprocess: dict = None,
+                          julia_script: str | Path = None,
+                          u_ion_coords: np.ndarray = None,
+                          model_fidelity: tuple = (2, 2),
+                          output_path: str | Path = None) -> Dataset:
+    """Run a single `HallThruster.jl` simulation for a given set of inputs. This function will write a temporary
+    input file to disk, call `HallThruster.run_simulation()` in Julia, and read the output file back into Python. Will
+    return time-averaged performance metrics and ion velocity for use with the PEM.
+
+    !!! Warning "Required configuration"
+        You must specify a thruster, a domain, a mass flow rate, and a discharge voltage to run the simulation. The
+        thruster must be defined in the `hallmd.devices` directory or as a dictionary with the required fields.
+        The mass flow rate and discharge voltage are specified in `thruster_inputs` as `mdot_a` (kg/s) and
+        `V_a` (V), respectively. The domain is specified as a list `[left_bound, right_bound]` in the
+        `config` dictionary. See the
+        [HallThruster.jl docs](https://um-pepl.github.io/HallThruster.jl/stable/config/) for more details.
+
+    :param thruster_inputs: named key-value pairs of thruster inputs: `P_b`, `V_a`, `mdot_a`, `T_e`, `u_n`, `l_t`,
+                            `a_1`, `a_2`, `delta_z`, `z0`, `p0`, and `V_cc` for background pressure (Torr), anode
+                            voltage, anode mass flow rate (kg/s), electron temperature (eV), neutral velocity (m/s),
+                            transition length (m), anomalous transport coefficients, and cathode coupling voltage. Will
+                            override the corresponding values in `simulation_config` if provided.
+    :param thruster: the name of the thruster to simulate (must be importable from `hallmd.devices`, see
+                     [`load_device`][hallmd.utils.load_device]), or a dictionary that provides geometry and
+                     magnetic field information of the thruster to simulate; see the
+                     [Hallthruster.jl docs](https://um-pepl.github.io/HallThruster.jl/dev/run/). Will override
+                     `thruster` in `config` if provided. If None, will defer to `config`. Defaults to the SPT-100.
+    :param config: dictionary of configs for `HallThruster.jl`, see the
+                   [Hallthruster.jl docs](https://um-pepl.github.io/HallThruster.jl/stable/config/) for
+                   options and formatting.
+    :param simulation: dictionary of simulation parameters for `HallThruster.jl`
+    :param postprocess: dictionary of post-processing parameters for `Hallthruster.jl`
+    :param julia_script: path to a custom Julia script to run instead of the default `run_hallthruster.jl` script
+    :param u_ion_coords: `(M,)` The axial locations at which to compute the ion velocity profile, in meters. Defaults
+                         to the full `ncells` simulation grid computed by `HallThruster.jl`. `z=0` corresponds to the
+                         anode at the left BC of the simulation domain. If provided, must be within the `domain` bounds
+                         specified in `config`.
+    :param model_fidelity: tuple of integers that determine the number of cells and the number of charge states to use
+                           via `ncells = model_fidelity[0] * 50 + 100` and `ncharge = model_fidelity[1] + 1`.
+                           Will override `ncells` and `ncharge` in `simulation` and `config` if provided.
+    :param output_path: base path to save output files, will write to current directory if not specified
+    :raises ModelRunException: if anything fails during the call to `Hallthruster.jl`
+    :returns: `dict` of `Hallthruster.jl` outputs: `I_B0`, `I_d`, `T`, `eta_c`, `eta_m`, `eta_v`, and `u_ion` for ion
+              beam current (A), discharge current (A), thrust (N), current efficiency, mass efficiency, voltage
+              efficiency, and singly-charged ion velocity profile (m/s), all time-averaged
+    """
+    # Check for Julia and HallThruster.jl (will fail when trying to run the simulation anyways)
+    # if not shutil.which("julia"):
+    #     raise RuntimeError("Julia binary not found on system path. Please install Julia and ensure "
+    #                        "it is on the system path.")
+    # try:
+    #     subprocess.run(["julia", "-e", "using HallThruster"], check=True, capture_output=True)
+    # except subprocess.CalledProcessError as e:
+    #     raise RuntimeError(f"HallThruster.jl library not found or failed to load: {e.stderr.decode()}") from e
+
+    if julia_script is None:
+        julia_script = resources.files('hallmd.models') / 'run_hallthruster.jl'
+    if output_path is None:
+        output_path = Path.cwd()
+
+    # Format inputs for HallThruster.jl and write to json
+    json_data = _format_hallthruster_jl_input(thruster_inputs, thruster, config, simulation, postprocess,
+                                              model_fidelity, output_path)
+    fd = tempfile.NamedTemporaryFile(suffix='.json', encoding='utf-8', mode='w', delete=False)
+    json.dump(json_data, fd, ensure_ascii=False, indent=4)
+    fd.close()
 
     # Run simulation
     try:
-        fd = tempfile.NamedTemporaryFile(suffix='.json', encoding='utf-8', mode='w', delete=False)
-        json.dump(json_data, fd, ensure_ascii=False, indent=4)
-        fd.close()
         t1 = time.time()
-        sol = jl.seval(f'sol = HallThruster.run_simulation("{repr(fd.name)[1:-1]}", verbose=false)')
+        subprocess.run(['julia', str(Path(julia_script).resolve()), fd.name], check=True)
+        t2 = time.time()
+    finally:
         os.unlink(fd.name)   # delete the tempfile
-    except juliacall.JuliaError as e:
-        raise ModelRunException(f"Julicall error in Hallthruster.jl: {e}")
 
-    if str(sol.retcode).lower() != "success":
-        raise ModelRunException(f"Exception in Hallthruster.jl: Retcode = {sol.retcode}")
-
-    # Average simulation results
-    avg = jl.seval(f"avg = HallThruster.time_average(sol, {thruster_input['time_avg_frame_start']})")
-
-    # Extract needed data
-    I_B0 = jl.HallThruster.ion_current(avg)[0]
-    niui_exit = 0.0
-    ni_exit = 0.0
-    for Z in range(avg.params.ncharge):
-        ni_exit += jl.seval(f"avg[:ni, {Z+1}][][end]")
-        niui_exit += jl.seval(f"avg[:niui, {Z+1}][][end]")
-    ui_avg = niui_exit / ni_exit
-    
     # Load simulation results
-    fd = tempfile.NamedTemporaryFile(suffix='.json', encoding='utf-8', mode='w', delete=False)
-    fd.close()
-    
-    jl.HallThruster.write_to_json(fd.name, avg)
-    with open(fd.name, 'r') as f:
-        thruster_output = json.load(f)
-    os.unlink(fd.name)  # delete the tempfile
+    output_file = json_data['postprocess'].get('output_file')
+    with open(Path(output_file), 'r') as fd:
+        sim_results = json.load(fd)
 
-    thrust = thruster_output[0]['thrust']
-    discharge_current = thruster_output[0]['discharge_current']
+    # Format QoIs for the PEM
+    thruster_outputs = {pem_key: sim_results['outputs']['average'][jl_key] for pem_key, jl_key in OUTPUTS_TO_JL.items()}
 
-    thruster_output[0].update({'ui_avg': ui_avg / 1000.0, 'I_B0': I_B0, 'T': thrust, 'I_D': discharge_current,
-                               'eta_c': thruster_output[0]['current_eff'], 'eta_m': thruster_output[0]['mass_eff'],
-                               'eta_v': thruster_output[0]['voltage_eff']})
+    # Interpolate ion velocity to requested coords
+    if u_ion_coords is not None:
+        z_grid = np.atleast_1d(sim_results['outputs']['average']['z'])
+        uion_grid = np.atleast_1d(thruster_outputs['u_ion'])
+        f = interp1d(z_grid, uion_grid, axis=-1)
+        thruster_outputs['u_ion'] = f(u_ion_coords)  # (..., num_pts)
 
     # Raise an exception if thrust or beam current are negative (non-physical cases)
-    if thrust < 0 or I_B0 < 0:
-        raise ModelRunException(f'Exception due to non-physical case: thrust={thrust} N, beam current={I_B0} A')
+    if thruster_outputs['T'] < 0 or thruster_outputs['I_B0'] < 0:
+        raise ValueError(f'Exception due to non-physical case: thrust={thruster_outputs["T"]} N, '
+                         f'beam current={thruster_outputs["I_B0"]} A')
 
-    return thruster_output[0]
+    thruster_outputs['model_cost'] = t2 - t1  # seconds
+    thruster_outputs['output_path'] = Path(output_file).relative_to(Path(output_path)).as_posix()
 
-
-def hallthruster_jl_wrapper(x: np.ndarray, alpha: tuple = (2, 2), *, compress: bool = False,
-                            output_dir: str | Path = None, n_jobs: int = -1,
-                            config: str | Path = CONFIG_DIR / 'hallthruster_jl.json',
-                            variables: str | Path = CONFIG_DIR / 'variables_v0.json',
-                            svd_data: dict | str | Path = CONFIG_DIR / 'thruster_svd.pkl',
-                            hf_override: tuple | bool = None, thruster: str = 'SPT-100'):
-    """Wrapper function for Hallthruster.jl.
-
-    !!! Note "Defining input variables"
-        This function loads variable definitions from the path specified in `variables`. The variables are loaded in
-        the form of `BaseRV` objects from the `amisc` package. You can directly edit this config file to change the
-        definitions of the variables or add new variables, or you can specify a different file.
-
-    !!! Info "Dimension reduction"
-        If you specify `compress=True`, then the `svd_data` will be used to compress the ion velocity profile. The
-        default is a file named `thruster_svd.pkl` in the `config` directory. The format of the `svd_file` is a Python
-        `.pkl` save file with the fields `A` &rarr; $N\\times M$ SVD data matrix and `vtr` &rarr; $r\\times M$ the
-        linear projection matrix from high dimension $M$ to low dimension $r$. See the theory page for more details.
-
-    :param x: `(..., xdim)` the model inputs, ordering is specified as "inputs" in the `config` file
-    :param alpha: `($\\alpha_1$, $\\alpha_2$) model fidelity indices = ($N_{cells}$, $N_{charge}$)
-    :param compress: Whether to compress the ion velocity profile with SVD dimension reduction
-    :param output_dir: path where to save Hallthruster.jl result .json files, none saved if not specified
-    :param n_jobs: number of jobs to run in parallel, use all available cpus if -1
-    :param config: path to .json config file to load static thruster simulation configs (.json)
-    :param variables: path to .json file that specifies all input variables
-    :param svd_data: path to a .pkl file that is used to compress the ion velocity profile, can also directly pass in
-                     the `dict` data from the .pkl file
-    :param hf_override: the fidelity indices to override `alpha`
-    :param thruster: the name of the thruster to simulate (must be defined in `config`)
-    :returns: `dict(y, files, cost)`, the model outputs `y=(..., ydim)`, list of output files, and avg model cpu time;
-                                      order of outputs in `ydim` is specified as "outputs" in the `config` file
-    """
-    x = np.atleast_1d(x)
-    # Check for a single-fidelity override of alpha
-    if isinstance(hf_override, tuple) and len(hf_override) == 2:
-        alpha = hf_override
-    elif hf_override:
-        alpha = (2, 2)
-
-    # Set model fidelity quantities from alpha
-    Ncells = 50 * (alpha[0] + 2)
-    Ncharge = alpha[1] + 1
-    # dt_map = [25e-9, 12.5e-9, 8.4e-9, 6.3e-9]
-    dt_map = [12.5e-9, 8.4e-9, 6.3e-9]
-    dt_s = dt_map[alpha[0]] if Ncharge <= 2 else dt_map[alpha[0]] / np.sqrt(3/2)
-
-    # Constant inputs from config file (thruster geometry, propellant, wall material, simulation params, etc.)
-    with open(Path(config), 'r') as fd:
-        config_data = json.load(fd)
-        default_inputs = load_variables(config_data['default_inputs'], Path(variables))
-        base_input = {var.id: var.nominal for var in default_inputs}  # Set default values for variables.json RV inputs
-        base_input.update(config_data[thruster])                      # Set all other simulation configs
-        input_list = config_data['required_inputs']  # Needs to match xdim and correspond with str input ids to hallthruster.jl
-        output_list = config_data['outputs']
-    base_input.update({'num_cells': Ncells, 'dt_s': dt_s, 'max_charge': Ncharge})  # Update model fidelity params
-
-    # Load svd params for dimension reduction of ion velocity profile
-    if compress:
-        if not isinstance(svd_data, dict):
-            with open(svd_data, 'rb') as fd:
-                svd_data = pickle.load(fd)
-        vtr = svd_data['vtr']  # (r x M)
-        A = svd_data['A']
-        A_mu = np.mean(A, axis=0)
-        A_std = np.std(A, axis=0)
-        r, M = vtr.shape
-        ydim = r + len(output_list) - 1
-    else:
-        M = Ncells + 2
-        ydim = M + len(output_list) - 1
-
-    # Save the inputs to file
-    eval_id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-    if output_dir is not None:
-        save_dict = {'alpha': alpha, 'x': x}
-        with open(Path(output_dir) / f'{eval_id}_eval.pkl', 'wb') as fd:
-            pickle.dump(save_dict, fd)
-
-    def run_batch(job_num, index_batches, y):
-        """Run a batch of indices into the input matrix `x`."""
-        from juliacall import Main as jl
-        jl.seval('using HallThruster')
-        thruster_input = copy.deepcopy(base_input)
-        curr_batch = index_batches[job_num]
-        files = []  # Return an ordered list of output filenames corresponding to input indices
-        costs = []  # Time to evaluate hallthruster.jl for a single input
-
-        for i, index in enumerate(curr_batch):
-            x_curr = [float(x[index + (i,)]) for i in range(x.shape[-1])]   # (xdim,)
-            thruster_input.update({input_list[i]: x_curr[i] for i in range(x.shape[-1])})
-
-            # Run hallthruster.jl
-            t1 = time.time()
-            try:
-                res = hallthruster_jl_model(thruster_input, jl=jl)
-            except ModelRunException as e:
-                logger = get_logger(__name__)
-                logger.warning(f'Skipping index {index} due to caught exception: {e}')
-                y[index + (slice(None),)] = np.nan
-                if output_dir is not None:
-                    save_dict = {'input': thruster_input, 'Exception': str(e), 'index': index}
-                    fname = f'{eval_id}_{index}_exc.json'
-                    files.append(fname)
-                    costs.append(0)
-                    data_write(save_dict, fname, output_dir)
-                continue
-
-            # Save QoIs
-            curr_idx = 0
-            for i, qoi_str in enumerate(output_list):
-                if qoi_str == 'uion':
-                    if compress:
-                        # Interpolate ion velocity to the full reconstruction grid (of dim M)
-                        n_cells = M - 2  # M = num of grid pts = Ncells + 2 (half-grid cells at ends of FE domain)
-                        L = thruster_input['l_c']  # Cathode location is the end of axial z domain
-                        dz = L / n_cells
-                        zg = np.zeros(M)  # zg is the axial z grid points for the reconstructed field (of size M)
-                        zg[0] = 0
-                        zg[1] = dz / 2
-                        zg[2:-1] = zg[1] + np.arange(1, n_cells) * dz
-                        zg[-1] = L
-                        z1 = np.atleast_1d(res['z'])
-                        ui1 = np.atleast_1d(res['ui_1'])
-                        uig = np.interp(zg, z1, ui1)  # Interpolated ui on reconstruction grid (M,)
-                        uig_r = np.squeeze(vtr @ ((uig - A_mu) / A_std)[..., np.newaxis], axis=-1)
-                        y[index + (slice(curr_idx, curr_idx + r),)] = uig_r  # Compress to dim (r,)
-                        curr_idx += r
-                    else:
-                        # Otherwise, save entire ion velocity grid
-                        y[index + (slice(curr_idx, curr_idx + M),)] = res['ui_1']
-                        curr_idx += M
-                else:
-                    # Append scalar qois
-                    y[index + (curr_idx,)] = res[qoi_str]
-                    curr_idx += 1
-            costs.append(time.time() - t1)  # Save single model wall clock runtime in seconds (on one cpu)
-
-            # Save to output file (delete redundant results to save space)
-            if output_dir is not None:
-                del res['ni_1']
-                del res['ni_2']
-                del res['ni_3']
-                del res['grad_pe']
-                del res['E']
-                del res['mobility']
-                if Ncharge < 3:
-                    del res['ui_3']
-                    del res['niui_3']
-                if Ncharge < 2:
-                    del res['ui_2']
-                    del res['niui_2']
-                save_dict = {'input': thruster_input, 'output': res}
-                fname = f'{eval_id}_{index}.json'
-                files.append(fname)
-                data_write(save_dict, fname, output_dir)
-
-        return files, costs
-
-    # Evenly distribute input indices across batches
-    num_batches = cpu_count() if n_jobs < 0 else min(n_jobs, cpu_count())
-    index_batches = [list() for i in range(num_batches)]
-    flat_idx = 0
-    for input_index in np.ndindex(*x.shape[:-1]):
-        # Cartesian product iteration over x.shape indices
-        index_batches[flat_idx % num_batches].append(input_index)
-        flat_idx += 1
-
-    # Allocate space for outputs and compute model (in parallel batches)
-    set_loky_pickler('cloudpickle')     # Dill can't serialize mmap objects, but cloudpickle can
-    with tempfile.NamedTemporaryFile(suffix='.dat', mode='w+b', delete=False) as y_fd:
-        pass
-    y = np.memmap(y_fd.name, dtype='float32', mode='r+', shape=x.shape[:-1] + (ydim,))
-    with Parallel(n_jobs=n_jobs, verbose=0) as ppool:
-        res = ppool(delayed(run_batch)(job_num, index_batches, y) for job_num in range(num_batches))
-    y_ret = np.empty(y.shape)
-    y_ret[:] = y[:]
-    del y
-    os.unlink(y_fd.name)
-
-    # Re-order the resulting list of file names and costs
-    files, costs = [], []
-    flat_idx = 0
-    for input_index in np.ndindex(*x.shape[:-1]):
-        # Iterate in same circular fashion as the inputs were passed to parallel
-        batch_files, batch_costs = res[flat_idx % num_batches]
-        if output_dir is not None:
-            files.append(batch_files.pop(0))
-        costs.append(batch_costs.pop(0))
-        flat_idx += 1
-
-    # Save model eval summary to file
-    if output_dir is not None:
-        save_dict = {'alpha': alpha, 'x': x, 'y': y_ret, 'is_compressed': compress, 'files': files, 'costs': costs}
-        with open(Path(output_dir) / f'{eval_id}_eval.pkl', 'wb') as fd:
-            pickle.dump(save_dict, fd)
-    costs = np.atleast_1d(costs).astype(np.float64)
-    costs[costs == 0] = np.nan
-    avg_model_cpu_time = np.nanmean(costs)
-
-    return {'y': y_ret, 'files': files, 'cost': avg_model_cpu_time}
-
-
-def uion_reconstruct(xr: np.ndarray, z: np.ndarray = None, L: float | np.ndarray = 0.08,
-                     svd_data: dict | str | Path = CONFIG_DIR / 'thruster_svd.pkl') -> tuple[np.ndarray, np.ndarray]:
-    """Reconstruct an ion velocity profile, interpolate to `z` if provided.
-
-    !!! Warning
-        The `svd_data` must be the **same** as was used with `hallthruster_jl_wrapper` when compressing the data, i.e.
-        the same SVD data must be used to reconstruct here.
-
-    :param xr: `(... r)` The reduced dimension output of `hallthruster_jl_wrapper` (just the ion velocity profile)
-    :param z: `(Nz,)` The axial `z` grid points to interpolate to (in meters, between 0 and `L`)
-    :param L: `(...,)` The full domain length of the reconstructed grid(s)
-    :param svd_data: path to a `.pkl` file that is used to compress/reconstruct the ion velocity profile, can also pass
-                     the `dict` of svd data directly in
-    :returns: `z, uion_interp` - `(..., Nz or M)` The reconstructed (and potentially interpolated) ion velocity
-              profile(s), corresponds to `z=(0, 0.08)` m with `M=202` points by default
-    """
-    if z is not None:
-        z = z.astype(xr.dtype)
-    L = np.atleast_1d(L)
-    interp_normal = len(L.shape) == 1 and L.shape[0] == 1
-
-    # Load SVD data from file
-    if not isinstance(svd_data, dict):
-        with open(svd_data, 'rb') as fd:
-            svd_data = pickle.load(fd)
-    vtr = svd_data['vtr']       # (r x M)
-    A = svd_data['A']
-    A_mu = np.mean(A, axis=0)
-    A_std = np.std(A, axis=0)
-    r, M = vtr.shape
-
-    n_cells = M - 2
-    dz = L / n_cells
-    zg = np.zeros(L.shape + (M,))  # zg is the axial z grid points for the reconstructed field (of size M)
-    zg[..., 1] = dz / 2
-    zg[..., 2:-1] = zg[..., 1, np.newaxis] + np.arange(1, n_cells) * dz[..., np.newaxis]
-    zg[..., -1] = L
-    uion_g = (np.squeeze(vtr.T @ xr[..., np.newaxis], axis=-1) * A_std + A_mu).astype(xr.dtype)      # (..., M)
-    zg = (np.squeeze(zg, axis=0) if interp_normal else zg).astype(xr.dtype)    # (..., M)
-
-    # Do vectorized 1d linear interpolation
-    if z is not None:
-        diff = zg[..., np.newaxis] - z                          # (..., M, Nz)
-        lower_idx = np.argmin(np.abs(diff), axis=-2)            # (..., Nz)
-        diff = np.take_along_axis(zg, lower_idx, axis=-1) - z
-        lower_idx[diff > 0] -= 1
-        upper_idx = lower_idx + 1
-        lower_idx[lower_idx < 0] = 0
-        upper_idx[upper_idx >= zg.shape[-1]] = zg.shape[-1] - 1
-        x_lower = np.take_along_axis(zg, lower_idx, axis=-1)
-        x_upper = np.take_along_axis(zg, upper_idx, axis=-1)
-        if interp_normal:
-            y_lower = uion_g[..., lower_idx]
-            y_upper = uion_g[..., upper_idx]
-        else:
-            # Vectorized 1d interpolation
-            y_lower = np.take_along_axis(uion_g, lower_idx, axis=-1)
-            y_upper = np.take_along_axis(uion_g, upper_idx, axis=-1)
-
-        with np.errstate(divide='ignore', invalid='ignore'):
-            uion_interp = y_lower + (z - x_lower) * (y_upper-y_lower) / (x_upper-x_lower)       # (..., Nz)
-
-        # Set points outside grid equal to outer values
-        lower_idx = z < zg[..., 0, np.newaxis]      # (..., Nz)
-        upper_idx = z > zg[..., -1, np.newaxis]     # (..., Nz)
-        if interp_normal:
-            if np.any(lower_idx):
-                uion_interp[..., lower_idx] = uion_g[..., 0, np.newaxis]
-            if np.any(upper_idx):
-                uion_interp[..., upper_idx] = uion_g[..., -1, np.newaxis]
-        else:
-            uion_interp[lower_idx] = uion_g[np.any(lower_idx, axis=-1), 0]
-            uion_interp[upper_idx] = uion_g[np.any(upper_idx, axis=-1), -1]
-
-        return z, uion_interp
-    else:
-        return zg, uion_g
+    return thruster_outputs

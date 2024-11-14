@@ -5,7 +5,7 @@
 groups = ["default", "dev", "doc", "test"]
 strategy = ["inherit_metadata"]
 lock_version = "4.5.0"
-content_hash = "sha256:828b695ae2efea6fe90fc23ecb889d5564f1d1b21f5660b7e01b041efd1fb239"
+content_hash = "sha256:b31d44c36bfdc49cce204a1d1815dd3461878af897c83126ea96ecf859a00fc8"
 
 [[metadata.targets]]
 requires_python = ">=3.11"
@@ -718,34 +718,6 @@ dependencies = [
 files = [
     {file = "jsonschema_specifications-2024.10.1-py3-none-any.whl", hash = "sha256:a09a0680616357d9a0ecf05c12ad234479f549239d0f5b55f3deea67475da9bf"},
     {file = "jsonschema_specifications-2024.10.1.tar.gz", hash = "sha256:0f38b83639958ce1152d02a7f062902c41c8fd20d558b0c34344292d417ae272"},
-]
-
-[[package]]
-name = "juliacall"
-version = "0.9.23"
-requires_python = "~=3.8"
-summary = "Julia and Python in seamless harmony"
-groups = ["default"]
-dependencies = [
-    "juliapkg~=0.1.8",
-]
-files = [
-    {file = "juliacall-0.9.23-py3-none-any.whl", hash = "sha256:67689bdeadf8438f4b302cbe88b31610ee8b345577b4df04328d67c4e66f5e62"},
-    {file = "juliacall-0.9.23.tar.gz", hash = "sha256:536f2e0f4ccfd34920322121b4353079029123eae81b7200ed1787e49d8053d2"},
-]
-
-[[package]]
-name = "juliapkg"
-version = "0.1.15"
-requires_python = ">=3.8"
-summary = "Julia version manager and package manager"
-groups = ["default"]
-dependencies = [
-    "semver~=3.0",
-]
-files = [
-    {file = "juliapkg-0.1.15-py3-none-any.whl", hash = "sha256:47b3ebb5bc200b31252e3be0e740a37925ff472919cac84f32b7bd4afa3a1a53"},
-    {file = "juliapkg-0.1.15.tar.gz", hash = "sha256:a36096fed2ddfe6fbd1af9bfd1b182136d84a660d0c4187539194229fb383720"},
 ]
 
 [[package]]
@@ -1985,17 +1957,6 @@ files = [
     {file = "scipy-1.14.1-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:e4f5a7c49323533f9103d4dacf4e4f07078f360743dec7f7596949149efeec06"},
     {file = "scipy-1.14.1-cp313-cp313-win_amd64.whl", hash = "sha256:baff393942b550823bfce952bb62270ee17504d02a1801d7fd0719534dfb9c84"},
     {file = "scipy-1.14.1.tar.gz", hash = "sha256:5a275584e726026a5699459aa72f828a610821006228e841b94275c4a7c08417"},
-]
-
-[[package]]
-name = "semver"
-version = "3.0.2"
-requires_python = ">=3.7"
-summary = "Python helper for Semantic Versioning (https://semver.org)"
-groups = ["default"]
-files = [
-    {file = "semver-3.0.2-py3-none-any.whl", hash = "sha256:b1ea4686fe70b981f85359eda33199d60c53964284e0cfb4977d243e37cf4bf4"},
-    {file = "semver-3.0.2.tar.gz", hash = "sha256:6253adb39c70f6e51afed2fa7152bcd414c411286088fb4b9effb133885ab4cc"},
 ]
 
 [[package]]

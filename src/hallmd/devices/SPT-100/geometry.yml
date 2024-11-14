@@ -1,6 +1,0 @@
-channel_length: 0.025
-inner_radius: 0.035
-outer_radius: 0.05
-wall_material: BNSiO2
-magnetic_field_file: bfield_spt100.csv
-magnetically_shielded: false

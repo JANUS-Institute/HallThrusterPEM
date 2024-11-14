@@ -53,12 +53,12 @@ def test_pressure_sweep(plots=SHOW_PLOTS):
     # Make sure total current is invariant
     R = 1  # m
     theta = np.linspace(0, np.pi / 2, outputs_sweep['j_ion'].shape[-1])
-    invariant = np.empty(outputs_sweep['j_ion'].shape[0])
+    current = np.empty(outputs_sweep['j_ion'].shape[0])
     for i in range(outputs_sweep['j_ion'].shape[0]):
-        invariant[i] = 2 * np.pi * R**2 * simpson(outputs_sweep['j_ion'][i, :] * np.cos(theta), x=theta)
+        current[i] = 2 * np.pi * R**2 * simpson(outputs_sweep['j_ion'][i, :] * np.sin(theta), x=theta)
 
-    err = np.sqrt(np.sum((invariant - invariant[0]) ** 2) / np.sum(invariant ** 2))
-    assert err < 0.05
+    err = np.sqrt(np.sum((current - np.mean(current)) ** 2) / np.sum(current ** 2))
+    assert err < 1e-4
 
     if plots:
         # Plot trend of divergence angle with pressure

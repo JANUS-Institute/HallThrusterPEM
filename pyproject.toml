@@ -12,7 +12,6 @@ authors = [
 ]
 dependencies = [
     "numpy>=2.0",
-    "juliacall>=0.9.15",
     "joblib>=1.3.2",
     "dill>=0.3.7",
     "matplotlib>=3.9",
@@ -20,7 +19,7 @@ dependencies = [
     "scipy>=1.14",
     "h5py>=3.10.0",
     "uqtils>=0.4.2",
-    "amisc>=0.5.2"
+    "amisc>=0.5.2",
 ]
 requires-python = ">=3.11"
 readme = "README.md"
