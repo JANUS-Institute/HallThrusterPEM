@@ -1,0 +1,298 @@
+!System
+name: PEM v0 for SPT-100
+hallmd_version: 0.3.0
+components: !Component
+  - name: Cathode
+    model: !!python/name:hallmd.models.cathode.cathode_coupling
+    vectorized: true
+    inputs: !Variable
+      - name: P_b
+        description: Background pressure
+        category: operating
+        tex: "$P_b$"
+        units: Torr
+        nominal: 1e-5
+        domain: [1e-8, 1e-4]
+        distribution: Relative(20)
+        norm: log10
+      - name: V_a
+        description: Anode voltage
+        category: operating
+        tex: "$V_a$"
+        units: V
+        nominal: 300
+        domain: [200, 400]
+      - name: T_e
+        description: Electron temperature at cathode
+        category: calibration
+        tex: "$T_e$"
+        units: eV
+        nominal: 1.32721
+        distribution: U(1, 5)
+      - name: V_vac
+        description: Coupling voltage in vacuum
+        category: calibration
+        tex: "$V_{vac}$"
+        units: V
+        nominal: 31.61135
+        distribution: U(0, 60)
+      - name: Pstar
+        description: Turning point pressure
+        category: calibration
+        tex: "$P^*$"
+        units: Torr
+        nominal: 34.63406e-6
+        distribution: Uniform(10e-6, 100e-6)
+        norm: linear(1e6)
+      - name: P_T
+        description: Thruster to facility plasma density ratio
+        category: calibration
+        tex: "$P_T$"
+        units: Torr
+        nominal: 10.19193e-6
+        distribution: Uniform(10e-6, 100e-6)
+        norm: linear(1e6)
+    outputs: !Variable
+      - name: V_cc
+        description: Cathode coupling voltage
+        tex: "$V_{cc}$"
+        units: V
+        nominal: 30
+        domain: [0, 60]
+  - name: Thruster
+    model: !!python/name:hallmd.models.thruster.hallthruster_jl
+    julia_script: ../tests/sim_hallthruster.jl
+    thruster: SPT-100
+    config:
+#      thruster: SPT-100          # moved to separate thruster kwarg
+      discharge_voltage: 300      # overwritten by V_a
+      anode_mass_flow_rate: 5e-6  # overwritten by mdot_a
+      cathode_potential: 30       # overwritten by V_cc
+      background_pressure: 1e-5   # overwritten by P_b
+      cathode_Te: 3               # overwritten by T_e
+      neutral_velocity: 300       # overwritten by u_n
+      ncharge: 1                  # overwritten by model_fidelity[1]
+      transition_length: 0.003    # overwritten by l_t
+      anom_model:
+        type: PressureShifted
+        model:
+          type: TwoZoneBohm
+          c1: 0.00625  # overwritten by a_1
+          c2: 0.0625   # overwritten by a_2 * a_1
+        dz: 0.2        # overwritten by dz
+        z0: -0.03104   # overwritten by z0
+        pstar: 45e-6   # overwritten by p0
+        alpha: 15
+      domain: [0, 0.08]
+      wall_loss_model:
+        type: WallSheath
+        material: BNSiO2
+        alpha: 1.155
+      propellant: Xenon
+      ion_temperature: 1000
+      neutral_temperature: 300
+      background_neutral_temperature: 300
+      conductivity_model:
+        type: Mitchner
+      electron_ion_collisions: true
+      scheme:
+        flux_function: rusanov
+        limiter: van_leer
+        reconstruct: true
+      ion_wall_losses: true
+      neutral_ingestion_multiplier: 1
+      anode_boundary_condition: sheath
+      solve_plume: true
+      apply_thrust_divergence_correction: false
+      electron_plume_loss_scale: 1
+    simulation:
+      dt: 1.67e-8       # overwritten by model_fidelity[0]
+      ncells: 100       # overwritten by model_fidelity[0]
+      duration: 0.002   # s
+      nsave: 1000
+      verbose: false
+    postprocess:
+      average_start_time: 0.001  # s
+    model_fidelity: (2, 2)
+    data_fidelity: (2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2)
+    inputs: !Variable
+      - name: P_b
+      - name: V_a
+      - name: mdot_a
+        description: Anode mass flow rate
+        category: operating
+        tex: "$\\dot{m}_a$"
+        units: kg/s
+        nominal: 5e-6
+        distribution: Relative(3)
+        domain: [2e-6, 7e-6]
+        norm: linear(1e6)
+      - name: T_e
+      - name: u_n
+        description: Neutral velocity
+        category: calibration
+        tex: "$u_n$"
+        units: m/s
+        nominal: 141.24234
+        distribution: U(100, 500)
+      - name: l_t
+        description: Inner to outer transition length
+        category: calibration
+        tex: "$l_t$"
+        units: m
+        nominal: 1.87915e-3
+        distribution: U(1e-3, 20e-3)
+        norm: linear(1e3)
+      - name: a_1
+        description: Anomalous transport scale inside channel
+        category: calibration
+        tex: "$a_1$"
+        nominal: 0.00680237
+        distribution: LogUniform(0.00316, 0.1)
+        norm: log10
+      - name: a_2
+        description: Anomalous transport scale outside channel
+        category: calibration
+        tex: "$a_2$"
+        nominal: 14.645
+        distribution: Uniform(10, 100)
+      - name: dz
+        description: Anomalous shift displacement
+        category: calibration
+        tex: "$\\delta_z$"
+        nominal: 0.4
+        distribution: N(0.2, 0.07)
+      - name: z0
+        description: Upstream anomalous shift axial limit
+        category: calibration
+        tex: "$z_0$"
+        nominal: -0.03104
+        distribution: N(-0.12, 0.04)
+      - name: p0
+        description: Upstream anomalous shift pressure limit
+        category: calibration
+        tex: "$p_0$"
+        units: Torr
+        nominal: 56.86006
+        distribution: N(45e-6, 7e-6)
+        norm: linear(1e6)
+      - name: V_cc
+    outputs: !Variable
+      - name: I_B0
+        description: Ion beam current
+        tex: "$I_b$"
+        units: A
+        nominal: 3.6
+        domain: [0, 10]
+      - name: T
+        description: Thrust
+        tex: "$T$"
+        units: N
+        nominal: 0.08
+        domain: [0, 0.2]
+      - name: I_d
+        description: Discharge current
+        tex: "$I_d$"
+        units: A
+        nominal: 4.5
+        domain: [0, 10]
+      - name: eta_c
+        description: Current efficiency
+        tex: "$\\eta_c$"
+        domain: [0, 1]
+      - name: eta_m
+        description: Mass utilization efficiency
+        tex: "$\\eta_m$"
+        domain: [0, 1]
+      - name: eta_v
+        description: Voltage utilization efficiency
+        tex: "$\\eta_v$"
+        domain: [0, 1]
+      - name: eta_a
+        description: Anode efficiency
+        tex: "$\\eta_a$"
+        domain: [0, 1]
+      - name: u_ion
+        description: Singly-charged axial ion velocity
+        tex: "$u_{ion}$"
+        units: m/s
+        norm: linear(1e-3)
+        compression:
+          method: svd
+          energy_tol: 0.95
+  - name: Plume
+    model: !!python/name:hallmd.models.plume.current_density
+    vectorized: true
+    inputs: !Variable
+      - name: P_b
+      - name: c0
+        description: Scatter/main beam ratio
+        category: calibration
+        tex: "$c_0$"
+        nominal: 0.92434
+        distribution: U(0, 1)
+      - name: c1
+        description: Divergence angle ratio
+        category: calibration
+        tex: "$c_1$"
+        nominal: 0.81486
+        distribution: U(0.1, 0.9)
+      - name: c2
+        description: Divergence angle slope
+        category: calibration
+        tex: "$c_2$"
+        units: rad/Pa
+        nominal: 14.00547
+        distribution: U(-15, 15)
+      - name: c3
+        description: Divergence angle offset
+        category: calibration
+        tex: "$c_3$"
+        units: rad
+        nominal: 0.44667
+        distribution: U(0.2, 1.570796)
+      - name: c4
+        description: Neutral density slope
+        category: calibration
+        tex: "$c_4$"
+        units: "$m^{-3}/Pa$"
+        nominal: 1e20
+        distribution: LogUniform(1e18, 1e22)
+        norm: log10
+      - name: c5
+        description: Neutral density offset
+        category: calibration
+        tex: "$c_5$"
+        units: "$m^{-3}$"
+        nominal: 1e16
+        distribution: LogUniform(1e14, 1e18)
+        norm: log10
+      - name: sigma_cex
+        description: Charge exchange cross-sectional area
+        category: nuisance
+        tex: "$\\sigma_{cex}$"
+        units: "$m^2$"
+        nominal: 55e-20
+        distribution: Uniform(51e-20, 58e-20)
+        norm: linear(1e20)
+      - name: r_p
+        description: Plume measurement radial distance from channel exit
+        category: nuisance
+        tex: "$r_p$"
+        units: m
+        nominal: 1
+        domain: [0.5, 1.5]
+      - name: I_B0
+    outputs: !Variable
+      - name: j_ion
+        description: Ion current density
+        tex: "$j_{ion}$"
+        units: "$A/m^2$"
+        norm: log10
+        compression:
+          method: svd
+          energy_tol: 0.95
+      - name: div_angle
+        description: Divergence angle
+        tex: "$\\theta_d$"
+        units: rad

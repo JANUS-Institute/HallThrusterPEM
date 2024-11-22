@@ -7,7 +7,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-from hallmd.utils import data_write, plot_qoi, _path_in_dict, load_device
+from hallmd.utils import plot_qoi, _path_in_dict, load_device
 
 
 def test_path_in_dict():
@@ -74,14 +74,6 @@ def test_load_device(tmp_path):
     abs_other_file = Path(new_device_dir / 'data' / 'other_file.txt').resolve().as_posix()
 
     assert config == {'hello': 'there', 'my_file': abs_file, 'other_info': {'other_file': abs_other_file}}
-
-
-def test_write():
-    with tempfile.NamedTemporaryFile(suffix='.json', encoding='utf-8', mode='w', delete=False, dir='.') as fd:
-        pass
-    data = {'help': 'me'}
-    data_write(data, fd.name)
-    os.unlink(fd.name)
 
 
 def test_plot():

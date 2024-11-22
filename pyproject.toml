@@ -33,6 +33,9 @@ classifiers = [
     "Intended Audience :: Science/Research"
 ]
 
+[project.optional-dependencies]  # This is optional dependencies
+mpi = ["mpi4py>=3.1"]
+
 [project.urls]
 Repository = "https://github.com/JANUS-Institute/HallThrusterPEM.git"
 Documentation = "https://JANUS-Institute.github.io/HallThrusterPEM/"
@@ -72,10 +75,11 @@ bump = "cz bump {args}"
 test = "pytest --cov=hallmd --cov-report html:htmlcov tests"
 docs = "mkdocs serve"
 lint = "ruff check src tests {args}"
-gen_data = {shell = "echo JOBID1=$(sbatch --account=${SLURM_ACCOUNT} --mail-user=${SLURM_MAIL} ./scripts/{args}/gen_data.sh | awk '{print $4}') > .env", help = "Usage: pdm run gen_data <scripts_folder>"}
-fit = {shell = "export $(cat .env | xargs) && sbatch --account=${SLURM_ACCOUNT} --mail-user=${SLURM_MAIL} --dependency=afterok:${JOBID1} ./scripts/{args}/fit_surr.sh", help = "Usage: pdm run fit <scripts_folder>"}
-train = {composite = ["gen_data {args}", "fit {args}"], help = "Usage: pdm run train <scripts_folder>. For example: pdm run train pem_v0"}
-slice = {shell = 'read -a array <<< "{args}" && export MF_DIR="${array[1]}" && sbatch --account=${SLURM_ACCOUNT} --mail-user=${SLURM_MAIL} ./scripts/${array[0]}/plot_slice.sh', help = "Usage: pdm slice <scripts_folder> <mf_surrogate_folder>"}
+run_job = {shell = "sbatch --account=${SLURM_ACCOUNT} --mail-user=${SLURM_MAIL} --mail-type=ALL {args}", help = "Usage: pdm run_job <script.sh>"}
+train = {shell = "./train_hpc.sh {args}", help = "Usage: pdm run train <config_file>", working_dir = "scripts"}
+slice = {shell = "./slice_hpc.sh {args}", help = "Usage: pdm run slice <config_file>", working_dir = "scripts"}
+
+
 
 [tool.pdm.dev-dependencies]
 dev = [

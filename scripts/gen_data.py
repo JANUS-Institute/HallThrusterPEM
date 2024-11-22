@@ -1,0 +1,204 @@
+""" `gen_data.py`
+
+Script to be used with `train_hpc.sh` for generating compression (SVD) data and test set data for training a surrogate.
+
+Call as:
+
+`python gen_data.py <config_file> --output_dir=<output_dir> --rank=<rank> --energy_tol=<energy_tol>
+                                  --compression_samples=<compression_samples> --test_samples=<test_samples>
+                                  --executor=<executor> --max_workers=<max_workers>`
+
+Arguments:
+
+- `config_file` - the path to the `amisc` YAML configuration file with the model and input/output variable information.
+- `output_dir` - the directory to save all test set and surrogate data. Defaults to the same path as the config file.
+                 If not specified as an 'amisc_{timestamp}' directory, a new directory will be created.
+- `rank` - the rank of the SVD compression. Defaults to None, which will defer to `energy_tol`.
+- `energy_tol` - the energy tolerance for the SVD compression. Defaults to 0.95.
+- `compression_samples` - the number of samples to use for generating the SVD compression data. Defaults to 500.
+- `test_samples` - the number of samples to use for generating the test set data. Defaults to 500.
+- `executor` - the parallel executor for training surrogate. Options are `thread` or `process`. Default (`process`).
+- `max_workers` - the maximum number of workers to use for parallel processing. Defaults to using max number of
+                  available CPUs.
+
+Note that a total of `compression_samples` + `test_samples` samples will be generated for `--gen-data`, which will
+run the true underlying models/solvers that many times -- so set accordingly and be prepared for a long runtime.
+
+!!! Note
+    New compression data and test set data should be generated anytime _anything_ changes about
+    the model or the model inputs. This script should be called before `fit_surr.py`.
+
+Includes:
+
+- `gen_compression_data()` - generate the compression maps for field quantities (only SVD supported).
+- `gen_test_set()` - generate a test set for evaluating surrogate performance.
+"""
+import argparse
+import json
+import os
+import shutil
+from concurrent.futures import Executor, ProcessPoolExecutor, ThreadPoolExecutor
+from pathlib import Path
+import pickle
+
+import numpy as np
+import matplotlib.pyplot as plt
+from uqtils import ax_default
+from amisc import YamlLoader, System
+
+
+parser = argparse.ArgumentParser(description=
+                                 'Generate compression (SVD) data and test set data for training a surrogate.')
+parser.add_argument('config_file', type=str,
+                    help='the path to the `amisc` YAML config file with model and input/output variable information.')
+parser.add_argument('--output_dir', type=str, default=None,
+                    help='the directory to save the generated SVD data and test set data. Defaults to same '
+                         'directory as <config_file>.')
+parser.add_argument('--rank', type=int, default=None,
+                    help='the rank of the SVD compression. Defaults to None, which will defer to `energy_tol`.')
+parser.add_argument('--energy_tol', type=float, default=0.95,
+                    help='the energy tolerance for the SVD compression. Defaults to 0.95.')
+parser.add_argument('--compression_samples', type=int, default=500,
+                    help='the number of samples to use for generating the SVD compression data. Defaults to 500.')
+parser.add_argument('--test_samples', type=int, default=500,
+                    help='the number of samples to use for generating the test set data. Defaults to 500.')
+parser.add_argument('--executor', type=str, default='process',
+                    help='the parallel executor for training the surrogate. Options are `thread` or `process`. '
+                         'Default (`process`).')
+parser.add_argument('--max_workers', type=int, default=None,
+                    help='the maximum number of workers to use for parallel processing. Defaults to using max'
+                         'number of available CPUs.')
+
+args, _ = parser.parse_known_args()
+
+
+def _extract_grid_coords(field_var: str, model_dir: str | Path):
+    """Should have a better way of getting field quantity coordinates directly from the models, which would probably
+    require wrapper functions returning the coords -- but this would require some changes in `System.predict` in
+    the `amisc` package. See https://github.com/eckelsjd/amisc/issues/31.
+
+    For now, just hard code how to extract grid coordinates for each specific field quantity (just `u_ion` and `j_ion`).
+    """
+    match field_var:
+        case 'u_ion':
+            files = [f for f in os.listdir(Path(model_dir) / 'Thruster') if f.endswith('.json')]
+            with open(Path(model_dir) / 'Thruster' / files[0], 'r') as fd:
+                # Assumes hallthruster.jl model output, and assumes the grid is the same for all outputs
+                data = json.load(fd)
+                coords = np.atleast_1d(data['outputs']['average']['z'])  # axial grid
+        case 'j_ion':
+            # See hallmd.models.plume.current_density() for how the grid is generated (0 to 90 deg in 1 deg increments)
+            coords = np.linspace(0, np.pi/2, 91)
+        case other:
+            raise ValueError(f"Field quantity '{other}' not recognized. Please add some logic for how to extract "
+                             f"the grid coordinates for this field quantity.")
+    return coords
+
+
+def gen_compression_data(system: System, num_samples: int, rank: int, energy_tol: float, executor: Executor):
+    """Compute compression maps for field quantities (only SVD supported)."""
+    system.logger.info(f'Generating compression data for {system.name} -- {num_samples} samples...')
+    samples = system.sample_inputs(num_samples, use_pdf=False)  # full domain
+    outputs = system.predict(samples, use_model='best', model_dir=Path(system.root_dir) / 'compression',
+                             executor=executor)
+
+    # Filter bad samples and outliers (by interquartile range)
+    bad_idx = np.full(num_samples, False)
+    for var, arr in outputs.items():
+        bad_idx |= np.any(np.isnan(arr), axis=tuple(range(1, arr.ndim)))
+
+        p25 = np.percentile(arr, 25, axis=0)
+        p75 = np.percentile(arr, 75, axis=0)
+        iqr = p75 - p25
+        bad_idx |= np.any((arr < p25 - 1.5 * iqr) | (arr > p75 + 1.5 * iqr), axis=tuple(range(1, arr.ndim)))
+
+    for var in system.outputs():
+        if var.compression is not None:
+            var.compression.coords = _extract_grid_coords(var.name, Path(system.root_dir) / 'compression')
+
+            match var.compression.method.lower():
+                case 'svd':
+                    data_matrix = {field: var.normalize(outputs[field][~bad_idx, ...]) for field in
+                                   var.compression.fields}
+                    var.compression.compute_map(data_matrix, rank=rank, energy_tol=energy_tol)
+                case other:
+                    raise ValueError(f"Compression method '{other}' not supported.")
+
+    system.save_to_file(f'{system.name}_compression.yml', Path(system.root_dir) / 'compression')
+
+    # Plot and save some results
+    for var in system.outputs():
+        if var.compression is not None:
+            u, s, vt = np.linalg.svd(var.compression.data_matrix)
+            energy_frac = np.cumsum(s ** 2 / np.sum(s ** 2))
+
+            fig, ax = plt.subplots(figsize=(6, 5), layout='tight')
+            ax.plot(energy_frac, '.k')
+            ax.plot(energy_frac[:var.compression.rank], 'or', label=f'Rank={var.compression.rank}')
+            ax.axhline(y=var.compression.energy_tol, color='red', linestyle='--', linewidth=1, label='Energy tol')
+            ax.set_yscale('log')
+            ax_default(ax, 'Singular value index', 'Cumulative energy fraction', legend=True)
+            fig.savefig(Path(system.root_dir) / 'compression' / f'{var.name}_svd.png', dpi=300, format='png')
+
+            # Special plots for specific field quantities
+            if var.name in ['u_ion', 'j_ion']:
+                coords = var.compression.coords
+                A = outputs[var.name][~bad_idx, ...]
+                lb = np.percentile(A, 5, axis=0)
+                mid = np.percentile(A, 50, axis=0)
+                ub = np.percentile(A, 95, axis=0)
+
+                fig, ax = plt.subplots(figsize=(6, 5), layout='tight')
+                ax.plot(coords, mid, '-k')
+                ax.fill_between(coords, lb, ub, alpha=0.3, edgecolor=(0.5, 0.5, 0.5), facecolor='gray')
+                if var.name == 'j_ion':
+                    ax.set_yscale('log')
+                    xlabel = 'Angle from thruster centerline (rad)'
+                else:
+                    xlabel = 'Axial location (m)'
+                ax_default(ax, xlabel, var.get_tex(units=True, symbol=False), legend=False)
+                fig.savefig(Path(system.root_dir) / 'compression' / f'{var.name}_range.png', dpi=300, format='png')
+
+
+def gen_test_set(system: System, num_samples: int, executor: Executor):
+    """Generate a test set of high-fidelity model solves."""
+    system.logger.info(f'Generating test set data for {system.name} -- {num_samples} samples...')
+    samples = system.sample_inputs(num_samples, use_pdf=False)  # full domain
+    outputs = system.predict(samples, use_model='best', model_dir=Path(system.root_dir) / 'test_set',
+                             executor=executor)
+
+    # Filter bad samples and outliers (by interquartile range)
+    bad_idx = np.full(num_samples, False)
+    for var, arr in outputs.items():
+        bad_idx |= np.any(np.isnan(arr), axis=tuple(range(1, arr.ndim)))
+
+        p25 = np.percentile(arr, 25, axis=0)
+        p75 = np.percentile(arr, 75, axis=0)
+        iqr = p75 - p25
+        bad_idx |= np.any((arr < p25 - 1.5 * iqr) | (arr > p75 + 1.5 * iqr), axis=tuple(range(1, arr.ndim)))
+
+    with open(Path(system.root_dir) / 'test_set' / 'test_set.pkl', 'wb') as fd:
+        xt = {str(var): arr[~bad_idx, ...] for var, arr in samples.items()}
+        yt = {str(var): arr[~bad_idx, ...] for var, arr in outputs.items()}
+        pickle.dump({'test_set': (xt, yt)}, fd)
+
+
+if __name__ == '__main__':
+    system = YamlLoader.load(args.config_file)
+    system.root_dir = args.output_dir or Path(args.config_file).parent
+    system.set_logger(stdout=True)
+
+    if Path(args.config_file).name not in os.listdir(system.root_dir):
+        shutil.copy(args.config_file, system.root_dir)
+
+    match args.executor.lower():
+        case 'thread':
+            pool_executor = ThreadPoolExecutor
+        case 'process':
+            pool_executor = ProcessPoolExecutor
+        case _:
+            raise ValueError(f"Unsupported executor type: {args.executor}")
+
+    with pool_executor(max_workers=args.max_workers) as executor:
+        gen_compression_data(system, args.compression_samples, args.rank, args.energy_tol, executor)
+        gen_test_set(system, args.test_samples, executor)

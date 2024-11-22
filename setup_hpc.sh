@@ -1,6 +1,13 @@
 #!/bin/bash
+# This script is only setup to run on the University of Michigan Great Lakes cluster.
+# The cluster has OpenMPI installed along with the Module package and the SLURM workload manager.
+#
+# Please adjust according to your needs.
+#
+# Author: Joshua Eckels
+# Date: 11/19/2024
 
-# Run this script from the project root directory
+# Run this script from the project root directory (HallThrusterPEM/)
 echo "Setting up environment..."
 
 module load python/3.11.5
@@ -24,8 +31,8 @@ else
     echo "PDM already installed!"
 fi
 
-pdm install
-pdm add mpi4py
+pdm self udpate
+pdm install --prod -G mpi
 
 # Add amisc package (check for local editable installation)
 if [ -d "../amisc" ]; then
@@ -34,7 +41,7 @@ if [ -d "../amisc" ]; then
     pdm add -e ../amisc --dev
 fi
 
-# TODO: install julia and HallThruster.jl in the venv
+pdm run python install_hallthruster.py
 
 # Add slurm user account info to .bashrc
 if [[ -z "${SLURM_ACCOUNT}" || -z "${SLURM_MAIL}" ]]; then
@@ -46,10 +53,6 @@ if [[ -z "${SLURM_ACCOUNT}" || -z "${SLURM_MAIL}" ]]; then
     mgallen)
       export SLURM_ACCOUNT='bjorns0'
       export SLURM_MAIL='mgallen@umich.edu'
-      ;;
-    *)
-      export SLURM_ACCOUNT='goroda0'
-      export SLURM_MAIL='eckelsjd@umich.edu'
       ;;
   esac
 

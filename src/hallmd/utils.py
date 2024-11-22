@@ -2,7 +2,7 @@
 
 Includes:
 
-- `data_write()` - Convenience function for writing .json data to file.
+- `load_device()` - Load a device configuration from the `hallmd.devices` directory.
 - `plot_qoi()` - Convenience plotting tool for showing QoI with UQ bounds
 """
 import json
@@ -38,23 +38,23 @@ def load_device(device_name: str, device_file: str = 'device.yml', device_dir: s
     be converted to an absolute path.
 
     !!! Example "Loading a device configuration"
-    Currently, the only provided device configuration is for the SPT-100 thruster.
-    ```python
-    from hallmd.utils import load_device
+        Currently, the only provided device configuration is for the SPT-100 thruster.
+        ```python
+        from hallmd.utils import load_device
 
-    device = load_device('SPT-100')
-    ```
-    You may put custom configurations in the `hallmd.devices` directory or specify a custom directory with a custom
-    configuration file:
-    ```yaml
-    name: MyDevice
-    geometry:
-      channel_length: 1
-      inner_radius: 2
-      outer_radius: 3
-    magnetic_field: bfield.csv
-    shielded: false
-    ```
+        device = load_device('SPT-100')
+        ```
+        You may put custom configurations in the `hallmd.devices` directory or specify a custom directory with a custom
+        configuration file:
+        ```yaml
+        name: MyDevice
+        geometry:
+          channel_length: 1
+          inner_radius: 2
+          outer_radius: 3
+        magnetic_field: bfield.csv
+        shielded: false
+        ```
 
     :param device_name: name of the device configuration to load
     :param device_file: name of the device configuration file (default: 'device.yml'). Only supported file types are
@@ -99,11 +99,6 @@ def load_device(device_name: str, device_file: str = 'device.yml', device_dir: s
     return config
 
 
-def model_config_dir():
-    """Return a path to the model configuration directory"""
-    return resources.files('hallmd.models.config')
-
-
 def plot_qoi(ax, x, qoi, xlabel, ylabel, legend=False):
     """ Plot a quantity of interest with 5%, 50%, 95% percentiles against `x`.
 
@@ -120,9 +115,3 @@ def plot_qoi(ax, x, qoi, xlabel, ylabel, legend=False):
     ax.plot(x, med, '-k', label='Model')
     ax.fill_between(x, p5, p95, alpha=0.4, edgecolor=(0.4, 0.4, 0.4), facecolor=(0.8, 0.8, 0.8))
     ax_default(ax, xlabel, ylabel, legend=legend)
-
-
-def data_write(data, filename, write_dir='.'):
-    """Convenience function to write .json data files."""
-    with open(Path(write_dir) / filename, 'w', encoding='utf-8') as fd:
-        json.dump(data, fd, ensure_ascii=False, indent=4)

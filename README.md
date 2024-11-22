@@ -15,12 +15,24 @@ Prototype of a predictive engineering model (PEM) of a Hall thruster. Integrates
 Using [pdm](https://github.com/pdm-project/pdm):
 ```shell
 pip install --user pdm
-git clone https://github.com/JANUS-Institute/HallThrusterPEM.git
+git clone https://github.com/JANUS-Institute/HallThrusterPEM.git  # or download the source from releases
 cd HallThrusterPEM
-pdm install
+pdm install --prod
 ```
 
-You may also download the source from the releases.
+`hallmd` uses the [`HallThruster.jl`](https://github.com/UM-PEPL/HallThruster.jl) Julia package. Please see their docs for setting up Julia and installing. Alternatively, you may run the provided [install script](https://raw.githubusercontent.com/JANUS-Institute/HallThrusterPEM/main/install_hallthruster.py), which will install both Julia and `HallThruster.jl`.
+
+Assuming `python` is available on your path:
+
+=== Linux/Mac
+    ```shell
+    curl -sSL https://raw.githubusercontent.com/JANUS-Institute/HallThrusterPEM/main/install_hallthruster.py | python -
+    ```
+
+=== Windows
+    ```shell
+    powershell -c "Invoke-WebRequest -Uri https://raw.githubusercontent.com/JANUS-Institute/HallThrusterPEM/main/install_hallthruster.py | python -"
+    ```
 
 ## 📍 Quickstart
 ```python

@@ -32,14 +32,14 @@ def current_density(inputs: Dataset, j_ion_coords: np.ndarray = None):
     """
     # Load plume inputs
     P_B = inputs['P_b'] * TORR_2_PA     # Background pressure (Torr)
-    c0 = inputs['c0']                   # Fit coefficients
-    c1 = inputs['c1']
-    c2 = inputs['c2']
-    c3 = inputs['c3']
-    c4 = inputs['c4']
-    c5 = inputs['c5']
+    c0 = inputs['c0']                   # Fit coefficients (-)
+    c1 = inputs['c1']                   # (-)
+    c2 = inputs['c2']                   # (rad/Pa)
+    c3 = inputs['c3']                   # (rad)
+    c4 = inputs['c4']                   # (m^-3/Pa)
+    c5 = inputs['c5']                   # (m^-3)
     sigma_cex = inputs['sigma_cex']     # Charge-exchange cross-section (m^2)
-    r_m = inputs['r_m']                 # Axial distance from thruster exit plane (m)
+    r_m = inputs['r_p']                 # Axial distance from thruster exit plane (m)
     I_B0 = inputs['I_B0']               # Total initial ion beam current (A)
 
     # 90 deg angle sweep for ion current density

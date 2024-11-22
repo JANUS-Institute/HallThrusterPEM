@@ -9,3 +9,4 @@ where `infile.json` is the input file. The output is saved at the location `infi
 using HallThruster
 infile = ARGS[1]
 HallThruster.run_simulation(infile)
+println("Hello world!")
