@@ -1,5 +1,5 @@
 !System
-name: PEM v0 for SPT-100
+name: PEM v0 (SPT-100)
 hallmd_version: 0.3.0
 components: !Component
   - name: Cathode
@@ -11,8 +11,8 @@ components: !Component
         category: operating
         tex: "$P_b$"
         units: Torr
-        nominal: 1e-5
-        domain: [1e-8, 1e-4]
+        nominal: 1.0e-5
+        domain: (1.0e-8, 1.0e-4)
         distribution: Relative(20)
         norm: log10
       - name: V_a
@@ -21,7 +21,7 @@ components: !Component
         tex: "$V_a$"
         units: V
         nominal: 300
-        domain: [200, 400]
+        domain: (200, 400)
       - name: T_e
         description: Electron temperature at cathode
         category: calibration
@@ -42,7 +42,7 @@ components: !Component
         tex: "$P^*$"
         units: Torr
         nominal: 34.63406e-6
-        distribution: Uniform(10e-6, 100e-6)
+        distribution: Uniform(10.0e-6, 100.0e-6)
         norm: linear(1e6)
       - name: P_T
         description: Thruster to facility plasma density ratio
@@ -50,7 +50,7 @@ components: !Component
         tex: "$P_T$"
         units: Torr
         nominal: 10.19193e-6
-        distribution: Uniform(10e-6, 100e-6)
+        distribution: Uniform(10.0e-6, 100.0e-6)
         norm: linear(1e6)
     outputs: !Variable
       - name: V_cc
@@ -58,21 +58,21 @@ components: !Component
         tex: "$V_{cc}$"
         units: V
         nominal: 30
-        domain: [0, 60]
+        domain: (0, 60)
   - name: Thruster
     model: !!python/name:hallmd.models.thruster.hallthruster_jl
     julia_script: ../tests/sim_hallthruster.jl
     thruster: SPT-100
     config:
-#      thruster: SPT-100          # moved to separate thruster kwarg
-      discharge_voltage: 300      # overwritten by V_a
-      anode_mass_flow_rate: 5e-6  # overwritten by mdot_a
-      cathode_potential: 30       # overwritten by V_cc
-      background_pressure: 1e-5   # overwritten by P_b
-      cathode_Te: 3               # overwritten by T_e
-      neutral_velocity: 300       # overwritten by u_n
-      ncharge: 1                  # overwritten by model_fidelity[1]
-      transition_length: 0.003    # overwritten by l_t
+#      thruster: SPT-100            # moved to separate thruster kwarg
+      discharge_voltage: 300        # overwritten by V_a
+      anode_mass_flow_rate: 5.0e-6  # overwritten by mdot_a
+      cathode_potential: 30         # overwritten by V_cc
+      background_pressure: 1.0e-5   # overwritten by P_b
+      cathode_Te: 3                 # overwritten by T_e
+      neutral_velocity: 300         # overwritten by u_n
+      ncharge: 1                    # overwritten by model_fidelity[1]
+      transition_length: 0.003      # overwritten by l_t
       anom_model:
         type: PressureShifted
         model:
@@ -81,7 +81,7 @@ components: !Component
           c2: 0.0625   # overwritten by a_2 * a_1
         dz: 0.2        # overwritten by dz
         z0: -0.03104   # overwritten by z0
-        pstar: 45e-6   # overwritten by p0
+        pstar: 45.0e-6 # overwritten by p0
         alpha: 15
       domain: [0, 0.08]
       wall_loss_model:
@@ -123,9 +123,9 @@ components: !Component
         category: operating
         tex: "$\\dot{m}_a$"
         units: kg/s
-        nominal: 5e-6
+        nominal: 5.0e-6
         distribution: Relative(3)
-        domain: [2e-6, 7e-6]
+        domain: (2.0e-6, 7.0e-6)
         norm: linear(1e6)
       - name: T_e
       - name: u_n
@@ -141,7 +141,7 @@ components: !Component
         tex: "$l_t$"
         units: m
         nominal: 1.87915e-3
-        distribution: U(1e-3, 20e-3)
+        distribution: U(1.0e-3, 20.0e-3)
         norm: linear(1e3)
       - name: a_1
         description: Anomalous transport scale inside channel
@@ -174,7 +174,7 @@ components: !Component
         tex: "$p_0$"
         units: Torr
         nominal: 56.86006
-        distribution: N(45e-6, 7e-6)
+        distribution: N(45.0e-6, 7.0e-6)
         norm: linear(1e6)
       - name: V_cc
     outputs: !Variable
@@ -183,40 +183,40 @@ components: !Component
         tex: "$I_b$"
         units: A
         nominal: 3.6
-        domain: [0, 10]
+        domain: (0, 10)
       - name: T
         description: Thrust
         tex: "$T$"
         units: N
         nominal: 0.08
-        domain: [0, 0.2]
+        domain: (0, 0.2)
       - name: I_d
         description: Discharge current
         tex: "$I_d$"
         units: A
         nominal: 4.5
-        domain: [0, 10]
+        domain: (0, 10)
       - name: eta_c
         description: Current efficiency
         tex: "$\\eta_c$"
-        domain: [0, 1]
+        domain: (0, 1)
       - name: eta_m
         description: Mass utilization efficiency
         tex: "$\\eta_m$"
-        domain: [0, 1]
+        domain: (0, 1)
       - name: eta_v
         description: Voltage utilization efficiency
         tex: "$\\eta_v$"
-        domain: [0, 1]
+        domain: (0, 1)
       - name: eta_a
         description: Anode efficiency
         tex: "$\\eta_a$"
-        domain: [0, 1]
+        domain: (0, 1)
       - name: u_ion
         description: Singly-charged axial ion velocity
         tex: "$u_{ion}$"
         units: m/s
-        norm: linear(1e-3)
+        norm: linear(1.0e-3)
         compression:
           method: svd
           energy_tol: 0.95
@@ -272,16 +272,16 @@ components: !Component
         category: nuisance
         tex: "$\\sigma_{cex}$"
         units: "$m^2$"
-        nominal: 55e-20
-        distribution: Uniform(51e-20, 58e-20)
+        nominal: 55.0e-20
+        distribution: Uniform(51.0e-20, 58.0e-20)
         norm: linear(1e20)
       - name: r_p
         description: Plume measurement radial distance from channel exit
-        category: nuisance
+        category: operating
         tex: "$r_p$"
         units: m
         nominal: 1
-        domain: [0.5, 1.5]
+        domain: (0.5, 1.5)
       - name: I_B0
     outputs: !Variable
       - name: j_ion

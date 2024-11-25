@@ -2,7 +2,6 @@ sketch out an OO design (keep data-parsing internal for now, but could be its ow
   - mc, mcmc, sa, models, data, etc.
   - easy to version, deploy, test new PEMs
 
-- python gen_data
 - python fit (finds directory)
 - python fit single-fidelity (clears and plots)
 - different executors (thread and process)

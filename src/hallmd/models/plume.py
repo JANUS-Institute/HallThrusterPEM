@@ -66,7 +66,8 @@ def current_density(inputs: Dataset, j_ion_coords: np.ndarray = None):
         j_beam = base_density * A1[..., np.newaxis] * np.exp(-(alpha_rad / alpha1[..., np.newaxis]) ** 2)
         j_scat = base_density * A2[..., np.newaxis] * np.exp(-(alpha_rad / alpha2[..., np.newaxis]) ** 2)
         j_cex = I_B0 * (1 - np.exp(-r_m * n * sigma_cex)) / (2 * np.pi * r_m ** 2)
-        j_ion = j_beam + j_scat + np.atleast_1d(j_cex)[..., np.newaxis]  # (..., 91) the current density 1d profile
+        j_cex = np.atleast_1d(j_cex)[..., np.newaxis]
+        j_ion = j_beam + j_scat + j_cex  # (..., 91) the current density 1d profile
 
     # Set j~0 where alpha1 < 0 (invalid cases)
     j_ion[np.where(alpha1 <= 0)] = 1e-20

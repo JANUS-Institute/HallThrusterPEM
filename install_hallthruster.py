@@ -40,7 +40,7 @@ def install_juliaup():
     if PLATFORM == "windows":
         run_command("winget install julia -s msstore --accept-package-agreements", capture_output=False, text=True)
     else:
-        run_command("curl -fsSL https://install.julialang.org | sh")
+        run_command("curl -fsSL https://install.julialang.org | sh", capture_output=False, text=True, shell=True)
 
 
 def ensure_julia_version(julia_version):
@@ -60,6 +60,9 @@ def ensure_julia_version(julia_version):
             parts = [p.strip() for p in line.strip().split()]  # [Default, Channel, Version, Update] columns
             if len(parts) > 1:
                 for idx, p in enumerate(parts):
+                    if 'update' in p.lower():
+                        continue
+
                     char = '+' if '+' in p else ('-' if '-' in p else '')  # Version column has "+" or "-" for installed
                     if char:
                         installed_version = p.split(char)[0]
@@ -79,7 +82,8 @@ def ensure_julia_version(julia_version):
 
 def install_hallthruster_jl(hallthruster_version):
     print(f"Checking for HallThruster.jl version {hallthruster_version}...")
-    check_install_cmd = r"julia -e 'using Pkg; Pkg.status(\"HallThruster\")'"
+    check_install_cmd = r"julia -e 'using Pkg; Pkg.status(\"HallThruster\")'" if PLATFORM == 'windows' else \
+        r"""julia -e 'using Pkg; Pkg.status("HallThruster")'"""
     try:
         proc = run_command(check_install_cmd, text=True)
         if f"HallThruster v{hallthruster_version}" in proc.stdout:
@@ -89,7 +93,10 @@ def install_hallthruster_jl(hallthruster_version):
         pass
 
     print(f"Installing HallThruster.jl version {hallthruster_version}...")
-    install_cmd = rf"julia -e 'using Pkg; Pkg.add(name=\"HallThruster\", version=\"{hallthruster_version}\")'"
+    if PLATFORM == 'windows':
+        install_cmd = rf"julia -e 'using Pkg; Pkg.add(name=\"HallThruster\", version=\"{hallthruster_version}\")'"
+    else:
+        install_cmd = rf"""julia -e 'using Pkg; Pkg.add(name="HallThruster", version="{hallthruster_version}")'"""
     run_command(install_cmd, text=True, capture_output=False)
 
 

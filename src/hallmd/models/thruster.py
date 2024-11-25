@@ -24,7 +24,6 @@ from typing import Literal, Callable
 
 import numpy as np
 from amisc.typing import Dataset
-from scipy.interpolate import interp1d
 
 from hallmd.utils import load_device
 
@@ -168,18 +167,18 @@ def _format_hallthruster_jl_input(thruster_inputs: dict, thruster: dict | str, c
         fname += '_' + ''.join(random.choices(string.ascii_uppercase + string.digits, k=4)) + '.json'
         return fname
 
-    # Make sure we request time-averaged and output file name
+    # Make sure we request time-averaged
     duration = json_config['simulation'].get('duration', 1e-3)
     avg_start_time = json_config['postprocess'].get('average_start_time', 0.5 * duration)
-    output_file = _random_filename()
-    if output_path is not None:
-        output_file = str((Path(output_path) / output_file).resolve())
-
     json_config['postprocess']['average_start_time'] = avg_start_time
-    json_config['postprocess']['output_file'] = output_file
 
     # Update/override config with PEM thruster inputs (modify in place)
     _convert_to_julia(thruster_inputs, json_config, pem_to_julia)
+
+    output_file = _random_filename()
+    if output_path is not None:
+        output_file = str((Path(output_path) / output_file).resolve())
+    json_config['postprocess']['output_file'] = output_file
 
     # Handle special conversions for anomalous transport models (just c1*c2 Bohm model for now)
     if anom_model := json_config['config'].get('anom_model'):
@@ -210,7 +209,6 @@ def hallthruster_jl(thruster_inputs: Dataset,
                     config: dict = None,
                     simulation: dict = None,
                     postprocess: dict = None,
-                    u_ion_coords: np.ndarray = None,
                     model_fidelity: tuple = (2, 2),
                     output_path: str | Path = None,
                     julia_script: str | Path = 'default',
@@ -243,10 +241,6 @@ def hallthruster_jl(thruster_inputs: Dataset,
                    options and formatting.
     :param simulation: dictionary of simulation parameters for `HallThruster.jl`
     :param postprocess: dictionary of post-processing parameters for `Hallthruster.jl`
-    :param u_ion_coords: `(M,)` The axial locations at which to compute the ion velocity profile, in meters. Defaults
-                         to the full `ncells` simulation grid computed by `HallThruster.jl`. `z=0` corresponds to the
-                         anode at the left BC of the simulation domain. If provided, must be within the `domain` bounds
-                         specified in `config`.
     :param model_fidelity: tuple of integers that determine the number of cells and the number of charge states to use
                            via `ncells = model_fidelity[0] * 50 + 100` and `ncharge = model_fidelity[1] + 1`.
                            Will override `ncells` and `ncharge` in `simulation` and `config` if provided.
@@ -301,15 +295,6 @@ def hallthruster_jl(thruster_inputs: Dataset,
 
     # Format QoIs for the PEM
     thruster_outputs = _convert_to_pem(sim_results, pem_to_julia)
-
-    # Interpolate ion velocity to requested coords
-    if u_ion_coords is not None:
-        z_grid = thruster_outputs.get('u_ion_coords')
-        uion_grid = thruster_outputs.get('u_ion')
-        if z_grid is not None and uion_grid is not None:
-            f = interp1d(np.atleast_1d(z_grid), np.atleast_1d(uion_grid), axis=-1)
-            thruster_outputs['u_ion'] = f(u_ion_coords)  # (..., num_pts)
-            thruster_outputs['u_ion_coords'] = u_ion_coords
 
     # Raise an exception if thrust or beam current are negative (non-physical cases)
     thrust = thruster_outputs.get('T', 0)
