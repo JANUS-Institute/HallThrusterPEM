@@ -14,7 +14,8 @@ from hallmd.models.thruster import uion_reconstruct
 
 PROJECT_ROOT = Path('../..')
 TRAINING = False
-surr_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-06-26T18.04.11' / 'multi-fidelity').glob('amisc_*'))[0]
+SAMPLER = 'Posterior'  # Or 'Prior'
+surr_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-03-07T01.53.07' / 'multi-fidelity').glob('amisc_*'))[0]
 SURR = pem_v0(from_file=surr_dir / 'sys' / f'sys_final{"_train" if TRAINING else ""}.pkl')
 COMP = 'System'
 CONSTANTS = {'Va', 'r_m'}
@@ -22,11 +23,11 @@ CONSTANTS = {'Va', 'r_m'}
 SKIP_IDX = [i for i, v in enumerate(SURR.x_vars) if str(v) in CONSTANTS]
 LCH = 0.025
 IDX_MAP = {'V_cc': [i for i in SURR.graph.nodes['Cathode']['exo_in'] if i not in SKIP_IDX],
-           'Tc': [i for i in SURR.graph.nodes['Thruster']['exo_in'] if i not in SKIP_IDX],
+           'T': [i for i in SURR.graph.nodes['Thruster']['exo_in'] if i not in SKIP_IDX],
            'uion': [i for i in SURR.graph.nodes['Thruster']['exo_in'] if i not in SKIP_IDX],
            'jion': [i for i in SURR.graph.nodes['Plume']['exo_in'] if i not in SKIP_IDX]
            }
-QOIS = ['V_cc', 'Tc', 'uion', 'jion']
+QOIS = ['V_cc', 'T', 'uion', 'jion']
 
 MEDIUM_SIZE = 13
 BIGGER_SIZE = 16
@@ -43,32 +44,30 @@ plt.rc('ytick.minor', size=3, width=0.8, visible=True)
 
 
 def compute_indices(Ns=1000):
-    def sampler(shape, nominal, qoi: Literal['V_cc', 'Tc', 'uion', 'jion']):
-        # Only prior sampling here
+    def sampler(shape, nominal, qoi: Literal['V_cc', 'T', 'uion', 'jion']):
         x = SURR.sample_inputs(shape, use_pdf=True, nominal=nominal, constants=CONSTANTS)[..., IDX_MAP.get(qoi)]
 
         if qoi == 'jion':
             # Handle some really bad samples of jion
-            comp_in = np.empty(shape + (x.shape[-1] + 3,))
-            comp_in[..., :-3] = x
-            comp_in[..., -3] = 1     # r_m
-            comp_in[..., -2] = 4     # I_B0
-            comp_in[..., -1] = 0.08  # T
+            comp_in = np.empty(shape + (x.shape[-1] + 2,))
+            comp_in[..., :-2] = x
+            comp_in[..., -2] = 1    # r_m
+            comp_in[..., -1] = 4    # I_B0
             comp_in = comp_in.reshape((-1, comp_in.shape[-1]))
-            comp_out = SURR['Plume']._model(comp_in, compress=False)['y'][..., 2:]
+            comp_out = SURR['Plume']._model(comp_in, compress=False)['y'][..., 1:]
             bad_idx = np.any(comp_out >= 200, axis=-1)
             num_reject = np.sum(bad_idx)
             while num_reject > 0:
                 new_sample = SURR.sample_inputs(int(num_reject), use_pdf=True, nominal=nominal, constants=CONSTANTS)[..., IDX_MAP.get(qoi)]
-                comp_in[bad_idx, :-3] = new_sample
-                comp_out = SURR['Plume']._model(comp_in, compress=False)['y'][..., 2:]
+                comp_in[bad_idx, :-2] = new_sample
+                comp_out = SURR['Plume']._model(comp_in, compress=False)['y'][..., 1:]
                 bad_idx = np.any(comp_out >= 200, axis=-1)
                 num_reject = np.sum(bad_idx)
-            x = comp_in[:, :-3].reshape(x.shape)
+            x = comp_in[:, :-2].reshape(x.shape)
 
         return x
 
-    def model(x, qoi: Literal['V_cc', 'Tc', 'uion', 'jion']):
+    def model(x, qoi: Literal['V_cc', 'T', 'uion', 'jion']):
         """Compute Vcc, T, uion(z=Lch), or jion(gamma=0)"""
         surr_in = np.empty(x.shape[:-1] + (len(SURR.x_vars),))
         j = 0
@@ -78,15 +77,14 @@ def compute_indices(Ns=1000):
                 j += 1
             else:
                 surr_in[..., i] = SURR.x_vars[i].nominal
-        qoi_ind = [qoi] if qoi in ['V_cc', 'Tc'] else [i for i, v in enumerate(SURR.coupling_vars) if str(v).startswith(qoi)]
+        qoi_ind = [qoi] if qoi in ['V_cc', 'T'] else [i for i, v in enumerate(SURR.coupling_vars) if str(v).startswith(qoi)]
 
         if qoi == 'jion':
-            comp_in = np.empty(x.shape[:-1] + (x.shape[-1] + 3,))
-            comp_in[..., :-3] = x
-            comp_in[..., -3] = 1     # r_m
-            comp_in[..., -2] = 4     # I_B0
-            comp_in[..., -1] = 0.08  # T
-            surr_out = SURR['Plume']._model(comp_in, compress=False)['y'][..., 2:]
+            comp_in = np.empty(x.shape[:-1] + (x.shape[-1] + 2,))
+            comp_in[..., :-2] = x
+            comp_in[..., -2] = 1  # r_m
+            comp_in[..., -1] = 4  # I_B0
+            surr_out = SURR['Plume']._model(comp_in, compress=False)['y'][..., 1:]
             surr_out = surr_out[..., 0, np.newaxis]
             thresh = np.percentile(surr_out, 99)
             surr_out[surr_out > thresh] = thresh  # Fix some numerical issues with jion spikes (shit model anyways)
@@ -132,9 +130,9 @@ def spt100_sobol(Ns=1000):
     with h5py.File(file, 'r') as fd, plt.style.context('uqtils.default'):
         pb = np.array(fd['PB'])
         fig1, ax1 = plt.subplots(figsize=figsize, layout='tight')
-        fig2, ax2 = plt.subplots(figsize=(6.6, 5), layout='tight')
+        fig2, ax2 = plt.subplots(figsize=figsize, layout='tight')
         axs = [ax1, ax2]
-        for i, qoi in enumerate(['Tc', 'uion']):
+        for i, qoi in enumerate(['T', 'uion']):
             ax = axs[i]
             S1 = np.array(fd[f'{qoi}/S1'])
             ST = np.array(fd[f'{qoi}/ST'])
@@ -179,7 +177,6 @@ def spt100_sobol(Ns=1000):
             ax.set_ylim(bottom=0, top=1.08)
             uq.ax_default(ax, 'Background pressure (Torr)', "Sobol' index", legend=qoi == 'V_cc')
             if qoi == 'jion':
-                fig.set_size_inches((6.6, 5))
                 leg = ax.legend(loc='upper left', ncol=1, bbox_to_anchor=(1.02, 1.025), labelspacing=0.8)
             fig.savefig(f'sobol-{qoi.lower()}.pdf', bbox_inches='tight', format='pdf')
             plt.show()
