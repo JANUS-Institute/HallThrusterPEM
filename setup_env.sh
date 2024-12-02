@@ -53,6 +53,10 @@ if [[ -z "${SLURM_ACCOUNT}" || -z "${SLURM_MAIL}" ]]; then
       export SLURM_ACCOUNT='bjorns0'
       export SLURM_MAIL='mgallen@umich.edu'
       ;;
+    *)
+      export SLURM_ACCOUNT='goroda0'
+      export SLURM_MAIL='eckelsjd@umich.edu'
+      ;;
   esac
 
   echo "export SLURM_ACCOUNT=${SLURM_ACCOUNT}" >> ~/.bashrc

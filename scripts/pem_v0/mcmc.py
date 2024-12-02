@@ -48,7 +48,7 @@ for qoi in QOIS:
     QOI_CNT.append(len(qoi_add))
 NOMINAL = {'r_m': 1, 'PB': XE_ARRAY[:, 0], 'Va': XE_ARRAY[:, 1], 'mdot_a': XE_ARRAY[:, 2]}
 CONSTANTS = {'calibration', 'other', 'operating'}
-DISCHARGE_CURRENT = 15     # Experimental discharge current for all cases (A): 4.5 for SPT, 15 for H9
+DISCHARGE_CURRENT = 4.5     # Experimental discharge current for all cases (A): 4.5 for SPT, 15 for H9
 DISCHARGE_SIGMA = 0.2      # Be within this range of the correct value (smaller = more weight in likelihood)
 
 with open(model_config_dir() / 'plume_svd.pkl', 'rb') as fd:

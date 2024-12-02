@@ -195,6 +195,56 @@ def get_test_set_error(surr, qoi_ind):
     return np.cumsum(cost_cum), test_error, dt, num_active, num_cand
 
 
+def plot_test_set_error():
+    """Simulate surrogate training and plot test set error v. cost"""
+    mf_sys = SystemSurrogate.load_from_file('sys_final.pkl')
+    qois = ['I_B0', 'I_D', 'T', 'uion0']
+    cost_cum, test_error, surr_time, num_active, num_cand = get_test_set_error(mf_sys, qois)  # (Niter+1,) and (Niter+1, Nqoi)
+    with open('test_set_error.pkl', 'wb') as fd:
+        pickle.dump({'cost_cum': cost_cum, 'test_error': test_error, 'surr_time': surr_time,
+                     'num_active': num_active, 'num_cand': num_cand}, fd)
+    with open('test_set_error.pkl', 'rb') as fd:
+        # Load test set results from pkl (so you don't have to run it everytime)
+        data = pickle.load(fd)
+        cost_cum, test_error = data['cost_cum'], data['test_error']
+        surr_time, num_active, num_cand = data['surr_time'], data['num_active'], data['num_cand']
+    surr_time, num_active, num_cand = map(np.array, (surr_time, num_active, num_cand))
+
+    mf_alloc, _, _ = mf_sys.get_allocation()
+    lf_alloc = mf_alloc['Thruster'][str((0,) * len(mf_sys['Thruster'].truth_alpha))]  # [Neval, total cost] for LF model
+    lf_model_cost = lf_alloc[1] / lf_alloc[0]  # LF single model eval cost
+    # Have to use LF cost here since the HF alpha=(2,2) wasn't reached by the mf_sys training
+
+    # Plot QoI L2 error on test set vs. cost
+    qoi_ind = mf_sys._get_qoi_ind(qois)
+    old_qoi = ['I_D', 'T', 'uion0']
+    labels = [mf_sys.coupling_vars[idx].to_tex(units=True) for idx in qoi_ind]
+    with plt.style.context('uqtils.default'):
+        # Plot test set error results
+        fig, ax = plt.subplots(1, len(qoi_ind), sharey='row', layout='tight', figsize=(3.5 * len(qoi_ind), 4))
+        for i in range(len(qoi_ind)):
+            ax[i].plot(cost_cum / lf_model_cost, test_error[:, i], '-k', label='Simulated training')
+            if qois[i] in old_qoi:
+                # Check that we are computing the same test set error as before
+                old_test_error = mf_sys.build_metrics['test_stats'][:, 1, old_qoi.index(qois[i])]  # (Niter+1)
+                ax[i].plot(cost_cum / lf_model_cost, old_test_error, '--r', label='Original training')
+            ax[i].set_xscale('log')
+            ax[i].set_yscale('log')
+            ax[i].set_title(labels[i])
+            ylabel = r'Relative $L_2$ error' if i == 0 else ''
+            ax_default(ax[i], r'Cost (number of LF evaluations)', ylabel, legend=i == len(qoi_ind) - 1)
+        fig.savefig('error_v_cost.png', dpi=200, format='png')
+
+        # Plot surrogate evaluation time on test set against total number of candidate indices
+        # TODO: find what fraction of surrogate cost is mostly spent recomputing misc coefficients
+        fig, ax = plt.subplots(1, 2, layout='tight', figsize=(11, 5))
+        ax[0].plot(num_active + num_cand, '-k')
+        ax[1].plot(num_active + num_cand, surr_time, '-k')
+        ax_default(ax[0], 'Training iteration', 'Total number of indices')
+        ax_default(ax[1], 'Total number of indices', 'Surrogate evaluation time (s)')
+        fig.savefig('surrogate_time.png', dpi=200, format='png')
+
+
 def get_slice_plots(surr, qoi_ind, slice_idx):
     """Simulate training surrogate to generate plot slices during training.
 
@@ -320,56 +370,6 @@ def get_slice_plots(surr, qoi_ind, slice_idx):
         num_active.append(len(index_set))
         num_cand.append(len(candidate_set))
     return num_active, num_cand
-
-
-def plot_test_set_error():
-    """Simulate surrogate training and plot test set error v. cost"""
-    mf_sys = SystemSurrogate.load_from_file('sys_final.pkl')
-    qois = ['I_B0', 'I_D', 'T', 'uion0']
-    cost_cum, test_error, surr_time, num_active, num_cand = get_test_set_error(mf_sys, qois)  # (Niter+1,) and (Niter+1, Nqoi)
-    with open('test_set_error.pkl', 'wb') as fd:
-        pickle.dump({'cost_cum': cost_cum, 'test_error': test_error, 'surr_time': surr_time,
-                     'num_active': num_active, 'num_cand': num_cand}, fd)
-    with open('test_set_error.pkl', 'rb') as fd:
-        # Load test set results from pkl (so you don't have to run it everytime)
-        data = pickle.load(fd)
-        cost_cum, test_error = data['cost_cum'], data['test_error']
-        surr_time, num_active, num_cand = data['surr_time'], data['num_active'], data['num_cand']
-    surr_time, num_active, num_cand = map(np.array, (surr_time, num_active, num_cand))
-
-    mf_alloc, _, _ = mf_sys.get_allocation()
-    lf_alloc = mf_alloc['Thruster'][str((0,) * len(mf_sys['Thruster'].truth_alpha))]  # [Neval, total cost] for LF model
-    lf_model_cost = lf_alloc[1] / lf_alloc[0]  # LF single model eval cost
-    # Have to use LF cost here since the HF alpha=(2,2) wasn't reached by the mf_sys training
-
-    # Plot QoI L2 error on test set vs. cost
-    qoi_ind = mf_sys._get_qoi_ind(qois)
-    old_qoi = ['I_D', 'T', 'uion0']
-    labels = [mf_sys.coupling_vars[idx].to_tex(units=True) for idx in qoi_ind]
-    with plt.style.context('uqtils.default'):
-        # Plot test set error results
-        fig, ax = plt.subplots(1, len(qoi_ind), sharey='row', layout='tight', figsize=(3.5 * len(qoi_ind), 4))
-        for i in range(len(qoi_ind)):
-            ax[i].plot(cost_cum / lf_model_cost, test_error[:, i], '-k', label='Simulated training')
-            if qois[i] in old_qoi:
-                # Check that we are computing the same test set error as before
-                old_test_error = mf_sys.build_metrics['test_stats'][:, 1, old_qoi.index(qois[i])]  # (Niter+1)
-                ax[i].plot(cost_cum / lf_model_cost, old_test_error, '--r', label='Original training')
-            ax[i].set_xscale('log')
-            ax[i].set_yscale('log')
-            ax[i].set_title(labels[i])
-            ylabel = r'Relative $L_2$ error' if i == 0 else ''
-            ax_default(ax[i], r'Cost (number of LF evaluations)', ylabel, legend=i == len(qoi_ind) - 1)
-        fig.savefig('error_v_cost.png', dpi=200, format='png')
-
-        # Plot surrogate evaluation time on test set against total number of candidate indices
-        # TODO: find what fraction of surrogate cost is mostly spent recomputing misc coefficients
-        fig, ax = plt.subplots(1, 2, layout='tight', figsize=(11, 5))
-        ax[0].plot(num_active + num_cand, '-k')
-        ax[1].plot(num_active + num_cand, surr_time, '-k')
-        ax_default(ax[0], 'Training iteration', 'Total number of indices')
-        ax_default(ax[1], 'Total number of indices', 'Surrogate evaluation time (s)')
-        fig.savefig('surrogate_time.png', dpi=200, format='png')
 
 
 def continue_mf(max_runtime_hr=16):
