@@ -251,7 +251,7 @@ def hallthruster_jl(thruster_inputs: Dataset,
                               on the input tuple. The returned simulation parameters must be convertable to Julia via
                               the `pem_to_julia` mapping.
     :param subprocess_kwargs: additional keyword arguments to pass to `subprocess.run` when calling the Julia script.
-                              Defaults to `check=True` and `capture_output=True`.
+                              Defaults to `check=True`.
     :raises ModelRunException: if anything fails during the call to `Hallthruster.jl`
     :returns: `dict` of `Hallthruster.jl` outputs: `I_B0`, `I_d`, `T`, `eta_c`, `eta_m`, `eta_v`, and `u_ion` for ion
               beam current (A), discharge current (A), thrust (N), current efficiency, mass efficiency, voltage
@@ -264,7 +264,7 @@ def hallthruster_jl(thruster_inputs: Dataset,
     if output_path is None:
         output_path = Path.cwd()
     if subprocess_kwargs is None or subprocess_kwargs == 'default':
-        subprocess_kwargs = {'check': True, 'capture_output': True}
+        subprocess_kwargs = {'check': True}
     if pem_to_julia is None or pem_to_julia == 'default':
         pem_to_julia = copy.deepcopy(PEM_TO_JULIA)
     else:

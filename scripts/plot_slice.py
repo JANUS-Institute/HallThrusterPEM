@@ -1,6 +1,6 @@
 """ `plot_slice.py`
 
-Script to be used with `plot_slice.sh` for plotting 1d slices of the PEM surrogates against the model.
+Script to be used with `slice_hpc.sh` for plotting 1d slices of the PEM surrogates against the model.
 
 Usage: python plot_slice.py <config_file> [--inputs <inputs>] [--outputs <outputs>] [--num_steps <num_steps>]
                                           [--show_model <show_model>] [--model_dir <model_dir>] [--executor <executor>]
@@ -89,13 +89,12 @@ if __name__ == '__main__':
     """Plot and save 1d slices of the surrogate against the model for the given PEM configuration file. If the 
     surrogate has no root directory, then outputs will be written to the current directory.
     """
-    config_file = sys.argv[1] if len(sys.argv) == 2 else '.'  # Default to a search in current directory
-    config_file = _search_for_config_file(config_file)
+    config_file = _search_for_config_file(args.config_file)  # Will default to a search in current directory
 
     system = System.load_from_file(config_file)
 
     if args.model_dir is None:
-        model_dir = '.' if system.root_dir is None else None  # will default to the system root directory
+        model_dir = '.' if system.root_dir is None else system.root_dir
     else:
         model_dir = args.model_dir
 
@@ -108,11 +107,11 @@ if __name__ == '__main__':
             raise ValueError(f"Unsupported executor type: {args.executor}")
 
     with pool_executor(max_workers=args.max_workers) as executor:
+        nominal = {str(var): var.sample_domain((1,)) for var in system.inputs()}  # Random nominal test point
         slice_kwargs = dict(inputs=args.inputs, outputs=args.outputs, num_steps=args.num_steps,
                             show_model=args.show_model, model_dir=model_dir, executor=executor,
-                            random_walk=args.random_walk)
+                            random_walk=args.random_walk, nominal=nominal)
 
-        nominal = {str(var): var.sample_domain((1,)) for var in system.inputs()}  # Random nominal test point
-        fig, ax = system.plot_slice(nominal=nominal, **slice_kwargs)
+        fig, ax = system.plot_slice(**slice_kwargs)
 
     plt.show(block=False)

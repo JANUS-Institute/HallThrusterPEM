@@ -160,7 +160,7 @@ components: !Component
       - name: dz
         description: Anomalous shift displacement
         category: calibration
-        tex: "$\\delta_z$"
+        tex: "$\\Delta_z$"
         nominal: 0.4
         distribution: N(0.2, 0.07)
       - name: z0

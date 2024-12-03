@@ -8,9 +8,10 @@ sketch out an OO design (keep data-parsing internal for now, but could be its ow
 - check train_hpc.sh
 - check slice scripts
 
-- test thruster 
+- test thruster (and full hallthruster.jl config)
+- clean up data API
+- clean up UQ scripts for v0
 
-- clean dependencies
 - add H9 check
 - upload to pypi
 - update readme install, quickstart, project structure

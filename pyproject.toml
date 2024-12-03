@@ -12,13 +12,8 @@ authors = [
 ]
 dependencies = [
     "numpy>=2.0",
-    "joblib>=1.3.2",
-    "dill>=0.3.7",
-    "matplotlib>=3.9",
-    "scikit-optimize>=0.9.0",
     "scipy>=1.14",
-    "h5py>=3.10.0",
-    "uqtils>=0.4.2",
+    "amisc>=0.5.2",
 ]
 requires-python = ">=3.11"
 readme = "README.md"
@@ -32,8 +27,13 @@ classifiers = [
     "Intended Audience :: Science/Research"
 ]
 
-[project.optional-dependencies]  # This is optional dependencies
+[project.optional-dependencies]
 mpi = ["mpi4py>=3.1"]
+scripts = [
+    "uqtils>=0.4.2",
+    "h5py>=3.10.0",
+    "matplotlib>=3.9",
+]
 
 [project.urls]
 Repository = "https://github.com/JANUS-Institute/HallThrusterPEM.git"
@@ -79,8 +79,7 @@ train = {shell = "./train_hpc.sh {args}", help = "Usage: pdm run train <config_f
 slice = {shell = "./slice_hpc.sh {args}", help = "Usage: pdm run slice <config_file>", working_dir = "scripts"}
 setup_hpc = {shell = "./setup_hpc.sh {args}", help = "Usage: pdm run setup_hpc", working_dir = "scripts"}
 
-
-[tool.pdm.dev-dependencies]
+[dependency-groups]
 editable = [
     "-e file:///${PROJECT_ROOT}/../amisc#egg=amisc",
 ]

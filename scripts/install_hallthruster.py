@@ -123,7 +123,7 @@ if __name__ == "__main__":
     parser.add_argument("-jv", "--julia-version", default=JULIA_VERSION_DEFAULT,
                         help="The Julia version to install (default: 1.10)")
     parser.add_argument("-hv", "--hallthruster-version", default=HALLTHRUSTER_VERSION_DEFAULT,
-                        help="The HallThruster.jl version to install (default: 0.17.3)")
+                        help="The HallThruster.jl version to install (default: 0.17.2)")
     args = parser.parse_args()
 
     main(args.julia_version, args.hallthruster_version)

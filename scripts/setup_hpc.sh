@@ -36,7 +36,7 @@ else
 fi
 
 pdm self udpate
-pdm install --prod -G mpi
+pdm sync --prod -G mpi -G scripts
 
 pdm run python install_hallthruster.py $EXTRA_ARGS
 

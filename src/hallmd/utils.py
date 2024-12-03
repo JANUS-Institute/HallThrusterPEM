@@ -3,7 +3,6 @@
 Includes:
 
 - `load_device()` - Load a device configuration from the `hallmd.devices` directory.
-- `plot_qoi()` - Convenience plotting tool for showing QoI with UQ bounds
 """
 import json
 import os
@@ -11,9 +10,6 @@ import os
 import yaml
 from pathlib import Path
 from importlib import resources
-
-import numpy as np
-from uqtils import ax_default
 
 FUNDAMENTAL_CHARGE = 1.602176634e-19   # Fundamental charge (C)
 BOLTZMANN_CONSTANT = 1.380649e-23      # Boltzmann constant (J/K)
@@ -97,21 +93,3 @@ def load_device(device_name: str, device_file: str = 'device.yml', device_dir: s
                     d[dict_path[-2]] = root_path.resolve().as_posix()
 
     return config
-
-
-def plot_qoi(ax, x, qoi, xlabel, ylabel, legend=False):
-    """ Plot a quantity of interest with 5%, 50%, 95% percentiles against `x`.
-
-    :param ax: matplotlib Axes object to plot on
-    :param x: `(Nx,)` array to plot on `x` axis
-    :param qoi: `(Nx, Ns,)` samples of the QOI at each `x` location
-    :param xlabel: label for the x-axis
-    :param ylabel: label for the y-axis
-    :param legend: whether to plot a legend
-    """
-    p5 = np.percentile(qoi, 5, axis=1)
-    med = np.percentile(qoi, 50, axis=1)
-    p95 = np.percentile(qoi, 95, axis=1)
-    ax.plot(x, med, '-k', label='Model')
-    ax.fill_between(x, p5, p95, alpha=0.4, edgecolor=(0.4, 0.4, 0.4), facecolor=(0.8, 0.8, 0.8))
-    ax_default(ax, xlabel, ylabel, legend=legend)
