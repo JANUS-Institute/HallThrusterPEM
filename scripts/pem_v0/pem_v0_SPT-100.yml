@@ -61,7 +61,8 @@ components: !Component
         domain: (0, 60)
   - name: Thruster
     model: !!python/name:hallmd.models.thruster.hallthruster_jl
-    julia_script: ../tests/sim_hallthruster.jl
+    version: 0.17.2
+    julia_script: ../tests/sim_hallthruster.jl  # relative to calling script's working directory
     thruster: SPT-100
     config:
 #      thruster: SPT-100            # moved to separate thruster kwarg

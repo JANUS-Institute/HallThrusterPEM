@@ -19,7 +19,6 @@ dependencies = [
     "scipy>=1.14",
     "h5py>=3.10.0",
     "uqtils>=0.4.2",
-    "amisc>=0.5.2",
 ]
 requires-python = ">=3.11"
 readme = "README.md"
@@ -78,10 +77,13 @@ lint = "ruff check src tests {args}"
 run_job = {shell = "sbatch --account=${SLURM_ACCOUNT} --mail-user=${SLURM_MAIL} --mail-type=ALL {args}", help = "Usage: pdm run_job <script.sh>"}
 train = {shell = "./train_hpc.sh {args}", help = "Usage: pdm run train <config_file>", working_dir = "scripts"}
 slice = {shell = "./slice_hpc.sh {args}", help = "Usage: pdm run slice <config_file>", working_dir = "scripts"}
-
+setup_hpc = {shell = "./setup_hpc.sh {args}", help = "Usage: pdm run setup_hpc", working_dir = "scripts"}
 
 
 [tool.pdm.dev-dependencies]
+editable = [
+    "-e file:///${PROJECT_ROOT}/../amisc#egg=amisc",
+]
 dev = [
     "copier>=9.3",
     "copier-templates-extensions>=0.3",

@@ -36,7 +36,7 @@ function perform_operations(input_path::String)
     q = 1.6e-19
     m_ion = 2.18e-25
     beam_current = (q / m_ion) * flow_rate  # A
-    current_eff = (1 - anom_coeff * 10)
+    current_eff = (1 - anom_coeff * 2)
     discharge_current = beam_current / current_eff
     v_exh = sqrt(2 * q * (discharge_voltage - cathode_potential) / m_ion)
     thrust = flow_rate * v_exh

@@ -10,9 +10,12 @@ python install_hallthruster.py --julia-version 1.10 --hallthruster-version 0.17.
 
 """
 import argparse
+import os
 import shlex
 import subprocess
 import platform
+from pathlib import Path
+
 from packaging.version import Version
 
 PLATFORM = platform.system().lower()
@@ -81,23 +84,21 @@ def ensure_julia_version(julia_version):
 
 
 def install_hallthruster_jl(hallthruster_version):
-    print(f"Checking for HallThruster.jl version {hallthruster_version}...")
-    check_install_cmd = r"julia -e 'using Pkg; Pkg.status(\"HallThruster\")'" if PLATFORM == 'windows' else \
-        r"""julia -e 'using Pkg; Pkg.status("HallThruster")'"""
-    try:
-        proc = run_command(check_install_cmd, text=True)
-        if f"HallThruster v{hallthruster_version}" in proc.stdout:
-            print(f"Found HallThruster.jl version {hallthruster_version}.")
-            return
-    except:
-        pass
-
-    print(f"Installing HallThruster.jl version {hallthruster_version}...")
-    if PLATFORM == 'windows':
-        install_cmd = rf"julia -e 'using Pkg; Pkg.add(name=\"HallThruster\", version=\"{hallthruster_version}\")'"
+    print(f"Checking for HallThruster.jl version {hallthruster_version} in global environments...")
+    global_env_dir = Path(f'~/.julia/environments/').expanduser()
+    env_path = global_env_dir / f"hallthruster_{hallthruster_version}"
+    if env_path.exists():
+        print(f"Found HallThruster.jl version {hallthruster_version} in global environments.")
+        return
     else:
-        install_cmd = rf"""julia -e 'using Pkg; Pkg.add(name="HallThruster", version="{hallthruster_version}")'"""
-    run_command(install_cmd, text=True, capture_output=False)
+        print(f"HallThruster.jl environment {env_path} not found. Creating...")
+        os.makedirs(env_path)
+        if PLATFORM == 'windows':
+            install_cmd = rf"julia -e 'using Pkg; Pkg.activate(\"{env_path.resolve()}\"); Pkg.add(name=\"HallThruster\", version=\"{hallthruster_version}\")'"
+        else:
+            install_cmd = rf"""julia -e 'using Pkg; Pkg.activate("{env_path.resolve()}"); Pkg.add(name="HallThruster", version="{hallthruster_version}")'"""
+
+        run_command(install_cmd, text=True, capture_output=False)
 
 
 def main(julia_version, hallthruster_version):

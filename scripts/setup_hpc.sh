@@ -2,13 +2,17 @@
 # This script is only setup to run on the University of Michigan Great Lakes cluster.
 # The cluster has OpenMPI installed along with the Module package and the SLURM workload manager.
 #
+# Run as:
+#
+# ./setup_hpc.sh --julia-version 1.10 --hallthruster-version 0.17.2
+#
 # Please adjust according to your needs.
 #
 # Author: Joshua Eckels
 # Date: 11/19/2024
 
-# Run this script from the project root directory (HallThrusterPEM/)
 echo "Setting up environment..."
+EXTRA_ARGS="$@"
 
 module load python/3.11.5
 module load gcc/10.3.0
@@ -34,25 +38,14 @@ fi
 pdm self udpate
 pdm install --prod -G mpi
 
-# Add amisc package (check for local editable installation)
-if [ -d "../amisc" ]; then
-    echo "Adding ../amisc in editable mode..."
-    pdm remove amisc
-    pdm add -e ../amisc --dev
-fi
-
-pdm run python install_hallthruster.py
+pdm run python install_hallthruster.py $EXTRA_ARGS
 
 # Add slurm user account info to .bashrc
 if [[ -z "${SLURM_ACCOUNT}" || -z "${SLURM_MAIL}" ]]; then
   case $(whoami) in
     eckelsjd)
-      export SLURM_ACCOUNT='goroda0'
+      export SLURM_ACCOUNT='goroda98'
       export SLURM_MAIL='eckelsjd@umich.edu'
-      ;;
-    mgallen)
-      export SLURM_ACCOUNT='bjorns0'
-      export SLURM_MAIL='mgallen@umich.edu'
       ;;
   esac
 
@@ -60,4 +53,4 @@ if [[ -z "${SLURM_ACCOUNT}" || -z "${SLURM_MAIL}" ]]; then
   echo "export SLURM_MAIL=${SLURM_MAIL}" >> ~/.bashrc
 fi
 
-echo "Environment setup complete! Use 'pdm train <scripts_folder>' to build a surrogate."
+echo "Environment setup complete! Use 'pdm train <config_file>' to build a surrogate."

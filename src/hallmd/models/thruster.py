@@ -19,7 +19,6 @@ import tempfile
 import os
 import random
 import string
-import warnings
 from typing import Literal, Callable
 
 import numpy as np
@@ -29,20 +28,6 @@ from hallmd.utils import load_device
 
 __all__ = ['hallthruster_jl', 'PEM_TO_JULIA']
 
-
-# Check for Julia and HallThruster.jl
-try:
-    subprocess.run(["julia", "-e", 'using HallThruster; println("Success!")'],
-                   check=True, capture_output=True, text=True)
-except FileNotFoundError:
-    warnings.warn("Julia executable not found. See https://julialang.org/downloads/. You may run into issues"
-                  " while using hallmd.thruster")
-except subprocess.CalledProcessError as e:
-    warnings.warn("HallThruster.jl not found. See https://um-pepl.github.io/HallThruster.jl/dev/. "
-                  "You may run into issues while using hallmd.thruster")
-except Exception as e:
-    warnings.warn(f"Failed to find Julia and HallThruster.jl for unknown reason: {e}\n "
-                  f"You may run into issues while using hallmd.thruster")
 
 # Maps PEM variable names to a path in the HallThruster.jl input/output structure (default values here)
 with open(resources.files('hallmd.models') / 'pem_to_julia.json', 'r') as fd:
@@ -104,6 +89,9 @@ def _default_model_fidelity(model_fidelity: tuple) -> dict:
 
     Also adjusts the time step `dt` to maintain the CFL condition.
     """
+    if model_fidelity == ():
+        model_fidelity = (2, 2)  # default to high-fidelity model
+
     ncells = 50 * (model_fidelity[0] + 2)
     ncharge = model_fidelity[1] + 1
     dt_map = [12.5e-9, 8.4e-9, 6.3e-9]
@@ -211,9 +199,11 @@ def hallthruster_jl(thruster_inputs: Dataset,
                     postprocess: dict = None,
                     model_fidelity: tuple = (2, 2),
                     output_path: str | Path = None,
+                    version: str = "0.17.2",
                     julia_script: str | Path = 'default',
                     pem_to_julia: dict = 'default',
-                    fidelity_function: Callable[[tuple[int, ...]], dict] = 'default') -> Dataset:
+                    fidelity_function: Callable[[tuple[int, ...]], dict] = 'default',
+                    subprocess_kwargs: dict = 'default') -> Dataset:
     """Run a single `HallThruster.jl` simulation for a given set of inputs. This function will write a temporary
     input file to disk, call `HallThruster.run_simulation()` in Julia, and read the output file back into Python. Will
     return time-averaged performance metrics and ion velocity for use with the PEM.
@@ -245,7 +235,12 @@ def hallthruster_jl(thruster_inputs: Dataset,
                            via `ncells = model_fidelity[0] * 50 + 100` and `ncharge = model_fidelity[1] + 1`.
                            Will override `ncells` and `ncharge` in `simulation` and `config` if provided.
     :param output_path: base path to save output files, will write to current directory if not specified
-    :param julia_script: path to a custom Julia script to run instead of the default `run_hallthruster.jl` script
+    :param version: version of HallThruster.jl to use (default is `0.17.2`); will search for a global
+                    "hallthruster_{version}" environment and use that if found, otherwise will create it and install.
+                    Environments are searched in the `~/.julia/environments/` directory.
+    :param julia_script: path to a custom Julia script to run instead of the default `run_hallthruster.jl` script. The
+                         script should accept two positional args: the input json file and the HallThruster.jl version.
+                         See the default script for an example. If None, will use the default script.
     :param pem_to_julia: a `dict` mapping of PEM shorthand variable names to a list of keys that maps into the
                          `HallThruster.jl` input/output data structure. Defaults to the provided PEM_TO_JULIA dict
                          defined in [`hallmd.models.thruster`][hallmd.models.thruster]. For example,
@@ -255,6 +250,8 @@ def hallthruster_jl(thruster_inputs: Dataset,
                               parameters. Defaults to `_convert_model_fidelity` which sets `ncells` and `ncharge` based
                               on the input tuple. The returned simulation parameters must be convertable to Julia via
                               the `pem_to_julia` mapping.
+    :param subprocess_kwargs: additional keyword arguments to pass to `subprocess.run` when calling the Julia script.
+                              Defaults to `check=True` and `capture_output=True`.
     :raises ModelRunException: if anything fails during the call to `Hallthruster.jl`
     :returns: `dict` of `Hallthruster.jl` outputs: `I_B0`, `I_d`, `T`, `eta_c`, `eta_m`, `eta_v`, and `u_ion` for ion
               beam current (A), discharge current (A), thrust (N), current efficiency, mass efficiency, voltage
@@ -266,6 +263,8 @@ def hallthruster_jl(thruster_inputs: Dataset,
         fidelity_function = _default_model_fidelity
     if output_path is None:
         output_path = Path.cwd()
+    if subprocess_kwargs is None or subprocess_kwargs == 'default':
+        subprocess_kwargs = {'check': True, 'capture_output': True}
     if pem_to_julia is None or pem_to_julia == 'default':
         pem_to_julia = copy.deepcopy(PEM_TO_JULIA)
     else:
@@ -283,7 +282,7 @@ def hallthruster_jl(thruster_inputs: Dataset,
     # Run simulation
     try:
         t1 = time.time()
-        subprocess.run(['julia', str(Path(julia_script).resolve()), fd.name], check=True)
+        subprocess.run(['julia', str(Path(julia_script).resolve()), fd.name, version], **subprocess_kwargs)
         t2 = time.time()
     finally:
         os.unlink(fd.name)   # delete the tempfile

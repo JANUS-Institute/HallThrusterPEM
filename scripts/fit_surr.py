@@ -26,6 +26,8 @@ Arguments:
 - `targets` - the target output variables to train the surrogate on. Defaults to all output variables.
 - `train_single_fidelity` - whether to train a single-fidelity surrogate in addition to the multi-fidelity surrogate,
                             (mainly to compare cost during training). Defaults to False.
+- `max_tol` - the maximum tolerance for the surrogate training. Defaults to 1e-3.
+- `save_interval` - the interval to save the surrogate during training. Defaults to 10.
 
 !!! Note
     The compression and test set data should be generated **first** by running `gen_data.py`.
@@ -69,18 +71,21 @@ parser.add_argument('--targets', type=str, nargs='+', default=None,
                     help='the target output variables to train the surrogate on. Defaults to all output variables.')
 parser.add_argument('--train_single_fidelity', action='store_true', default=False,
                     help='whether to train a single-fidelity surrogate in addition to the multi-fidelity surrogate.')
+parser.add_argument('--max_tol', type=float, default=1e-3,
+                    help='the maximum tolerance for the surrogate training. Defaults to 1e-3.')
+parser.add_argument('--save_interval', type=int, default=10,
+                    help='the interval to save the surrogate during training. Defaults to 10.')
 
 args, _ = parser.parse_known_args()
 
 
-def train_surrogate(system: System, executor: Executor, runtime_hr: float, max_iter: int, targets: list[str],
-                    train_single_fidelity: bool = False):
+def train_surrogate(system: System, executor: Executor, train_single_fidelity: bool = False, **kwargs):
     """Train an `amisc.System` surrogate."""
     test_set = pth if (pth := system.root_dir / 'test_set' / 'test_set.pkl').exists() else None
 
-    fit_kwargs = dict(targets=targets, num_refine=500, max_iter=max_iter, runtime_hr=runtime_hr,
-                      save_interval=10, max_tol=1e-3, estimate_bounds=True, update_bounds=True,
-                      test_set=test_set, plot_interval=1, executor=executor)
+    fit_kwargs = dict(num_refine=500, estimate_bounds=True, update_bounds=True, test_set=test_set,
+                      executor=executor, plot_interval=1, **kwargs)
+
     system.fit(**fit_kwargs)
     system.plot_allocation()
 
@@ -92,7 +97,7 @@ def train_surrogate(system: System, executor: Executor, runtime_hr: float, max_i
         # Reset data for single-fidelity training
         system.clear()
         for comp in system.components:
-            comp.model_fidelity = ()   # Will use each model's default value for model_fidelity if applicable
+            comp.model_fidelity = ()   # Should use each model's default value for model_fidelity if applicable
 
         system.root_dir = system.root_dir / 'amisc_single_fidelity'
         system.fit(**fit_kwargs)
@@ -101,7 +106,7 @@ def train_surrogate(system: System, executor: Executor, runtime_hr: float, max_i
         sf_train_history = copy.deepcopy(system.train_history)
 
         # Gather test set performance for plotting
-        targets = targets or list(mf_train_history[-1]['test_error'].keys())
+        targets = fit_kwargs.get('targets', None) or list(mf_train_history[-1]['test_error'].keys())
         num_plot = min(len(targets), 3)
         mf_test = np.full((len(mf_train_history), num_plot), np.nan)
         sf_test = np.full((len(sf_train_history), num_plot), np.nan)
@@ -116,8 +121,8 @@ def train_surrogate(system: System, executor: Executor, runtime_hr: float, max_i
         single_sf_cost = []
         sf_alpha = ()  # No fidelity indices for single-fidelity
         for comp in system.components:
-            if comp in sf_cost_alloc:
-                single_sf_cost.append(sf_cost_alloc[comp][sf_alpha] / sf_eval_alloc[comp][sf_alpha])
+            if comp.name in sf_cost_alloc:
+                single_sf_cost.append(sf_cost_alloc[comp.name][sf_alpha] / sf_eval_alloc[comp.name][sf_alpha])
         single_sf_cost = sum(single_sf_cost)
 
         # Plot QoI L2 error on test set vs. cost
@@ -133,7 +138,7 @@ def train_surrogate(system: System, executor: Executor, runtime_hr: float, max_i
             ax.set_title(labels[i])
             ylabel = r'Relative error' if i == 0 else ''
             ax_default(ax, r'Cost (number of SF evals)', ylabel, legend=i+1 == num_plot)
-        fig.savefig(system.root_dir / 'error_v_cost.png', dpi=300, format='png')
+        fig.savefig(system.root_dir / 'error_v_cost.pdf', bbox_inches='tight', format='pdf')
 
 
 if __name__ == '__main__':
@@ -177,7 +182,8 @@ if __name__ == '__main__':
         case _:
             raise ValueError(f"Unsupported executor type: {args.executor}")
 
-    executor=None
-    # with pool_executor(max_workers=args.max_workers) as executor:
-    train_surrogate(system, executor, args.runtime_hr, args.max_iter, args.targets,
-                    train_single_fidelity=args.train_single_fidelity)
+    # executor=None
+    with pool_executor(max_workers=args.max_workers) as executor:
+        fit_kwargs = {'runtime_hr': args.runtime_hr, 'max_iter': args.max_iter, 'targets': args.targets,
+                      'save_interval': args.save_interval, 'max_tol': args.max_tol}
+        train_surrogate(system, executor, args.train_single_fidelity, **fit_kwargs)

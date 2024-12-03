@@ -17,16 +17,14 @@ from hallmd.utils import TORR_2_PA
 LOGGER = get_logger(__name__)
 
 
-def current_density(inputs: Dataset, j_ion_coords: np.ndarray = None):
+def current_density(inputs: Dataset):
     """Compute the semi-empirical ion current density ($j_{ion}$) plume model over a 90 deg sweep, with 0 deg at
-    thruster centerline. Also compute the plume divergence angle.
+    thruster centerline. Also compute the plume divergence angle. Will return the ion current density at 91 points,
+    from 0 to 90 deg in 1 deg increments. The angular locations are returned as `j_ion_coords` in radians.
 
     :param inputs: input arrays - `P_b`, `c0`, `c1`, `c2`, `c3`, `c4`, `c5`, `sigma_cex`, `r_m`, `I_B0` for background
                    pressure (Torr), plume fit coefficients, charge-exchange cross-section ($m^2$), radial distance
                    from thruster exit plane (m), and total initial ion beam current (A).
-    :param j_ion_coords: `(M,)` The angles at which to compute the ion current density, in radians. Defaults to
-                         90 deg sweep from 0 deg to 90 deg about thruster centerline in 1 deg increments (91 points).
-                         If provided, must be between -90 and 90 deg.
     :returns outputs: output arrays - `j_ion` for ion current density ($A/m^2$) at the `j_ion_coords` locations,
                                        and `div_angle` in radians for the divergence angle of the plume.
     """
@@ -70,8 +68,9 @@ def current_density(inputs: Dataset, j_ion_coords: np.ndarray = None):
         j_ion = j_beam + j_scat + j_cex  # (..., 91) the current density 1d profile
 
     # Set j~0 where alpha1 < 0 (invalid cases)
-    j_ion[np.where(alpha1 <= 0)] = 1e-20
-    j_ion[np.where(j_ion <= 0)] = 1e-20
+    invalid_idx = np.logical_or(alpha1 <= 0, np.any(j_ion <= 0, axis=-1))
+    j_ion[invalid_idx, ...] = 1e-20
+    j_cex[invalid_idx, ...] = 1e-20
 
     if np.any(abs(j_ion.imag) > 0):
         LOGGER.warning('Predicted beam current has non-zero imaginary component.')
@@ -82,7 +81,7 @@ def current_density(inputs: Dataset, j_ion_coords: np.ndarray = None):
     num_int = np.flip(j_ion - j_cex, axis=-1) * np.cos(alpha_rad) * np.sin(alpha_rad)
     den_int = np.flip(j_ion - j_cex, axis=-1) * np.cos(alpha_rad)
 
-    with np.errstate(divide='ignore'):
+    with np.errstate(divide='ignore', invalid='ignore'):
         cos_div = simpson(num_int, x=alpha_rad, axis=-1) / simpson(den_int, x=alpha_rad, axis=-1)
         cos_div = np.atleast_1d(cos_div)
         cos_div[cos_div == np.inf] = np.nan
@@ -90,12 +89,17 @@ def current_density(inputs: Dataset, j_ion_coords: np.ndarray = None):
     div_angle = np.arccos(cos_div)  # Divergence angle (rad)
 
     # Interpolate to requested angles
-    if j_ion_coords is not None:
-        # Extend to range (-90, 90) deg
-        alpha_grid = np.concatenate((-np.flip(alpha_rad)[:-1], alpha_rad))               # (2M-1,)
-        jion_grid = np.concatenate((np.flip(j_ion, axis=-1)[..., :-1], j_ion), axis=-1)  # (..., 2M-1)
+    # if j_ion_coords is not None:
+    #     # Extend to range (-90, 90) deg
+    #     alpha_grid = np.concatenate((-np.flip(alpha_rad)[:-1], alpha_rad))               # (2M-1,)
+    #     jion_grid = np.concatenate((np.flip(j_ion, axis=-1)[..., :-1], j_ion), axis=-1)  # (..., 2M-1)
+    #
+    #     f = interp1d(alpha_grid, jion_grid, axis=-1)
+    #     j_ion = f(j_ion_coords)  # (..., num_pts)
 
-        f = interp1d(alpha_grid, jion_grid, axis=-1)
-        j_ion = f(j_ion_coords)  # (..., num_pts)
+    # Broadcast coords to same loop shape as j_ion (all use the same coords -- store in object array)
+    j_ion_coords = np.empty(j_ion.shape[:-1], dtype=object)
+    for index in np.ndindex(j_ion.shape[:-1]):
+        j_ion_coords[index] = alpha_rad
 
-    return {'j_ion': j_ion, 'div_angle': div_angle}
+    return {'j_ion': j_ion, 'div_angle': div_angle, 'j_ion_coords': j_ion_coords}

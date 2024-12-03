@@ -2,16 +2,12 @@ sketch out an OO design (keep data-parsing internal for now, but could be its ow
   - mc, mcmc, sa, models, data, etc.
   - easy to version, deploy, test new PEMs
 
-- python fit (finds directory)
-- python fit single-fidelity (clears and plots)
-- different executors (thread and process)
 - check install and run on linux
 - check setup_env.sh
 - check pdm run_job
 - check train_hpc.sh
 - check slice scripts
 
-- install from linux and windows
 - test thruster 
 
 - clean dependencies

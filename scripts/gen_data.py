@@ -37,15 +37,16 @@ import argparse
 import json
 import os
 import shutil
+import time
 from concurrent.futures import Executor, ProcessPoolExecutor, ThreadPoolExecutor
 from pathlib import Path
 import pickle
 
 import numpy as np
 import matplotlib.pyplot as plt
+from amisc.typing import COORDS_STR_ID
 from uqtils import ax_default
-from amisc import YamlLoader, System
-
+from amisc import YamlLoader, System, to_model_dataset
 
 parser = argparse.ArgumentParser(description=
                                  'Generate compression (SVD) data and test set data for training a surrogate.')
@@ -77,6 +78,9 @@ def _extract_grid_coords(field_var: str, model_dir: str | Path):
     require wrapper functions returning the coords -- but this would require some changes in `System.predict` in
     the `amisc` package. See https://github.com/eckelsjd/amisc/issues/31.
 
+    UPDATE: If the wrapper model returns "{{ var }}_coords" in the output, then this will be used as the grid
+    coordinates with no need to hard code. Otherwise, will default to this hard code check here.
+
     For now, just hard code how to extract grid coordinates for each specific field quantity (just `u_ion` and `j_ion`).
     """
     match field_var:
@@ -91,8 +95,19 @@ def _extract_grid_coords(field_var: str, model_dir: str | Path):
             coords = np.linspace(0, np.pi/2, 91)
         case other:
             raise ValueError(f"Field quantity '{other}' not recognized. Please add some logic for how to extract "
-                             f"the grid coordinates for this field quantity.")
+                             f"the grid coordinates for this field quantity. Or even better, add the variable "
+                             f"'{other}_coords' to the model output.")
     return coords
+
+
+def _object_to_numeric(array: np.ndarray):
+    """Helper to convert object arrays of field quantities into a single numeric array by stacking on the first axis.
+    Will only work assuming each field quantity has the same shape (which should be true for compression data).
+    """
+    if np.issubdtype(array.dtype, np.object_):
+        return np.concatenate([arr[np.newaxis, ...] for arr in array], axis=0)
+    else:
+        return array
 
 
 def _outlier_indices(outputs: dict, iqr_factor: float = 1.5):
@@ -106,12 +121,31 @@ def _outlier_indices(outputs: dict, iqr_factor: float = 1.5):
     num_samples = next(iter(outputs.values())).shape[0]
     outlier_idx = np.full(num_samples, False)
     for var, arr in outputs.items():
-        outlier_idx |= np.any(np.isnan(arr), axis=tuple(range(1, arr.ndim)))
+        if COORDS_STR_ID in str(var):
+            continue
 
-        p25 = np.percentile(arr, 25, axis=0)
-        p75 = np.percentile(arr, 75, axis=0)
-        iqr = p75 - p25
-        outlier_idx |= np.any((arr < p25 - 1.5 * iqr) | (arr > p75 + 1.5 * iqr), axis=tuple(range(1, arr.ndim)))
+        try:
+            arr = _object_to_numeric(arr)
+        except Exception:
+            # Might have object arrays of different shapes, so instead estimate outliers for each sample individually
+            if np.issubdtype(arr.dtype, np.object_):
+                for i, field_qty in enumerate(arr):
+                    outlier_idx[i] |= np.any(np.isnan(field_qty))
+
+                    p25 = np.percentile(field_qty, 25)
+                    p75 = np.percentile(field_qty, 75)
+                    iqr = p75 - p25
+                    outlier_idx[i] |= np.any((field_qty < p25 - iqr_factor * iqr) |
+                                             (field_qty > p75 + iqr_factor * iqr))
+        else:
+            # Directly use scalar numeric arrays (or obj arrays that were successfully converted)
+            outlier_idx |= np.any(np.isnan(arr), axis=tuple(range(1, arr.ndim)))
+
+            p25 = np.percentile(arr, 25, axis=0)
+            p75 = np.percentile(arr, 75, axis=0)
+            iqr = p75 - p25
+            outlier_idx |= np.any((arr < p25 - iqr_factor * iqr) | (arr > p75 + iqr_factor * iqr),
+                                  axis=tuple(range(1, arr.ndim)))
 
     return outlier_idx
 
@@ -138,14 +172,25 @@ def gen_compression_data(system: System, num_samples: int, rank: int, energy_tol
 
     # Filter bad samples and outliers (by interquartile range)
     bad_idx = _outlier_indices(outputs)
+    samples, coords = to_model_dataset(samples, system.inputs())
+    samples.update(coords)
+
+    with open(Path(system.root_dir) / 'compression' / 'compression.pkl', 'wb') as fd:
+        xt = {str(var): arr[~bad_idx, ...] for var, arr in samples.items()}
+        yt = {str(var): arr[~bad_idx, ...] for var, arr in outputs.items()}
+        pickle.dump({'compression': (xt, yt)}, fd)
 
     for var in system.outputs():
         if var.compression is not None:
-            var.compression.coords = _extract_grid_coords(var.name, Path(system.root_dir) / 'compression')
+            # Try to get coords from model output; otherwise "hard code" it from output files
+            if (coords := outputs.get(f'{var}{COORDS_STR_ID}')) is not None:
+                var.compression.coords = coords[0]  # assume all coords are the same for compression data
+            else:
+                var.compression.coords = _extract_grid_coords(var.name, Path(system.root_dir) / 'compression')
 
             match var.compression.method.lower():
                 case 'svd':
-                    data_matrix = {field: var.normalize(outputs[field][~bad_idx, ...]) for field in
+                    data_matrix = {field: var.normalize(_object_to_numeric(outputs[field][~bad_idx, ...])) for field in
                                    var.compression.fields}
                     var.compression.compute_map(data_matrix, rank=rank, energy_tol=energy_tol)
                 case other:
@@ -177,7 +222,7 @@ def gen_compression_data(system: System, num_samples: int, rank: int, energy_tol
             # Special plots for specific field quantities
             if var.name in ['u_ion', 'j_ion']:
                 coords = var.compression.coords
-                A = outputs[var.name][~bad_idx, ...]
+                A = _object_to_numeric(outputs[var.name][~bad_idx, ...])
                 lb = np.percentile(A, 5, axis=0)
                 mid = np.percentile(A, 50, axis=0)
                 ub = np.percentile(A, 95, axis=0)
@@ -214,6 +259,8 @@ def gen_test_set(system: System, num_samples: int, executor: Executor):
 
     # Filter bad samples and outliers (by interquartile range)
     bad_idx = _outlier_indices(outputs)
+    samples, coords = to_model_dataset(samples, system.inputs())
+    samples.update(coords)
 
     with open(Path(system.root_dir) / 'test_set' / 'test_set.pkl', 'wb') as fd:
         xt = {str(var): arr[~bad_idx, ...] for var, arr in samples.items()}
