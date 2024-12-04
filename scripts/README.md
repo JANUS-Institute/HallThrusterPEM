@@ -16,7 +16,7 @@ Below are several general scripts that can be used for any PEM configuration:
 ### Setup on HPC
 Installs `pdm` and the `hallmd` package. Also installs Julia and `HallThruster.jl`.
 ```shell
-./setup_hpc.sh --hallthruster-version=0.17.2 --julia-version=1.10
+source setup_hpc.sh --hallthruster-version=0.17.2 --julia-version=1.10
 ```
 
 ### Train a surrogate

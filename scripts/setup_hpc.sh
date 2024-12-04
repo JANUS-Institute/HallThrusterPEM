@@ -34,7 +34,7 @@ else
     echo "PDM already installed!"
 fi
 
-pdm self udpate
+pdm self update
 pdm sync --prod -G mpi -G scripts
 
 pdm run python install_hallthruster.py "$@"

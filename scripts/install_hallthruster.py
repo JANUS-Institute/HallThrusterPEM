@@ -64,7 +64,7 @@ def ensure_julia_version(julia_version):
             if len(parts) > 1:
                 for idx, p in enumerate(parts):
                     if 'update' in p.lower():
-                        continue
+                        break
 
                     char = '+' if '+' in p else ('-' if '-' in p else '')  # Version column has "+" or "-" for installed
                     if char:
