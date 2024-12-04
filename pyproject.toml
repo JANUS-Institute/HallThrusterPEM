@@ -74,7 +74,6 @@ bump = "cz bump {args}"
 test = "pytest --cov=hallmd --cov-report html:htmlcov tests"
 docs = "mkdocs serve"
 lint = "ruff check src tests {args}"
-run_job = {shell = "sbatch --account=${SLURM_ACCOUNT} --mail-user=${SLURM_MAIL} --mail-type=ALL {args}", help = "Usage: pdm run_job <script.sh>"}
 
 [dependency-groups]
 editable = [

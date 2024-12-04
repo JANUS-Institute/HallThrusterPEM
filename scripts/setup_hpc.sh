@@ -4,7 +4,7 @@
 #
 # Run as:
 #
-# ./setup_hpc.sh --julia-version 1.10 --hallthruster-version 0.17.2
+# source setup_hpc.sh --julia-version 1.10 --hallthruster-version 0.17.2
 #
 # Please adjust according to your needs.
 #

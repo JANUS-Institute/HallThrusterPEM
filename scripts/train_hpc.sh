@@ -4,42 +4,53 @@
 # The second job depends on the first job and will only run if the first job is successful.
 # All command line arguments are passed to both scripts. See their docs for details.
 #
+# Run as:
+#
+# ./train_hpc.sh <gen_data.py args> <fit_surr.py args>
+#
 # This script is only set up to run on the Great Lakes cluster at the University of Michigan.
 #
-# Please adjust according to your needs.
+# Please adjust resources according to your needs.
 #
 # Author: Joshua Eckels
 # Date: 11/19/2024
 
+set -e
 module load python/3.11.5
 
-# Capture all extra arguments
+# Capture all extra arguments and pass to both python scripts
 EXTRA_ARGS="$*"
 
 # Generate compression and test set data
-job1_id=$(pdm run_job --job-name=gen_data \
-                      --partition=standard \
-                      --time=00-04:00:00 \
-                      --nodes=1 \
-                      --mem-per-cpu=2g \
-                      --ntasks-per-node=1 \
-                      --cpus-per-task=36 \
-                      --output=./logs/%x-%j.log \
-                      --wrap="set -e; python gen_data.py $EXTRA_ARGS" | awk '{print $4}')
+job1_id=$(sbatch --account="${SLURM_ACCOUNT}" \
+                 --mail-user="${SLURM_MAIL}" \
+                 --mail-type=ALL \
+                 --job-name=gen_data \
+                 --partition=standard \
+                 --time=00-04:00:00 \
+                 --nodes=1 \
+                 --mem-per-cpu=2g \
+                 --ntasks-per-node=1 \
+                 --cpus-per-task=36 \
+                 --output=./logs/%x-%j.log \
+                 --wrap="set -e; pdm run python gen_data.py $EXTRA_ARGS" | awk '{print $4}')
 
 echo "Gen data job submitted with Job ID: $job1_id"
 
 # Fit the surrogate when the data generation job is complete and successful
-job2_id=$(pdm run_job --job-name=fit_surr \
-                      --partition=standard \
-                      --time=00-10:00:00 \
-                      --nodes=1 \
-                      --mem-per-cpu=4g \
-                      --ntasks-per-node=1 \
-                      --cpus-per-task=36 \
-                      --output=./logs/%x-%j.log \
-                      --dependency=afterok:$job1_id \
-                      --wrap="set -e; python fit_surr.py $EXTRA_ARGS --search" | awk '{print $4}')
+job2_id=$(sbatch --account="${SLURM_ACCOUNT}" \
+                 --mail-user="${SLURM_MAIL}" \
+                 --mail-type=ALL \
+                 --job-name=fit_surr \
+                 --partition=standard \
+                 --time=00-10:00:00 \
+                 --nodes=1 \
+                 --mem-per-cpu=4g \
+                 --ntasks-per-node=1 \
+                 --cpus-per-task=36 \
+                 --output=./logs/%x-%j.log \
+                 --dependency=afterok:$job1_id \
+                 --wrap="set -e; pdm run python fit_surr.py $EXTRA_ARGS --search" | awk '{print $4}')
 
 # When more than 36 cpus are needed, use MPI with >1 nodes/tasks and srun:
 #
