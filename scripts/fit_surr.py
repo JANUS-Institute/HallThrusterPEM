@@ -182,7 +182,6 @@ if __name__ == '__main__':
         case _:
             raise ValueError(f"Unsupported executor type: {args.executor}")
 
-    # executor=None
     with pool_executor(max_workers=args.max_workers) as executor:
         fit_kwargs = {'runtime_hr': args.runtime_hr, 'max_iter': args.max_iter, 'targets': args.targets,
                       'save_interval': args.save_interval, 'max_tol': args.max_tol}

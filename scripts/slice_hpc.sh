@@ -1,5 +1,6 @@
 #!/bin/bash
 # This script is used to compare the surrogate to the true model via 1d slices over the inputs.
+# All command line arguments are passed to the plot_slice.py script. See its docs for details.
 # This script is only set up to run on the Great Lakes cluster at the University of Michigan.
 #
 # Please adjust according to your needs.
@@ -10,7 +11,7 @@
 module load python/3.11.5
 
 # Capture all extra arguments
-EXTRA_ARGS="$@"
+EXTRA_ARGS="$*"
 
 # Run plot slices python script
 job1_id=$(pdm run_job --job-name=plot_slice \

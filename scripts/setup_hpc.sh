@@ -12,7 +12,6 @@
 # Date: 11/19/2024
 
 echo "Setting up environment..."
-EXTRA_ARGS="$@"
 
 module load python/3.11.5
 module load gcc/10.3.0
@@ -38,7 +37,7 @@ fi
 pdm self udpate
 pdm sync --prod -G mpi -G scripts
 
-pdm run python install_hallthruster.py $EXTRA_ARGS
+pdm run python install_hallthruster.py "$@"
 
 # Add slurm user account info to .bashrc
 if [[ -z "${SLURM_ACCOUNT}" || -z "${SLURM_MAIL}" ]]; then

@@ -2,9 +2,9 @@
 
 Script to be used with `slice_hpc.sh` for plotting 1d slices of the PEM surrogates against the model.
 
-Usage: python plot_slice.py <config_file> [--inputs <inputs>] [--outputs <outputs>] [--num_steps <num_steps>]
-                                          [--show_model <show_model>] [--model_dir <model_dir>] [--executor <executor>]
-                                          [--random_walk] [--max_workers <max_workers>]
+Usage: python plot_slice.py [<config_file>] [--inputs <inputs>] [--outputs <outputs>] [--num_steps <num_steps>]
+                                            [--show_model <show_model>] [--model_dir <model_dir>]
+                                            [--executor <executor>] [--random_walk] [--max_workers <max_workers>]
 
 Arguments:
 

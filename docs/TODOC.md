@@ -6,3 +6,7 @@ Thruster model:
     - Can also specify a static function to convert fidelity indices to configurations within Hallthruster.jl (i.e. (2, 2) -> ncharge, dt, ncells))
     - Only things not supported flexibly like this are special cases where a julia input is not a simple lookup/replacement -- i.e. like c2 = a1 * a2. For those cases, just add the handling logic directly in _fmt_input(). But might in the future allow some kind of user-specifiable function.
     - outputs returned by the wrapper must be located in "outputs" in the pem-julia mapping dict
+
+PEM:
+- Usage of scripts folder
+- PEM amisc config files and referencing hallmd.models

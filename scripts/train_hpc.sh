@@ -1,6 +1,9 @@
 #!/bin/bash
 # This script is used to generate data and fit a surrogate model on a remote HPC cluster.
 # It submits two jobs: one to generate test set data and one to fit the surrogate model.
+# The second job depends on the first job and will only run if the first job is successful.
+# All command line arguments are passed to both scripts. See their docs for details.
+#
 # This script is only set up to run on the Great Lakes cluster at the University of Michigan.
 #
 # Please adjust according to your needs.
@@ -11,14 +14,14 @@
 module load python/3.11.5
 
 # Capture all extra arguments
-EXTRA_ARGS="$@"
+EXTRA_ARGS="$*"
 
 # Generate compression and test set data
 job1_id=$(pdm run_job --job-name=gen_data \
                       --partition=standard \
                       --time=00-04:00:00 \
                       --nodes=1 \
-                      --mem-per-cpu=1g \
+                      --mem-per-cpu=2g \
                       --ntasks-per-node=1 \
                       --cpus-per-task=36 \
                       --output=./logs/%x-%j.log \
@@ -36,7 +39,7 @@ job2_id=$(pdm run_job --job-name=fit_surr \
                       --cpus-per-task=36 \
                       --output=./logs/%x-%j.log \
                       --dependency=afterok:$job1_id \
-                      --wrap="set -e; python fit_surr.py $EXTRA_ARGS" | awk '{print $4}')
+                      --wrap="set -e; python fit_surr.py $EXTRA_ARGS --search" | awk '{print $4}')
 
 # When more than 36 cpus are needed, use MPI with >1 nodes/tasks and srun:
 #

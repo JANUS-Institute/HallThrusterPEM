@@ -75,9 +75,6 @@ test = "pytest --cov=hallmd --cov-report html:htmlcov tests"
 docs = "mkdocs serve"
 lint = "ruff check src tests {args}"
 run_job = {shell = "sbatch --account=${SLURM_ACCOUNT} --mail-user=${SLURM_MAIL} --mail-type=ALL {args}", help = "Usage: pdm run_job <script.sh>"}
-train = {shell = "./train_hpc.sh {args}", help = "Usage: pdm run train <config_file>", working_dir = "scripts"}
-slice = {shell = "./slice_hpc.sh {args}", help = "Usage: pdm run slice <config_file>", working_dir = "scripts"}
-setup_hpc = {shell = "./setup_hpc.sh {args}", help = "Usage: pdm run setup_hpc", working_dir = "scripts"}
 
 [dependency-groups]
 editable = [

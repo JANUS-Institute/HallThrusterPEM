@@ -4,9 +4,9 @@ Script to be used with `train_hpc.sh` for generating compression (SVD) data and 
 
 Call as:
 
-`python gen_data.py <config_file> --output_dir=<output_dir> --rank=<rank> --energy_tol=<energy_tol>
-                                  --compression_samples=<compression_samples> --test_samples=<test_samples>
-                                  --executor=<executor> --max_workers=<max_workers>`
+`python gen_data.py <config_file> [--output_dir <output_dir>] [--rank <rank>] [--energy_tol <energy_tol>]
+                                  [--compression_samples <compression_samples>] [--test_samples <test_samples>]
+                                  [--executor <executor>] [--max_workers <max_workers>]`
 
 Arguments:
 
