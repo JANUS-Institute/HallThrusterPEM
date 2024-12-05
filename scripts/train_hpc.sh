@@ -22,8 +22,7 @@ module load python/3.11.5
 EXTRA_ARGS="$*"
 
 # Generate compression and test set data
-job1_id=$(sbatch --account="${SLURM_ACCOUNT}" \
-                 --mail-user="${SLURM_MAIL}" \
+job1_id=$(sbatch --mail-user="${SBATCH_MAIL_USER}" \
                  --mail-type=ALL \
                  --job-name=gen_data \
                  --partition=standard \
@@ -38,8 +37,7 @@ job1_id=$(sbatch --account="${SLURM_ACCOUNT}" \
 echo "Gen data job submitted with Job ID: $job1_id"
 
 # Fit the surrogate when the data generation job is complete and successful
-job2_id=$(sbatch --account="${SLURM_ACCOUNT}" \
-                 --mail-user="${SLURM_MAIL}" \
+job2_id=$(sbatch --mail-user="${SBATCH_MAIL_USER}" \
                  --mail-type=ALL \
                  --job-name=fit_surr \
                  --partition=standard \

@@ -3,10 +3,8 @@
 #
 # Call as:
 #
-# sbatch debug.sh <sbatch args> <debug.py args>
+# sbatch debug.sh --mail-user=${SBATCH_MAIL_USER} <sbatch args> <debug.py args>
 
-#SBATCH --account="${SLURM_ACCOUNT}"
-#SBATCH --mail-user="${SLURM_MAIL}"
 #SBATCH --mail-type=ALL
 #SBATCH --job-name=debug
 #SBATCH --partition=debug

@@ -65,17 +65,17 @@ components: !Component
     julia_script: ../tests/sim_hallthruster.jl  # relative to calling script's working directory
     thruster: SPT-100
     config:
-#      thruster: SPT-100            # moved to separate thruster kwarg
-      discharge_voltage: 300        # overwritten by V_a
-      anode_mass_flow_rate: 5.0e-6  # overwritten by mdot_a
-      cathode_potential: 30         # overwritten by V_cc
-      background_pressure: 1.0e-5   # overwritten by P_b
-      cathode_Te: 3                 # overwritten by T_e
-      neutral_velocity: 300         # overwritten by u_n
-      ncharge: 1                    # overwritten by model_fidelity[1]
-      transition_length: 0.003      # overwritten by l_t
+#      thruster: SPT-100                 # moved to separate thruster kwarg
+      discharge_voltage: 300             # overwritten by V_a
+      anode_mass_flow_rate: 5.0e-6       # overwritten by mdot_a
+      cathode_potential: 30              # overwritten by V_cc
+      background_pressure_Torr: 1.0e-5   # overwritten by P_b
+      cathode_Tev: 3                     # overwritten by T_e
+      neutral_velocity: 300              # overwritten by u_n
+      ncharge: 1                         # overwritten by model_fidelity[1]
+      transition_length: 0.003           # overwritten by l_t
       anom_model:
-        type: PressureShifted
+        type: LogisticPressureShift
         model:
           type: TwoZoneBohm
           c1: 0.00625  # overwritten by a_1
@@ -85,32 +85,18 @@ components: !Component
         pstar: 45.0e-6 # overwritten by p0
         alpha: 15
       domain: [0, 0.08]
-      wall_loss_model:
-        type: WallSheath
-        material: BNSiO2
-        alpha: 1.155
       propellant: Xenon
-      ion_temperature: 1000
-      neutral_temperature: 300
-      background_neutral_temperature: 300
-      conductivity_model:
-        type: Mitchner
-      electron_ion_collisions: true
-      scheme:
-        flux_function: rusanov
-        limiter: van_leer
-        reconstruct: true
       ion_wall_losses: true
-      neutral_ingestion_multiplier: 1
-      anode_boundary_condition: sheath
       solve_plume: true
-      apply_thrust_divergence_correction: false
-      electron_plume_loss_scale: 1
+      apply_thrust_divergence_correction: true
+      neutral_ingestion_multiplier: 1.0
     simulation:
-      dt: 1.67e-8       # overwritten by model_fidelity[0]
-      ncells: 100       # overwritten by model_fidelity[0]
+      dt: 1.0e-9        # overwritten by model_fidelity[0]
+      grid:
+        type: EvenGrid
+        num_cells: 100   # overwritten by model_fidelity[0]
       duration: 0.002   # s
-      nsave: 1000
+      num_save: 1000
       verbose: false
     postprocess:
       average_start_time: 0.001  # s

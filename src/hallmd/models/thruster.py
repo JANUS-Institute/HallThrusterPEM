@@ -79,7 +79,7 @@ def _convert_to_pem(julia_data: dict, pem_to_julia: dict):
     return pem_data
 
 
-def _default_model_fidelity(model_fidelity: tuple) -> dict:
+def _default_model_fidelity(model_fidelity: tuple, json_config: dict) -> dict:
     """Built-in (default) method to convert model fidelity tuple to `ncells` and `ncharge` via:
 
     ```python
@@ -87,7 +87,12 @@ def _default_model_fidelity(model_fidelity: tuple) -> dict:
     ncharge = model_fidelity[1] + 1
     ```
 
-    Also adjusts the time step `dt` to maintain the CFL condition.
+    Also adjusts the time step `dt` to maintain the CFL condition (based on grid spacing and ion velocity).
+
+    :param model_fidelity: tuple of integers that determine the number of cells and the number of charge states to use
+    :param json_config: the current set of configurations for HallThruster.jl
+    :returns: a dictionary of simulation parameters that can be converted to Julia via the `pem_to_julia` mapping,
+              namely `{'num_cells': int, 'ncharge': int, 'dt': float}`
     """
     if model_fidelity == ():
         model_fidelity = (2, 2)  # default to high-fidelity model
@@ -139,10 +144,6 @@ def _format_hallthruster_jl_input(thruster_inputs: dict, thruster: dict | str, c
     if thruster is not None:
         json_config['config']['thruster'] = thruster  # override
 
-    # Override model fidelity quantities
-    if model_fidelity is not None:
-        _convert_to_julia(fidelity_function(model_fidelity), json_config, pem_to_julia)
-
     def _random_filename():
         fname = f'hallthruster_jl'
         if name := json_config['config'].get('thruster', {}).get('name'):
@@ -163,6 +164,11 @@ def _format_hallthruster_jl_input(thruster_inputs: dict, thruster: dict | str, c
     # Update/override config with PEM thruster inputs (modify in place)
     _convert_to_julia(thruster_inputs, json_config, pem_to_julia)
 
+    # Override model fidelity quantities
+    if model_fidelity is not None:
+        fidelity_overrides = fidelity_function(model_fidelity, json_config)
+        _convert_to_julia(fidelity_overrides, json_config, pem_to_julia)
+
     output_file = _random_filename()
     if output_path is not None:
         output_file = str((Path(output_path) / output_file).resolve())
@@ -170,7 +176,7 @@ def _format_hallthruster_jl_input(thruster_inputs: dict, thruster: dict | str, c
 
     # Handle special conversions for anomalous transport models (just c1*c2 Bohm model for now)
     if anom_model := json_config['config'].get('anom_model'):
-        if anom_model.get('type') == 'PressureShifted':
+        if anom_model.get('type') == 'LogisticPressureShift':
             anom_model = anom_model.get('model', {})
 
         match anom_model.get('type', 'TwoZoneBohm'):
@@ -249,7 +255,7 @@ def hallthruster_jl(thruster_inputs: Dataset,
     :param fidelity_function: a callable that takes a tuple of integers and returns a dictionary of simulation
                               parameters. Defaults to `_convert_model_fidelity` which sets `ncells` and `ncharge` based
                               on the input tuple. The returned simulation parameters must be convertable to Julia via
-                              the `pem_to_julia` mapping.
+                              the `pem_to_julia` mapping. The callable should also take in the current json config dict.
     :param subprocess_kwargs: additional keyword arguments to pass to `subprocess.run` when calling the Julia script.
                               Defaults to `check=True`.
     :raises ModelRunException: if anything fails during the call to `Hallthruster.jl`

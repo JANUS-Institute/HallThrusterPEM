@@ -186,3 +186,5 @@ if __name__ == '__main__':
         fit_kwargs = {'runtime_hr': args.runtime_hr, 'max_iter': args.max_iter, 'targets': args.targets,
                       'save_interval': args.save_interval, 'max_tol': args.max_tol}
         train_surrogate(system, executor, args.train_single_fidelity, **fit_kwargs)
+
+    system.logger.info(f'Surrogate training complete. Output directory: {system.root_dir}')

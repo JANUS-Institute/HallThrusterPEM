@@ -1,6 +1,8 @@
 #!/bin/bash
 # This script is only setup to run on the University of Michigan Great Lakes cluster.
 # The cluster has OpenMPI installed along with the Module package and the SLURM workload manager.
+# This script will export SBATCH_ACCOUNT and SBATCH_MAIL_USER to the user's .bashrc file and the environment
+# based on the user's username.
 #
 # Run as:
 #
@@ -40,16 +42,16 @@ pdm sync --prod -G mpi -G scripts
 pdm run python install_hallthruster.py "$@"
 
 # Add slurm user account info to .bashrc
-if [[ -z "${SLURM_ACCOUNT}" || -z "${SLURM_MAIL}" ]]; then
+if [[ -z "${SBATCH_ACCOUNT}" || -z "${SBATCH_MAIL_USER}" ]]; then
   case $(whoami) in
     eckelsjd)
-      export SLURM_ACCOUNT='goroda98'
-      export SLURM_MAIL='eckelsjd@umich.edu'
+      export SBATCH_ACCOUNT='goroda98'
+      export SBATCH_MAIL_USER='eckelsjd@umich.edu'
       ;;
   esac
 
-  echo "export SLURM_ACCOUNT=${SLURM_ACCOUNT}" >> ~/.bashrc
-  echo "export SLURM_MAIL=${SLURM_MAIL}" >> ~/.bashrc
+  echo "export SBATCH_ACCOUNT=${SBATCH_ACCOUNT}" >> ~/.bashrc
+  echo "export SBATCH_MAIL_USER=${SBATCH_MAIL_USER}" >> ~/.bashrc
 fi
 
 echo "Environment setup complete! Use 'pdm train <config_file>' to build a surrogate."
