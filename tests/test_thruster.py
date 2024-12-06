@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 
 from hallmd.models.thruster import hallthruster_jl, _convert_to_julia, _convert_to_pem, PEM_TO_JULIA
 
-SHOW_PLOTS = True
+SHOW_PLOTS = False
 
 
 def test_julia_conversion():
@@ -75,16 +75,16 @@ def test_sim_hallthruster_jl(tmp_path, plots=SHOW_PLOTS):
 
 
 def test_run_hallthruster_jl(tmp_path, plots=SHOW_PLOTS, git_ref='v1.0'):
-    """Test actually calling HallThruster.jl using the Python wrapper function."""
+    """Test actually calling HallThruster.jl using the Python wrapper function (with PEMv0 settings)."""
     num_cells = 200
     pem_inputs = {'V_a': 300, 'mdot_a': 5.16e-6, 'P_b': 3.5e-5, 'V_cc': 32.5, 'T_e': 1.33, 'u_n': 141.2,
                   'l_t': 1.88e-3, 'a_1': 0.0068, 'a_2': 14.6, 'dz': 0.4, 'z0': -0.031, 'p0': 57e-6}
     config = {'anom_model': {'type': 'LogisticPressureShift',
                              'model': {'type': 'TwoZoneBohm', 'c1': 0.00625, 'c2': 0.0625},
                              'dz': 0.2, 'z0': -0.03, 'pstar': 45e-6, 'alpha': 14},
-              'domain': [0, 0.08],
-              'propellant': 'Xenon',
-              'ion_wall_losses': False, 'solve_plume': False}
+              'domain': [0, 0.08], 'propellant': 'Xenon', 'ion_wall_losses': True
+    }
+
     simulation = {'grid': {'type': 'EvenGrid', 'num_cells': num_cells},
                   'duration': 2e-3, 'adaptive': True, 'verbose': False}
     postprocess = {'average_start_time': 1e-3}
@@ -93,11 +93,11 @@ def test_run_hallthruster_jl(tmp_path, plots=SHOW_PLOTS, git_ref='v1.0'):
 
     outputs = hallthruster_jl(pem_inputs, config=config, simulation=simulation, postprocess=postprocess,
                               model_fidelity=model_fidelity, thruster=thruster, git_ref=git_ref, output_path=tmp_path)
-    pem_inputs['z0'] = -0.15
-    outputs_shift = hallthruster_jl(pem_inputs, config=config, simulation=simulation, postprocess=postprocess,
-                                    model_fidelity=model_fidelity, thruster=thruster, git_ref=git_ref,
-                                    output_path=tmp_path)
-    print(f"cost: {outputs['model_cost']} s")
+    # pem_inputs['z0'] = -0.15
+    # outputs_shift = hallthruster_jl(pem_inputs, config=config, simulation=simulation, postprocess=postprocess,
+    #                                 model_fidelity=model_fidelity, thruster=thruster, git_ref=git_ref,
+    #                                 output_path=tmp_path)
+    print(f"Cost: {outputs['model_cost']} s")
 
     for key in ['T', 'I_B0', 'I_d', 'u_ion', 'u_ion_coords']:
         assert key in outputs
@@ -121,21 +121,23 @@ def test_run_hallthruster_jl(tmp_path, plots=SHOW_PLOTS, git_ref='v1.0'):
     if plots:
         fig, ax = plt.subplots(1, 3, figsize=(12, 4), layout='tight')
         grid = outputs['u_ion_coords']
-        ax[0].plot(grid, outputs['u_ion'], '-k')
-        ax[0].plot(grid, outputs_shift['u_ion'], '--r')
+        ax[0].plot(grid, outputs['u_ion'], '-k', label=f'$z_0 = 3\%$')
+        # ax[0].plot(grid, outputs_shift['u_ion'], '--r', label=f'$z_0 = 15\%$')
         ax[0].set_xlabel('Axial distance from anode (m)')
         ax[0].set_ylabel('Ion velocity (m/s)')
+        ax[0].legend()
         ax[0].grid()
 
-        with open(tmp_path / outputs_shift['output_path'], 'r') as fd:
-            data = json.load(fd)
-            anom_shift = data['output']['average']['nu_anom']
+        # with open(tmp_path / outputs_shift['output_path'], 'r') as fd:
+        #     data = json.load(fd)
+        #     anom_shift = data['output']['average']['nu_anom']
 
-        ax[1].plot(grid, nu_anom, '-k', label=rf'$z_0 = -0.03$')
-        ax[1].plot(grid, anom_shift, '--r', label=rf'$z_0 = -0.15$')
+        ax[1].plot(grid, nu_anom, '-k', label=f'$z_0 = 3\%$')
+        # ax[1].plot(grid, anom_shift, '--r', label=f'$z_0 = 15\%$')
         ax[1].set_xlabel('Axial distance from anode (m)')
         ax[1].set_ylabel('Anomalous collision frequency (Hz)')
         ax[1].set_yscale('log')
+        ax[1].legend()
         ax[1].grid()
 
         ax[2].plot(grid, np.array(B) / np.max(B), '-b', label='Magnetic field')

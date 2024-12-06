@@ -17,7 +17,7 @@ infile = ARGS[1]
 ref_string = ARGS[2]
 
 HALLTHRUSTER_URL = "https://github.com/UM-PEPL/HallThruster.jl"
-HALLTHRUSTER_NAMe = "HallThruster"
+HALLTHRUSTER_NAME = "HallThruster"
 
 ref_type, ref = split(ref_string, "=")
 is_version = occursin("version", ref_type)
@@ -29,6 +29,11 @@ env_path = joinpath(global_envs, env_name)
 
 if isdir(env_path)
     Pkg.activate(env_path, io=devnull)
+
+    # Update from git ref every time to get newest changes
+    if !is_version
+        Pkg.update(HALLTHRUSTER_NAME, io=devnull)
+    end
 else
     println("Creating environment $env_name...")
     mkpath(env_path)

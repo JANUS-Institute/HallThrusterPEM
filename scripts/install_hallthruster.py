@@ -97,6 +97,16 @@ def install_hallthruster_jl(hallthruster_version, git_ref):
 
     if env_path.exists():
         print(f"Found HallThruster.jl ref {ref_name} in global environments.")
+
+        if git_ref is not None:
+            print(f"Updating HallThruster.jl ref {ref_name} from GitHub...")
+            if PLATFORM == 'windows':
+                update_cmd = rf"""julia -e 'using Pkg; Pkg.activate(raw\"{env_path.resolve()}\"); Pkg.update(raw\"{HALLTHRUSTER_NAME}\");'"""
+            else:
+                update_cmd = rf"""julia -e 'using Pkg; Pkg.activate("{env_path.resolve()}"); Pkg.update("{HALLTHRUSTER_NAME}");'"""
+
+            run_command(update_cmd, text=True, capture_output=False)
+
         return
     else:
         print(f"HallThruster.jl environment for ref {ref_name} not found. Creating...")

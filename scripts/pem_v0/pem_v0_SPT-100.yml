@@ -62,13 +62,13 @@ components: !Component
   - name: Thruster
     model: !!python/name:hallmd.models.thruster.hallthruster_jl
     version: 0.17.2
-    julia_script: ../tests/sim_hallthruster.jl  # relative to calling script's working directory
+    git_ref: v1.0
     thruster: SPT-100
     config:
 #      thruster: SPT-100                 # moved to separate thruster kwarg
       discharge_voltage: 300             # overwritten by V_a
       anode_mass_flow_rate: 5.0e-6       # overwritten by mdot_a
-      cathode_potential: 30              # overwritten by V_cc
+      cathode_coupling_voltage: 30              # overwritten by V_cc
       background_pressure_Torr: 1.0e-5   # overwritten by P_b
       cathode_Tev: 3                     # overwritten by T_e
       neutral_velocity: 300              # overwritten by u_n
@@ -86,7 +86,7 @@ components: !Component
         alpha: 15
       domain: [0, 0.08]
       propellant: Xenon
-      ion_wall_losses: false
+      ion_wall_losses: true
       solve_plume: true
       apply_thrust_divergence_correction: true
       neutral_ingestion_multiplier: 1.0
