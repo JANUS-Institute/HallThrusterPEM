@@ -2,10 +2,7 @@ sketch out an OO design (keep data-parsing internal for now, but could be its ow
   - mc, mcmc, sa, models, data, etc.
   - easy to version, deploy, test new PEMs
 
-- check setup_env.sh
-- check pdm run_job
 - check train_hpc.sh
-- check slice scripts
 
 - test thruster (and full hallthruster.jl config)
 - clean up data API

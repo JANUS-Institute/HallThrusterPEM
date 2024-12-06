@@ -1,7 +1,7 @@
 {
     "P_b": ["config", "background_pressure_Torr"],
     "mdot_a": ["config", "anode_mass_flow_rate"],
-    "V_cc": ["config", "cathode_potential"],
+    "V_cc": ["config", "cathode_coupling_voltage"],
     "u_n": ["config", "neutral_velocity"],
     "T_e": ["config", "cathode_Tev"],
     "l_t": ["config", "transition_length"],
@@ -20,13 +20,13 @@
     "ncharge": ["config", "ncharge"],
     "num_cells": ["simulation", "grid", "num_cells"],
     "dt": ["simulation", "dt"],
-    "I_B0": ["outputs", "average", 0, "ion_current"],
-    "I_d": ["outputs", "average", 0, "discharge_current"],
-    "T": ["outputs", "average", 0, "thrust"],
-    "eta_c": ["outputs", "average", 0, "current_eff"],
-    "eta_m": ["outputs", "average", 0, "mass_eff"],
-    "eta_v": ["outputs", "average", 0, "voltage_eff"],
-    "eta_a": ["outputs", "average", 0, "anode_eff"],
-    "u_ion": ["outputs", "average", 0, 0],
-    "u_ion_coords": ["outputs", "average", 0, "z"]
+    "I_B0": ["output", "average", "ion_current"],
+    "I_d": ["output", "average", "discharge_current"],
+    "T": ["output", "average", "thrust"],
+    "eta_c": ["output", "average", "current_eff"],
+    "eta_m": ["output", "average", "mass_eff"],
+    "eta_v": ["output", "average", "voltage_eff"],
+    "eta_a": ["output", "average", "anode_eff"],
+    "u_ion": ["output", "average", "ui", 0],
+    "u_ion_coords": ["output", "average", "z"]
 }

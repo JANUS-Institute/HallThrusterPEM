@@ -24,10 +24,10 @@ function perform_operations(input_path::String)
 
     # Access some inputs for demonstration
     discharge_voltage = json_data["config"]["discharge_voltage"]
-    cathode_potential = json_data["config"]["cathode_potential"]
+    cathode_potential = json_data["config"]["cathode_coupling_voltage"]
     flow_rate = json_data["config"]["anode_mass_flow_rate"]
     anom_coeff = json_data["config"]["anom_model"]["model"]["c1"]
-    ncells = json_data["simulation"]["ncells"]
+    ncells = json_data["simulation"]["grid"]["num_cells"]
     domain = json_data["config"]["domain"]
 
     output_path = json_data["postprocess"]["output_file"]
@@ -48,7 +48,7 @@ function perform_operations(input_path::String)
     uion = v_exh ./ (1 .+ exp.(-100 .* (z .- 0.04)))
 
     # Create the output JSON object
-    output_json = Dict("outputs" => Dict("average" => Dict(
+    output_json = Dict("output" => Dict("average" => Dict(
     "thrust" => thrust,
     "ion_current" => beam_current,
     "current_eff" => current_eff,
@@ -57,7 +57,7 @@ function perform_operations(input_path::String)
     "mass_eff" => mass_eff,
     "voltage_eff" => voltage_eff,
     "anode_eff" => anode_eff,
-    "ui_1" => uion,
+    "ui" => [uion],
     "z" => z
     )), "config" => json_data["config"],
     "simulation" => json_data["simulation"],

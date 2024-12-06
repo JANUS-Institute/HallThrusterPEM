@@ -47,10 +47,10 @@ def test_load_device(tmp_path):
     # Test loading SPT-100 device configuration
     device_dir = resources.files('hallmd.devices')
     config = load_device('SPT-100')
-    abs_mag_file = Path(device_dir / 'SPT-100' / 'bfield_spt100.csv').resolve().as_posix()
+    abs_mag_file = str(Path(device_dir / 'SPT-100' / 'bfield_spt100.csv').resolve())
     assert config == {'name': 'SPT-100',
                       'geometry': {'channel_length': 0.025, 'inner_radius': 0.035, 'outer_radius': 0.05},
-                      'magnetic_field': abs_mag_file,
+                      'magnetic_field': {'file': abs_mag_file},
                       'shielded': False}
 
     # Test a nested device configuration
@@ -66,7 +66,7 @@ def test_load_device(tmp_path):
         fd.write('other data')
 
     config = load_device('nested_device', 'my_device.yml', tmp_path)
-    abs_file = Path(new_device_dir / 'data' / 'my_file.txt').resolve().as_posix()
-    abs_other_file = Path(new_device_dir / 'data' / 'other_file.txt').resolve().as_posix()
+    abs_file = str(Path(new_device_dir / 'data' / 'my_file.txt').resolve())
+    abs_other_file = str(Path(new_device_dir / 'data' / 'other_file.txt').resolve())
 
     assert config == {'hello': 'there', 'my_file': abs_file, 'other_info': {'other_file': abs_other_file}}

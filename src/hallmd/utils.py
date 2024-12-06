@@ -13,7 +13,15 @@ from importlib import resources
 
 FUNDAMENTAL_CHARGE = 1.602176634e-19   # Fundamental charge (C)
 BOLTZMANN_CONSTANT = 1.380649e-23      # Boltzmann constant (J/K)
+AVOGADRO_CONSTANT = 6.022e23           # Avogadro's number (#/mol)
 TORR_2_PA = 133.322                    # Conversion factor from Torr to Pa
+MOLECULAR_WEIGHTS = {                  # For common propellants (g/mol)
+    "Xenon": 131.293,
+    "Krypton": 83.798,
+    "Argon": 39.948,
+    "Hydrogen": 1.008,
+    "Bismuth": 208.9804,
+}
 
 
 def _path_in_dict(value, data: dict) -> list:
@@ -90,6 +98,6 @@ def load_device(device_name: str, device_file: str = 'device.yml', device_dir: s
                     d = config  # pointer to the nested location in config
                     for key in dict_path[:-2]:
                         d = config[key]
-                    d[dict_path[-2]] = root_path.resolve().as_posix()
+                    d[dict_path[-2]] = str(root_path.resolve())
 
     return config

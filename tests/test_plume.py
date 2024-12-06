@@ -6,7 +6,7 @@ from scipy.integrate import simpson
 from hallmd.models.plume import current_density
 
 
-SHOW_PLOTS = True   # for debugging
+SHOW_PLOTS = False  # for debugging
 J_MIN = 1e-4        # Minimum expected ion current density
 J_MAX = 1e3         # Maximum expected ion current density
 N = 100             # Number of grid points
@@ -18,7 +18,7 @@ def test_random_samples(plots=SHOW_PLOTS):
                    'c1': np.random.rand(N) * 0.8 + 0.1, 'c2': np.random.rand(N) * 30 - 15,
                    'c3': np.random.rand(N) + 0.1, 'c4': 10 ** (np.random.rand(N) * 4 + 18),
                    'c5': 10 ** (np.random.rand(N) * 4 + 14), 'sigma_cex': np.random.rand(N) * 7e-20 + 51e-20,
-                   'r_m': np.random.rand(N) + 0.5, 'I_B0': np.random.rand(N) * 8 + 1}
+                   'r_p': np.random.rand(N) + 0.5, 'I_B0': np.random.rand(N) * 8 + 1}
     outputs_rand = current_density(inputs_rand)
 
     assert np.all(outputs_rand['j_ion'] >= J_MIN) and np.all(outputs_rand['j_ion'] <= J_MAX)
@@ -45,7 +45,7 @@ def test_pressure_sweep(plots=SHOW_PLOTS):
     # Test single 1d sweep
     pressure_sweep = 10 ** (np.linspace(-6, -4, N))
     inputs_sweep = {'P_b': pressure_sweep, 'c0': 0.1, 'c1': 0.7, 'c2': -8.0, 'c3': 0.2,
-                    'c4': 1e20, 'c5': 1e16, 'sigma_cex': 55e-20, 'r_m': 1, 'I_B0': 3}
+                    'c4': 1e20, 'c5': 1e16, 'sigma_cex': 55e-20, 'r_p': 1, 'I_B0': 3}
     outputs_sweep = current_density(inputs_sweep)
 
     assert np.all(outputs_sweep['j_ion'] >= J_MIN) and np.all(outputs_sweep['j_ion'] <= J_MAX)
@@ -79,34 +79,6 @@ def test_pressure_sweep(plots=SHOW_PLOTS):
             ax.plot(np.concatenate((-np.flip(alpha_deg)[:-1], alpha_deg)),
                     np.concatenate((np.flip(jion[i, :-1], axis=-1), jion[i, :]), axis=-1),
                     label=f'P_b = {pressure_sweep[i]:.2e}', color=c[i])
-        ax.set_yscale('log')
-        ax.set_xlabel('Angle from centerline (deg)')
-        ax.set_ylabel('Ion current density ($A/m^2$)')
-        ax.legend()
-
-        plt.show()
-
-
-def test_interpolation(plots=SHOW_PLOTS):
-    # Scalar usage
-    inputs = {'P_b': 1e-6, 'c0': 0.1, 'c1': 0.7, 'c2': -8.0, 'c3': 0.2, 'c4': 1e20, 'c5': 1e16, 'sigma_cex': 55e-20,
-              'r_m': 1, 'I_B0': 3}
-    outputs = current_density(inputs)
-
-    # Interpolation to new coords
-    alpha_new = np.array([-90, -45, -10, 0, 10, 45, 90]) * (np.pi / 180)
-    outputs_interp = current_density(inputs, j_ion_coords=alpha_new)
-
-    assert np.all(outputs_interp['j_ion'] >= J_MIN) and np.all(outputs_interp['j_ion'] <= J_MAX)
-
-    if plots:
-        # Plot interpolation to new coords
-        fig, ax = plt.subplots()
-        jion = outputs['j_ion'][0, :]
-        alpha_deg = np.linspace(0, np.pi / 2, jion.shape[-1]) * (180 / np.pi)
-        ax.plot(np.concatenate((-np.flip(alpha_deg)[:-1], alpha_deg)),
-                np.concatenate((np.flip(jion[:-1], axis=-1), jion), axis=-1), '-k', label='Original')
-        ax.plot(alpha_new * (180 / np.pi), outputs_interp['j_ion'][0, :], '-or', label='Interpolated')
         ax.set_yscale('log')
         ax.set_xlabel('Angle from centerline (deg)')
         ax.set_ylabel('Ion current density ($A/m^2$)')

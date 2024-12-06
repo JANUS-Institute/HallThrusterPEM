@@ -86,12 +86,15 @@ components: !Component
         alpha: 15
       domain: [0, 0.08]
       propellant: Xenon
-      ion_wall_losses: true
+      ion_wall_losses: false
       solve_plume: true
       apply_thrust_divergence_correction: true
       neutral_ingestion_multiplier: 1.0
     simulation:
+      adaptive: true
       dt: 1.0e-9        # overwritten by model_fidelity[0]
+      min_dt: 1.0e-10
+      max_dt: 1.0e-7
       grid:
         type: EvenGrid
         num_cells: 100   # overwritten by model_fidelity[0]

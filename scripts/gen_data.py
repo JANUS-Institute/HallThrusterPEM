@@ -37,7 +37,6 @@ import argparse
 import json
 import os
 import shutil
-import time
 from concurrent.futures import Executor, ProcessPoolExecutor, ThreadPoolExecutor
 from pathlib import Path
 import pickle
@@ -89,7 +88,7 @@ def _extract_grid_coords(field_var: str, model_dir: str | Path):
             with open(Path(model_dir) / 'Thruster' / files[0], 'r') as fd:
                 # Assumes hallthruster.jl model output, and assumes the grid is the same for all outputs
                 data = json.load(fd)
-                coords = np.atleast_1d(data['outputs']['average']['z'])  # axial grid
+                coords = np.atleast_1d(data['outputs']['average'][0]['z'])  # axial grid
         case 'j_ion':
             # See hallmd.models.plume.current_density() for how the grid is generated (0 to 90 deg in 1 deg increments)
             coords = np.linspace(0, np.pi/2, 91)

@@ -2,11 +2,13 @@
 
 1) Check for juliaup installation and install it if not found.
 2) Ensure the specified Julia version is installed using juliaup.
-3) Install HallThruster.jl with the specified version.
+3) Install HallThruster.jl with the specified version (or git ref).
 
 Run as:
 
-python install_hallthruster.py --julia-version 1.10 --hallthruster-version 0.17.2
+python install_hallthruster.py --julia-version 1.10 --hallthruster-version 0.17.2 --git-ref main
+
+Note: If `git-ref` is specified, this will override the `hallthruster-version` and instead install from GitHub.
 
 """
 import argparse
@@ -21,6 +23,8 @@ from packaging.version import Version
 PLATFORM = platform.system().lower()
 JULIA_VERSION_DEFAULT = "1.10"
 HALLTHRUSTER_VERSION_DEFAULT = "0.17.2"
+HALLTHRUSTER_URL = "https://github.com/UM-PEPL/HallThruster.jl"
+HALLTHRUSTER_NAME = "HallThruster"
 
 
 def run_command(command, capture_output=True, text=None, shell=False):
@@ -83,25 +87,34 @@ def ensure_julia_version(julia_version):
         run_command(f"juliaup default {julia_version}")
 
 
-def install_hallthruster_jl(hallthruster_version):
-    print(f"Checking for HallThruster.jl version {hallthruster_version} in global environments...")
+def install_hallthruster_jl(hallthruster_version, git_ref):
+    """Install from a specified version tag; override with `git_ref` from GitHub if provided."""
+    ref_name = git_ref if git_ref is not None else hallthruster_version
+
+    print(f'Checking for HallThruster.jl ref {ref_name} in global environments...')
     global_env_dir = Path(f'~/.julia/environments/').expanduser()
-    env_path = global_env_dir / f"hallthruster_{hallthruster_version}"
+    env_path = global_env_dir / f"hallthruster_{ref_name}"
+
     if env_path.exists():
-        print(f"Found HallThruster.jl version {hallthruster_version} in global environments.")
+        print(f"Found HallThruster.jl ref {ref_name} in global environments.")
         return
     else:
-        print(f"HallThruster.jl environment {env_path} not found. Creating...")
+        print(f"HallThruster.jl environment for ref {ref_name} not found. Creating...")
         os.makedirs(env_path)
         if PLATFORM == 'windows':
-            install_cmd = rf"julia -e 'using Pkg; Pkg.activate(\"{env_path.resolve()}\"); Pkg.add(name=\"HallThruster\", version=\"{hallthruster_version}\")'"
+            # Powershell needs the double quotes to be escaped
+            pkg_cmd = rf'Pkg.add(url=\"{HALLTHRUSTER_URL}\", rev=\"{git_ref}\")' if git_ref is not None else \
+                rf'Pkg.add(name=\"{HALLTHRUSTER_NAME}\", version=\"{hallthruster_version}\")'
+            install_cmd = rf"julia -e 'using Pkg; Pkg.activate(raw\"{env_path.resolve()}\"); {pkg_cmd}'"
         else:
-            install_cmd = rf"""julia -e 'using Pkg; Pkg.activate("{env_path.resolve()}"); Pkg.add(name="HallThruster", version="{hallthruster_version}")'"""
+            pkg_cmd = rf'Pkg.add(url="{HALLTHRUSTER_URL}", rev="{git_ref}")' if git_ref is not None else \
+                rf'Pkg.add(name="{HALLTHRUSTER_NAME}", version="{hallthruster_version}")'
+            install_cmd = rf"""julia -e 'using Pkg; Pkg.activate("{env_path.resolve()}"); {pkg_cmd}'"""
 
         run_command(install_cmd, text=True, capture_output=False)
 
 
-def main(julia_version, hallthruster_version):
+def main(julia_version, hallthruster_version, git_ref):
     juliaup_installed = False
     try:
         run_command("juliaup --version")
@@ -114,16 +127,19 @@ def main(julia_version, hallthruster_version):
 
     ensure_julia_version(julia_version)
 
-    install_hallthruster_jl(hallthruster_version)
+    install_hallthruster_jl(hallthruster_version, git_ref)
     print("HallThruster installation completed successfully.")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Install specified Julia and HallThruster.jl versions.")
-    parser.add_argument("-jv", "--julia-version", default=JULIA_VERSION_DEFAULT,
+    parser.add_argument("-j", "--julia-version", default=JULIA_VERSION_DEFAULT,
                         help="The Julia version to install (default: 1.10)")
-    parser.add_argument("-hv", "--hallthruster-version", default=HALLTHRUSTER_VERSION_DEFAULT,
+    parser.add_argument("-t", "--hallthruster-version", default=HALLTHRUSTER_VERSION_DEFAULT,
                         help="The HallThruster.jl version to install (default: 0.17.2)")
+    parser.add_argument("-r", "--git-ref", default=None,
+                        help="Install from this git ref (branch, hash, etc.) from the HallThruster.jl "
+                             "GitHub repository.")
     args = parser.parse_args()
 
-    main(args.julia_version, args.hallthruster_version)
+    main(args.julia_version, args.hallthruster_version, args.git_ref)

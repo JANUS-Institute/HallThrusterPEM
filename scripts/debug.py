@@ -5,13 +5,16 @@ from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_compl
 import time
 import numpy as np
 
+
 def io_heavy_task(wait):
     time.sleep(wait)
     return f"Completed IO heavy task with wait {wait}s"
 
+
 def cpu_heavy_task(samples):
     result = sum(np.random.rand(samples))
     return f"Completed CPU heavy task with {samples} samples"
+
 
 def main():
     parser = argparse.ArgumentParser(description="Execute IO or CPU heavy tasks using a specified executor.")
@@ -38,6 +41,7 @@ def main():
         futures = [executor.submit(task, *task_args) for _ in range(os.cpu_count())]
         for i, future in enumerate(as_completed(futures)):
             print(f"Task {i}: {future.result()}")
+
 
 if __name__ == "__main__":
     main()
