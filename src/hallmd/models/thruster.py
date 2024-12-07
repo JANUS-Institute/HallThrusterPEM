@@ -35,6 +35,16 @@ with open(resources.files('hallmd.models') / 'pem_to_julia.json', 'r') as fd:
     PEM_TO_JULIA = json.load(fd)
 
 
+def get_jl_env(hallthruster_version, git_ref):
+    """Get the name of the environment we create for HallThruster.jl for a specific version/git ref.
+    Returns the ref_name of and the absolute path pointing to the environment
+    """
+    ref_name = git_ref if git_ref is not None else hallthruster_version
+    global_env_dir = Path('~/.julia/environments/').expanduser()
+    env_path = global_env_dir / f"hallthruster_{ref_name}"
+    return ref_name, env_path
+
+
 def _convert_to_julia(pem_data: dict, julia_data: dict, pem_to_julia: dict):
     """Replace all values in the mutable `julia_data` dict with corresponding values in `pem_data`, using the
     conversion map provided in `pem_to_julia`. Will "blaze" a path into `julia_data` dict if it does not exist.
@@ -162,7 +172,7 @@ def _format_hallthruster_jl_input(thruster_inputs: dict, thruster: dict | str, c
         json_config['config']['thruster'] = thruster  # override
 
     def _random_filename():
-        fname = f'hallthruster_jl'
+        fname = 'hallthruster_jl'
         if name := json_config['config'].get('thruster', {}).get('name'):
             fname += f'_{name}'
         if vd := json_config['config'].get('discharge_voltage'):
@@ -210,6 +220,64 @@ def _format_hallthruster_jl_input(thruster_inputs: dict, thruster: dict | str, c
             raise ValueError(f"Missing required simulation config: {required_config}")
 
     return json_config
+
+
+def run_hallthruster_jl(json_input: dict | str | Path = None, jl_environment: str = ""):
+    """Run a single HallThruster.jl simulation for a given set of inputs
+
+    :param json_input: either a dictionary containing `config`, `simulation`, and `postprocess` options for 
+            HallThruster.jl, or a string/Path containing a path to a JSON file with those inputs.
+    :param jl_environment: The julia environment containing HallThruster.jl. Defaults to global Julia environment.
+
+    :returns: `dict` of `Hallthruster.jl` outputs: `I_B0`, `I_d`, `T`, `eta_c`, `eta_m`, `eta_v`, and `u_ion` for ion
+              beam current (A), discharge current (A), thrust (N), current efficiency, mass efficiency, voltage
+              efficiency, and singly-charged ion velocity profile (m/s). The specific outputs depend on the settings
+              provided in the `postprocess` dict in the input.
+              If `postprocess['output_file']` is present, this function will also write the requested outputs and
+              restart information to that file.
+    """
+
+    # Read JSON input from file if path provided
+    if isinstance(json_input, str) or isinstance(json_input, Path):
+        with open(json_input) as fp:
+            json_input = json.load(fp)
+
+    # Get output file path. If one not provided, create a temporary
+    if 'output_file' in json_input['postprocess']:
+        output_file = Path(json_input['postprocess'].get('output_file'))
+    else:
+        # Create temporary
+        fd_out = tempfile.NamedTemporaryFile(suffix=".json", prefix="hallthrusterjl_")
+        output_file = Path(fd_out.name)
+        fd_out.close()
+        json_input['postprocess']['output_file'] = str(output_file)
+
+    # Dump input to temporary file
+    fd = tempfile.NamedTemporaryFile(
+        suffix=".json", prefix="hallthrusterjl_",
+        mode="w", delete=False, encoding="utf-8"
+    )
+    input_file = fd.name
+    json.dump(json_input, fd, ensure_ascii=False, indent=4)
+    fd.close()
+
+    # Run HallThruster.jl on input file
+    try:
+        subprocess.run([
+            'julia',
+            f'--project=${jl_environment}',
+            '-e'
+            f'using HallThruster; HallThruster.run_simulation("{input_file}")'
+        ])
+    finally:
+        # Delete temporary input file
+        os.unlink(input_file)
+
+    # Load output data
+    with open(output_file) as fp:
+        output_data = json.load(fp)
+
+    return output_data
 
 
 def hallthruster_jl(thruster_inputs: Dataset,
@@ -299,27 +367,15 @@ def hallthruster_jl(thruster_inputs: Dataset,
     # Format inputs for HallThruster.jl and write to json
     json_data = _format_hallthruster_jl_input(thruster_inputs, thruster, config, simulation, postprocess,
                                               model_fidelity, output_path, pem_to_julia, fidelity_function)
-    fd = tempfile.NamedTemporaryFile(suffix='.json', encoding='utf-8', mode='w', delete=False)
-    json.dump(json_data, fd, ensure_ascii=False, indent=4)
-    fd.close()
+    # Get julia environment
+    _, jl_environment = get_jl_env(version, git_ref)
 
-    # Decide on version/ref to use
-    ref_string = f'--ref={git_ref}' if git_ref is not None else f'--version={version}'
+    # Run code
+    t1 = time.time()
+    sim_results = run_hallthruster_jl(json_data, jl_environment)
+    t2 = time.time()
 
-    # Run simulation
-    try:
-        t1 = time.time()
-        subprocess.run(['julia', str(Path(julia_script).resolve()), fd.name, ref_string], **subprocess_kwargs)
-        t2 = time.time()
-    finally:
-        os.unlink(fd.name)   # delete the tempfile
-
-    # Load simulation results
-    output_file = json_data['postprocess'].get('output_file')
-    with open(Path(output_file), 'r') as fd:
-        sim_results = json.load(fd)
-
-    # Format QoIs for the PEM
+    # Format QOIs for PEM
     thruster_outputs = _convert_to_pem(sim_results, pem_to_julia)
 
     # Raise an exception if thrust or beam current are negative (non-physical cases)
@@ -329,7 +385,8 @@ def hallthruster_jl(thruster_inputs: Dataset,
         raise ValueError(f'Exception due to non-physical case: thrust={thrust} N, '
                          f'beam current={beam_current} A')
 
-    thruster_outputs['model_cost'] = t2 - t1  # seconds
-    thruster_outputs['output_path'] = Path(output_file).relative_to(Path(output_path).resolve()).as_posix()
+    thruster_outputs['model_cost'] = t2 - t1 # seconds
+    thruster_outputs['output_path'] = \
+        Path(json_data['postprocess'].get('output_file')).relative_to(Path(output_path).resolve()).as_posix()
 
     return thruster_outputs
