@@ -281,7 +281,8 @@ def run_hallthruster_jl(json_input: dict | str | Path, jl_env: str | Path = None
         if Path(jl_env).exists():
             cmd.insert(1, f'--project={Path(jl_env).resolve()}')
         else:
-            raise ValueError(f"Could not find Julia environment {jl_env}. Please create it first.")
+            raise ValueError(f"Could not find Julia environment {jl_env}. Please create it first. "
+                             f"See https://github.com/JANUS-Institute/HallThrusterPEM/blob/main/scripts/install_hallthruster.py")
 
     try:
         subprocess.run(cmd, **kwargs)
