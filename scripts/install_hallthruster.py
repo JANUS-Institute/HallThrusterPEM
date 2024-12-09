@@ -16,7 +16,7 @@ import os
 import shlex
 import subprocess
 import platform
-from pathlib import Path
+from hallmd.models.thruster import get_jl_env
 
 from packaging.version import Version
 
@@ -51,12 +51,12 @@ def install_juliaup():
 
 
 def ensure_julia_version(julia_version):
-    print(f"Checking installed Julia versions using juliaup...")
+    print("Checking installed Julia versions using juliaup...")
 
     try:
         proc_ret = run_command("juliaup status", text=True, capture_output=True)
         cmd_output = proc_ret.stdout
-    except:
+    except Exception:
         cmd_output = ""
 
     found_installed = False
@@ -90,10 +90,8 @@ def ensure_julia_version(julia_version):
 def install_hallthruster_jl(hallthruster_version, git_ref):
     """Install from a specified version tag; override with `git_ref` from GitHub if provided."""
     ref_name = git_ref if git_ref is not None else hallthruster_version
-
+    env_path = get_jl_env(ref_name)
     print(f'Checking for HallThruster.jl ref {ref_name} in global environments...')
-    global_env_dir = Path(f'~/.julia/environments/').expanduser()
-    env_path = global_env_dir / f"hallthruster_{ref_name}"
 
     if env_path.exists():
         print(f"Found HallThruster.jl ref {ref_name} in global environments.")
@@ -129,7 +127,7 @@ def main(julia_version, hallthruster_version, git_ref):
     try:
         run_command("juliaup --version")
         juliaup_installed = True
-    except:
+    except Exception:
         pass
 
     if not juliaup_installed:
