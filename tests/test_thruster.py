@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 
 from hallmd.models.thruster import hallthruster_jl, _convert_to_julia, _convert_to_pem, PEM_TO_JULIA
 
-SHOW_PLOTS = False
+SHOW_PLOTS = True
 
 
 def test_julia_conversion():
@@ -92,11 +92,11 @@ def test_run_hallthruster_jl(tmp_path, plots=SHOW_PLOTS, git_ref='v1.0'):
     thruster = "SPT-100"
 
     outputs = hallthruster_jl(pem_inputs, config=config, simulation=simulation, postprocess=postprocess,
-                              model_fidelity=model_fidelity, thruster=thruster, git_ref=git_ref, output_path=tmp_path)
-    # pem_inputs['z0'] = -0.15
-    # outputs_shift = hallthruster_jl(pem_inputs, config=config, simulation=simulation, postprocess=postprocess,
-    #                                 model_fidelity=model_fidelity, thruster=thruster, git_ref=git_ref,
-    #                                 output_path=tmp_path)
+                              model_fidelity=model_fidelity, thruster=thruster, version=git_ref, output_path=tmp_path)
+    pem_inputs['z0'] = -0.15
+    outputs_shift = hallthruster_jl(pem_inputs, config=config, simulation=simulation, postprocess=postprocess,
+                                    model_fidelity=model_fidelity, thruster=thruster, version=git_ref,
+                                    output_path=tmp_path)
     print(f"Cost: {outputs['model_cost']} s")
 
     for key in ['T', 'I_B0', 'I_d', 'u_ion', 'u_ion_coords']:
@@ -122,18 +122,18 @@ def test_run_hallthruster_jl(tmp_path, plots=SHOW_PLOTS, git_ref='v1.0'):
         fig, ax = plt.subplots(1, 3, figsize=(12, 4), layout='tight')
         grid = outputs['u_ion_coords']
         ax[0].plot(grid, outputs['u_ion'], '-k', label=f'$z_0 = 3\%$')
-        # ax[0].plot(grid, outputs_shift['u_ion'], '--r', label=f'$z_0 = 15\%$')
+        ax[0].plot(grid, outputs_shift['u_ion'], '--r', label=f'$z_0 = 15\%$')
         ax[0].set_xlabel('Axial distance from anode (m)')
         ax[0].set_ylabel('Ion velocity (m/s)')
         ax[0].legend()
         ax[0].grid()
 
-        # with open(tmp_path / outputs_shift['output_path'], 'r') as fd:
-        #     data = json.load(fd)
-        #     anom_shift = data['output']['average']['nu_anom']
+        with open(tmp_path / outputs_shift['output_path'], 'r') as fd:
+            data = json.load(fd)
+            anom_shift = data['output']['average']['nu_anom']
 
         ax[1].plot(grid, nu_anom, '-k', label=f'$z_0 = 3\%$')
-        # ax[1].plot(grid, anom_shift, '--r', label=f'$z_0 = 15\%$')
+        ax[1].plot(grid, anom_shift, '--r', label=f'$z_0 = 15\%$')
         ax[1].set_xlabel('Axial distance from anode (m)')
         ax[1].set_ylabel('Anomalous collision frequency (Hz)')
         ax[1].set_yscale('log')

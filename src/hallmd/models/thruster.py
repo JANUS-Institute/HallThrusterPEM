@@ -6,7 +6,7 @@
 
 Includes:
 
-- `hallthruster_jl()` - Wrapper to run HallThruster.jl for a single set of inputs
+- `hallthruster_jl()` - PEM wrapper to run HallThruster.jl for a single set of inputs
 - `PEM_TO_JULIA` - Mapping of PEM variable names to a path in the HallThruster.jl input/output structure (defaults)
 """
 import subprocess
@@ -27,12 +27,22 @@ from amisc.typing import Dataset
 
 from hallmd.utils import load_device, FUNDAMENTAL_CHARGE, MOLECULAR_WEIGHTS, AVOGADRO_CONSTANT
 
-__all__ = ['hallthruster_jl', 'PEM_TO_JULIA']
+__all__ = ['run_hallthruster_jl', 'hallthruster_jl', 'get_jl_env', 'PEM_TO_JULIA']
 
 
 # Maps PEM variable names to a path in the HallThruster.jl input/output structure (default values here)
 with open(resources.files('hallmd.models') / 'pem_to_julia.json', 'r') as fd:
     PEM_TO_JULIA = json.load(fd)
+
+
+def get_jl_env(git_ref: str) -> Path:
+    """Get the path of the julia environment created for HallThruster.jl for a specific git ref.
+
+    :param git_ref: The git ref (i.e. commit hash, version tag, branch, etc.) of HallThruster.jl to use.
+    """
+    global_env_dir = Path('~/.julia/environments/').expanduser()
+    env_path = global_env_dir / f"hallthruster_{git_ref}"
+    return env_path
 
 
 def _convert_to_julia(pem_data: dict, julia_data: dict, pem_to_julia: dict):
@@ -122,10 +132,16 @@ def _default_model_fidelity(model_fidelity: tuple, json_config: dict, cfl: float
     return {'num_cells': num_cells, 'ncharge': ncharge, 'dt': float(dt_s)}
 
 
-def _format_hallthruster_jl_input(thruster_inputs: dict, thruster: dict | str, config: dict, simulation: dict,
-                                  postprocess: dict, model_fidelity: tuple, output_path: str | Path,
-                                  pem_to_julia: dict, fidelity_function: Callable) -> dict:
-    """Helper function to format inputs for `Hallthruster.jl` as a `dict` writeable to `json`. See the call
+def _format_hallthruster_jl_input(thruster_inputs: dict,
+                                  thruster: dict | str = 'SPT-100',
+                                  config: dict = None,
+                                  simulation: dict = None,
+                                  postprocess: dict = None,
+                                  model_fidelity: tuple = (2, 2),
+                                  output_path: str | Path = None,
+                                  pem_to_julia: dict = 'default',
+                                  fidelity_function: Callable = 'default') -> dict:
+    """Helper function to format PEM inputs for `Hallthruster.jl` as a `dict` writeable to `json`. See the call
     signature of `hallthruster_jl` for more details on arguments.
 
     The return `dict` has the format:
@@ -151,6 +167,9 @@ def _format_hallthruster_jl_input(thruster_inputs: dict, thruster: dict | str, c
 
     :returns: a json `dict` in the format that `HallThruster.run_simulation()` expects to be called
     """
+    if fidelity_function is None or fidelity_function == 'default':
+        fidelity_function = _default_model_fidelity
+
     json_config = {'config': {} if config is None else copy.deepcopy(config),
                    'simulation': {} if simulation is None else copy.deepcopy(simulation),
                    'postprocess': {} if postprocess is None else copy.deepcopy(postprocess)}
@@ -160,18 +179,6 @@ def _format_hallthruster_jl_input(thruster_inputs: dict, thruster: dict | str, c
         thruster = load_device(thruster)
     if thruster is not None:
         json_config['config']['thruster'] = thruster  # override
-
-    def _random_filename():
-        fname = f'hallthruster_jl'
-        if name := json_config['config'].get('thruster', {}).get('name'):
-            fname += f'_{name}'
-        if vd := json_config['config'].get('discharge_voltage'):
-            fname += f'_{round(vd)}V'
-        if mdot := json_config['config'].get('anode_mass_flow_rate'):
-            fname += f'_{mdot:.1e}kg_s'
-
-        fname += '_' + ''.join(random.choices(string.ascii_uppercase + string.digits, k=4)) + '.json'
-        return fname
 
     # Make sure we request time-averaged
     duration = json_config['simulation'].get('duration', 1e-3)
@@ -186,10 +193,18 @@ def _format_hallthruster_jl_input(thruster_inputs: dict, thruster: dict | str, c
         fidelity_overrides = fidelity_function(model_fidelity, json_config)
         _convert_to_julia(fidelity_overrides, json_config, pem_to_julia)
 
-    output_file = _random_filename()
     if output_path is not None:
-        output_file = str((Path(output_path) / output_file).resolve())
-    json_config['postprocess']['output_file'] = output_file
+        fname = 'hallthruster_jl'
+        if name := json_config['config'].get('thruster', {}).get('name'):
+            fname += f'_{name}'
+        if vd := json_config['config'].get('discharge_voltage'):
+            fname += f'_{round(vd)}V'
+        if mdot := json_config['config'].get('anode_mass_flow_rate'):
+            fname += f'_{mdot:.1e}kg_s'
+
+        fname += '_' + ''.join(random.choices(string.ascii_uppercase + string.digits, k=4)) + '.json'
+        output_file = str((Path(output_path) / fname).resolve())
+        json_config['postprocess']['output_file'] = output_file
 
     # Handle special conversions for anomalous transport models (just c1*c2 Bohm model for now)
     if anom_model := json_config['config'].get('anom_model'):
@@ -204,12 +219,92 @@ def _format_hallthruster_jl_input(thruster_inputs: dict, thruster: dict | str, c
             case 'GaussianBohm':
                 pass
 
-    # Make sure we have all required simulation configs
-    for required_config in ['thruster', 'discharge_voltage', 'domain', 'anode_mass_flow_rate']:
-        if required_config not in json_config['config']:
-            raise ValueError(f"Missing required simulation config: {required_config}")
-
     return json_config
+
+
+def run_hallthruster_jl(json_input: dict | str | Path, jl_env: str | Path = None, jl_script: str | Path = None,
+                        **kwargs) -> dict:
+    """Python wrapper for `HallThruster.run_simulation(json_input)` in Julia.
+
+    :param json_input: either a dictionary containing `config`, `simulation`, and `postprocess` options for 
+            HallThruster.jl, or a string/Path containing a path to a JSON file with those inputs.
+    :param jl_env: The julia environment containing HallThruster.jl. Defaults to global Julia environment.
+    :param jl_script: path to a custom Julia script to run. The script should accept the input json file path as
+                      a command line argument. Defaults to just calling `HallThruster.run_simulation(input_file)`.
+    :param kwargs: additional keyword arguments to pass to `subprocess.run` when calling the Julia script.
+
+    :returns: `dict` of `Hallthruster.jl` outputs. The specific outputs depend on the settings
+              provided in the `postprocess` dict in the input. If `postprocess['output_file']` is present,
+              this function will also write the requested outputs and restart information to that file.
+    """
+    # Read JSON input from file if path provided
+    if isinstance(json_input, str | Path):
+        with open(json_input, 'r') as fp:
+            json_input = json.load(fp)
+
+    tempfile_args = dict(suffix=".json", prefix="hallthruster_jl_", mode="w", delete=False, encoding="utf-8")
+
+    # Get output file path. If one not provided, create a temporary
+    temp_out = False
+    if 'output_file' in json_input.get('postprocess', {}):
+        output_file = Path(json_input['postprocess'].get('output_file'))
+    elif 'output_file' in json_input.get('input', {}).get('postprocess', {}):
+        output_file = Path(json_input['input']['postprocess'].get('output_file'))
+    else:
+        temp_out = True
+        fd_out = tempfile.NamedTemporaryFile(**tempfile_args)
+        output_file = Path(fd_out.name)
+        fd_out.close()
+
+        if json_input.get('input'):
+            json_input['input'].setdefault('postprocess', {})
+            json_input['input']['postprocess']['output_file'] = str(output_file.resolve())
+        else:
+            json_input.setdefault('postprocess', {})
+            json_input['postprocess']['output_file'] = str(output_file.resolve())
+
+    # Dump input to temporary file
+    fd = tempfile.NamedTemporaryFile(**tempfile_args)
+    input_file = fd.name
+    json.dump(json_input, fd, ensure_ascii=False, indent=4)
+    fd.close()
+
+    # Run HallThruster.jl on input file
+    if jl_script is None:
+        cmd = ['julia', '--startup-file=no', '-e',
+               f'using HallThruster; HallThruster.run_simulation(raw"{input_file}")']
+    else:
+        cmd = ['julia', '--startup-file=no', '--',
+               str(Path(jl_script).resolve()), input_file]
+
+    if jl_env is not None:
+        if Path(jl_env).exists():
+            cmd.insert(1, f'--project={Path(jl_env).resolve()}')
+        else:
+            raise ValueError(f"Could not find Julia environment {jl_env}. Please create it first. "
+                             f"See https://github.com/JANUS-Institute/HallThrusterPEM/blob/main/scripts/install_hallthruster.py")
+
+    try:
+        subprocess.run(cmd, **kwargs)
+    finally:
+        # Delete temporary input file
+        os.unlink(input_file)
+
+    # Load output data
+    with open(output_file, 'r') as fp:
+        output_data = json.load(fp)
+
+    if temp_out:
+        os.unlink(output_file)
+        if d := output_data.get('postprocess'):
+            if 'output_file' in d:
+                del d['output_file']
+        if d := output_data.get('input'):
+            if d2 := d.get('postprocess'):
+                if 'output_file' in d2:
+                    del d2['output_file']
+
+    return output_data
 
 
 def hallthruster_jl(thruster_inputs: Dataset,
@@ -219,12 +314,11 @@ def hallthruster_jl(thruster_inputs: Dataset,
                     postprocess: dict = None,
                     model_fidelity: tuple = (2, 2),
                     output_path: str | Path = None,
-                    version: str = "0.17.2",
-                    git_ref: str = None,
-                    julia_script: str | Path = 'default',
+                    version: str = None,
                     pem_to_julia: dict = 'default',
                     fidelity_function: Callable[[tuple[int, ...]], dict] = 'default',
-                    subprocess_kwargs: dict = 'default') -> Dataset:
+                    julia_script: str | Path = None,
+                    run_kwargs: dict = 'default') -> Dataset:
     """Run a single `HallThruster.jl` simulation for a given set of inputs. This function will write a temporary
     input file to disk, call `HallThruster.run_simulation()` in Julia, and read the output file back into Python. Will
     return time-averaged performance metrics and ion velocity for use with the PEM.
@@ -258,14 +352,11 @@ def hallthruster_jl(thruster_inputs: Dataset,
                            via `ncells = model_fidelity[0] * 50 + 100` and `ncharge = model_fidelity[1] + 1`.
                            Will override `ncells` and `ncharge` in `simulation` and `config` if provided.
     :param output_path: base path to save output files, will write to current directory if not specified
-    :param version: version of HallThruster.jl to use (default is `0.17.2`); will search for a global
-                    `hallthruster_{version}` environment and use that if found, otherwise will create it and install.
-                    Environments are searched in the `~/.julia/environments/` directory.
-    :param git_ref: Will override the version of HallThruster.jl and instead use this git ref on GitHub
-                    (i.e. branch, commit hash, etc.)
-    :param julia_script: path to a custom Julia script to run instead of the default `run_hallthruster.jl` script. The
-                         script should accept two positional args: the input json file and the HallThruster.jl version.
-                         See the default script for an example. If None, will use the default script.
+    :param version: version of HallThruster.jl to use (defaults to whatever is installed in global julia env); will
+                    search for a global `hallthruster_{version}` environment in the `~/.julia/environments/` directory.
+                    Can also specify a specific git ref (i.e. branch, commit hash, etc.) to use from GitHub. If the
+                    `hallthruster_{version}` environment does not exist, an error will be raised -- you should create
+                    this environment first before using it.
     :param pem_to_julia: a `dict` mapping of PEM shorthand variable names to a list of keys that maps into the
                          `HallThruster.jl` input/output data structure. Defaults to the provided PEM_TO_JULIA dict
                          defined in [`hallmd.models.thruster`][hallmd.models.thruster]. For example,
@@ -275,20 +366,14 @@ def hallthruster_jl(thruster_inputs: Dataset,
                               parameters. Defaults to `_default_model_fidelity` which sets `ncells` and `ncharge` based
                               on the input tuple. The returned simulation parameters must be convertable to Julia via
                               the `pem_to_julia` mapping. The callable should also take in the current json config dict.
-    :param subprocess_kwargs: additional keyword arguments to pass to `subprocess.run` when calling the Julia script.
-                              Defaults to `check=True`.
+    :param julia_script: path to a custom Julia script to run. The script should accept the input json file path as
+                         a command line argument. Defaults to just calling `HallThruster.run_simulation(input_file)`.
+    :param run_kwargs: additional keyword arguments to pass to `subprocess.run` when calling the Julia script.
+                       Defaults to `check=True`.
     :returns: `dict` of `Hallthruster.jl` outputs: `I_B0`, `I_d`, `T`, `eta_c`, `eta_m`, `eta_v`, and `u_ion` for ion
               beam current (A), discharge current (A), thrust (N), current efficiency, mass efficiency, voltage
-              efficiency, and singly-charged ion velocity profile (m/s), all time-averaged
+              efficiency, and singly-charged ion velocity profile (m/s), all time-averaged.
     """
-    if julia_script is None or julia_script == 'default':
-        julia_script = resources.files('hallmd.models') / 'run_hallthruster.jl'
-    if fidelity_function is None or fidelity_function == 'default':
-        fidelity_function = _default_model_fidelity
-    if output_path is None:
-        output_path = Path.cwd()
-    if subprocess_kwargs is None or subprocess_kwargs == 'default':
-        subprocess_kwargs = {'check': True}
     if pem_to_julia is None or pem_to_julia == 'default':
         pem_to_julia = copy.deepcopy(PEM_TO_JULIA)
     else:
@@ -296,30 +381,25 @@ def hallthruster_jl(thruster_inputs: Dataset,
         tmp.update(pem_to_julia)
         pem_to_julia = tmp
 
-    # Format inputs for HallThruster.jl and write to json
-    json_data = _format_hallthruster_jl_input(thruster_inputs, thruster, config, simulation, postprocess,
-                                              model_fidelity, output_path, pem_to_julia, fidelity_function)
-    fd = tempfile.NamedTemporaryFile(suffix='.json', encoding='utf-8', mode='w', delete=False)
-    json.dump(json_data, fd, ensure_ascii=False, indent=4)
-    fd.close()
+    # Format PEM inputs for HallThruster.jl
+    json_data = _format_hallthruster_jl_input(thruster_inputs, thruster=thruster, config=config, simulation=simulation,
+                                              postprocess=postprocess, model_fidelity=model_fidelity,
+                                              output_path=output_path, pem_to_julia=pem_to_julia,
+                                              fidelity_function=fidelity_function)
+    # Get julia environment
+    jl_environment = get_jl_env(version) if version is not None else None
 
-    # Decide on version/ref to use
-    ref_string = f'--ref={git_ref}' if git_ref is not None else f'--version={version}'
+    if run_kwargs is None:
+        run_kwargs = {}
+    elif run_kwargs == 'default':
+        run_kwargs = {'check': True}
 
-    # Run simulation
-    try:
-        t1 = time.time()
-        subprocess.run(['julia', str(Path(julia_script).resolve()), fd.name, ref_string], **subprocess_kwargs)
-        t2 = time.time()
-    finally:
-        os.unlink(fd.name)   # delete the tempfile
+    # Run Julia
+    t1 = time.time()
+    sim_results = run_hallthruster_jl(json_data, jl_env=jl_environment, jl_script=julia_script, **run_kwargs)
+    t2 = time.time()
 
-    # Load simulation results
-    output_file = json_data['postprocess'].get('output_file')
-    with open(Path(output_file), 'r') as fd:
-        sim_results = json.load(fd)
-
-    # Format QoIs for the PEM
+    # Format QOIs for PEM
     thruster_outputs = _convert_to_pem(sim_results, pem_to_julia)
 
     # Raise an exception if thrust or beam current are negative (non-physical cases)
@@ -330,6 +410,9 @@ def hallthruster_jl(thruster_inputs: Dataset,
                          f'beam current={beam_current} A')
 
     thruster_outputs['model_cost'] = t2 - t1  # seconds
-    thruster_outputs['output_path'] = Path(output_file).relative_to(Path(output_path).resolve()).as_posix()
+
+    if output_path is not None:
+        output_file = Path(json_data['postprocess'].get('output_file'))
+        thruster_outputs['output_path'] = output_file.relative_to(Path(output_path).resolve()).as_posix()
 
     return thruster_outputs
