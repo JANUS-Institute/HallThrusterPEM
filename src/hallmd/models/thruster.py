@@ -169,12 +169,6 @@ def _format_hallthruster_jl_input(thruster_inputs: dict,
     """
     if fidelity_function is None or fidelity_function == 'default':
         fidelity_function = _default_model_fidelity
-    if pem_to_julia is None or pem_to_julia == 'default':
-        pem_to_julia = copy.deepcopy(PEM_TO_JULIA)
-    else:
-        tmp = copy.deepcopy(PEM_TO_JULIA)
-        tmp.update(pem_to_julia)
-        pem_to_julia = tmp
 
     json_config = {'config': {} if config is None else copy.deepcopy(config),
                    'simulation': {} if simulation is None else copy.deepcopy(simulation),
@@ -277,13 +271,15 @@ def run_hallthruster_jl(json_input: dict | str | Path, jl_env: str | Path = None
 
     # Run HallThruster.jl on input file
     if jl_script is None:
-        cmd = ['julia', '--startup-file=no', '-e', f'using HallThruster; HallThruster.run_simulation("{input_file}")']
+        cmd = ['julia', '--startup-file=no', '-e',
+               f'using HallThruster; HallThruster.run_simulation(raw"{input_file}")']
     else:
-        cmd = ['julia', '--startup-file=no', '--', str(Path(jl_script).resolve()), input_file]
+        cmd = ['julia', '--startup-file=no', '--',
+               str(Path(jl_script).resolve()), input_file]
 
     if jl_env is not None:
         if Path(jl_env).exists():
-            cmd.insert(1, f'--project="{Path(jl_env).resolve()}"')
+            cmd.insert(1, f'--project={Path(jl_env).resolve()}')
         else:
             raise ValueError(f"Could not find Julia environment {jl_env}. Please create it first.")
 
@@ -377,6 +373,13 @@ def hallthruster_jl(thruster_inputs: Dataset,
               beam current (A), discharge current (A), thrust (N), current efficiency, mass efficiency, voltage
               efficiency, and singly-charged ion velocity profile (m/s), all time-averaged.
     """
+    if pem_to_julia is None or pem_to_julia == 'default':
+        pem_to_julia = copy.deepcopy(PEM_TO_JULIA)
+    else:
+        tmp = copy.deepcopy(PEM_TO_JULIA)
+        tmp.update(pem_to_julia)
+        pem_to_julia = tmp
+
     # Format PEM inputs for HallThruster.jl
     json_data = _format_hallthruster_jl_input(thruster_inputs, thruster=thruster, config=config, simulation=simulation,
                                               postprocess=postprocess, model_fidelity=model_fidelity,
