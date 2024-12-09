@@ -16,8 +16,7 @@ import os
 import shlex
 import subprocess
 import platform
-from pathlib import Path
-from hallmd.models import thruster
+from hallmd.models.thruster import get_jl_env
 
 from packaging.version import Version
 
@@ -90,7 +89,8 @@ def ensure_julia_version(julia_version):
 
 def install_hallthruster_jl(hallthruster_version, git_ref):
     """Install from a specified version tag; override with `git_ref` from GitHub if provided."""
-    ref_name, env_path = thruster.get_jl_env(hallthruster_version, git_ref)
+    ref_name = git_ref if git_ref is not None else hallthruster_version
+    env_path = get_jl_env(ref_name)
     print(f'Checking for HallThruster.jl ref {ref_name} in global environments...')
 
     if env_path.exists():
