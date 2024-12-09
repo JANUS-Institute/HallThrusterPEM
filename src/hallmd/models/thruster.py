@@ -27,7 +27,7 @@ from amisc.typing import Dataset
 
 from hallmd.utils import load_device, FUNDAMENTAL_CHARGE, MOLECULAR_WEIGHTS, AVOGADRO_CONSTANT
 
-__all__ = ['hallthruster_jl', 'PEM_TO_JULIA']
+__all__ = ['run_hallthruster_jl', 'hallthruster_jl', 'get_jl_env', 'PEM_TO_JULIA']
 
 
 # Maps PEM variable names to a path in the HallThruster.jl input/output structure (default values here)
@@ -36,7 +36,7 @@ with open(resources.files('hallmd.models') / 'pem_to_julia.json', 'r') as fd:
 
 
 def get_jl_env(git_ref: str) -> Path:
-    """Get the path of the julia environment we create for HallThruster.jl for a specific git ref.
+    """Get the path of the julia environment created for HallThruster.jl for a specific git ref.
 
     :param git_ref: The git ref (i.e. commit hash, version tag, branch, etc.) of HallThruster.jl to use.
     """
@@ -285,7 +285,7 @@ def run_hallthruster_jl(json_input: dict | str | Path, jl_env: str | Path = None
         if Path(jl_env).exists():
             cmd.insert(1, f'--project="{Path(jl_env).resolve()}"')
         else:
-            warnings.warn(f"Could not find Julia environment {jl_env}. Will use global environment instead.")
+            raise ValueError(f"Could not find Julia environment {jl_env}. Please create it first.")
 
     try:
         subprocess.run(cmd, **kwargs)
@@ -317,7 +317,7 @@ def hallthruster_jl(thruster_inputs: Dataset,
                     postprocess: dict = None,
                     model_fidelity: tuple = (2, 2),
                     output_path: str | Path = None,
-                    version: str = "0.17.2",
+                    version: str = None,
                     pem_to_julia: dict = 'default',
                     fidelity_function: Callable[[tuple[int, ...]], dict] = 'default',
                     julia_script: str | Path = None,
@@ -355,10 +355,11 @@ def hallthruster_jl(thruster_inputs: Dataset,
                            via `ncells = model_fidelity[0] * 50 + 100` and `ncharge = model_fidelity[1] + 1`.
                            Will override `ncells` and `ncharge` in `simulation` and `config` if provided.
     :param output_path: base path to save output files, will write to current directory if not specified
-    :param version: version of HallThruster.jl to use (default is `0.17.2`); will search for a global
-                    `hallthruster_{version}` environment and use that if found, otherwise will default to global env.
-                    Environments are searched in the `~/.julia/environments/` directory. Can also specify a specific
-                    git ref (i.e. branch, commit hash, etc.) to use from GitHub.
+    :param version: version of HallThruster.jl to use (defaults to whatever is installed in global julia env); will
+                    search for a global `hallthruster_{version}` environment in the `~/.julia/environments/` directory.
+                    Can also specify a specific git ref (i.e. branch, commit hash, etc.) to use from GitHub. If the
+                    `hallthruster_{version}` environment does not exist, an error will be raised -- you should create
+                    this environment first before using it.
     :param pem_to_julia: a `dict` mapping of PEM shorthand variable names to a list of keys that maps into the
                          `HallThruster.jl` input/output data structure. Defaults to the provided PEM_TO_JULIA dict
                          defined in [`hallmd.models.thruster`][hallmd.models.thruster]. For example,
@@ -382,7 +383,7 @@ def hallthruster_jl(thruster_inputs: Dataset,
                                               output_path=output_path, pem_to_julia=pem_to_julia,
                                               fidelity_function=fidelity_function)
     # Get julia environment
-    jl_environment = get_jl_env(version)
+    jl_environment = get_jl_env(version) if version is not None else None
 
     if run_kwargs is None:
         run_kwargs = {}
