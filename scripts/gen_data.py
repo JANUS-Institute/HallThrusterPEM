@@ -39,6 +39,7 @@ import os
 import shutil
 from concurrent.futures import Executor, ProcessPoolExecutor, ThreadPoolExecutor
 from pathlib import Path
+from logging import Logger
 import pickle
 
 import numpy as np
@@ -109,17 +110,24 @@ def _object_to_numeric(array: np.ndarray):
         return array
 
 
-def _outlier_indices(outputs: dict, iqr_factor: float = 1.5, discard_outliers: bool = True):
-    """Compute outliers based on the interquartile range (IQR) method. Outliers are defined as values that are less than
+def _filter_outputs(outputs: dict, iqr_factor: float = 1.5, discard_outliers: bool = True, logger: Logger = None):
+    """Return indices of outputs to discard (either nan or outliers).
+
+    Compute outliers based on the interquartile range (IQR) method. Outliers are defined as values that are less than
     `Q1 - 1.5 * IQR` or greater than `Q3 + 1.5 * IQR`, where Q1 and Q3 are the 25th and 75th percentiles, respectively.
 
     :param outputs: dictionary of output arrays, where each array has shape `(num_samples, ...)`.
     :param iqr_factor: the factor to multiply the IQR by to determine outliers. Defaults to 1.5.
-    :returns outlier_idx: boolean array of shape `(num_samples,)` indicating outliers.
+    :param discard_outliers: whether to include any detected outliers in the returned `discard_idx`
+    :param logger: a logger for showing warnings if nans or outliers are detected (will print to console by default)
+    :returns: `discard_idx` and `outlier_idx` -- a boolean array of shape `(num_samples,)` indicating samples to
+              discard, and a `dict` with a boolean array of shape `(num_samples,)` indicating outliers for each output
     """
+    warning_func = print if logger is None else logger.warning
     num_samples = next(iter(outputs.values())).shape[0]
-    outlier_idx = np.full(num_samples, False)
+    outlier_idx = {}
     nan_idx = np.full(num_samples, False)
+
     for var, arr in outputs.items():
         if COORDS_STR_ID in str(var):
             continue
@@ -129,53 +137,46 @@ def _outlier_indices(outputs: dict, iqr_factor: float = 1.5, discard_outliers: b
         except Exception:
             # Might have object arrays of different shapes, so instead estimate outliers for each sample individually
             if np.issubdtype(arr.dtype, np.object_):
+                outlier_idx.setdefault(var, np.full(num_samples, False))
                 for i, field_qty in enumerate(arr):
                     nan_idx[i] |= np.any(np.isnan(field_qty))
 
-                    if discard_outliers:
-                        p25 = np.percentile(field_qty, 25)
-                        p75 = np.percentile(field_qty, 75)
-                        iqr = p75 - p25
-                        outlier_idx[i] |= np.any((field_qty < p25 - iqr_factor * iqr) |
-                                                 (field_qty > p75 + iqr_factor * iqr))
+                    p25 = np.percentile(field_qty, 25)
+                    p75 = np.percentile(field_qty, 75)
+                    iqr = p75 - p25
+                    outlier_idx[var][i] |= np.any((field_qty < p25 - iqr_factor * iqr) |
+                                                  (field_qty > p75 + iqr_factor * iqr))
         else:
             # Directly use scalar numeric arrays (or obj arrays that were successfully converted)
             nan_idx |= np.any(np.isnan(arr), axis=tuple(range(1, arr.ndim)))
 
-            if discard_outliers:
-                p25 = np.percentile(arr, 25, axis=0)
-                p75 = np.percentile(arr, 75, axis=0)
-                iqr = p75 - p25
-                outlier_idx |= np.any((arr < p25 - iqr_factor * iqr) | (arr > p75 + iqr_factor * iqr),
-                                      axis=tuple(range(1, arr.ndim)))
+            outlier_idx.setdefault(var, np.full(num_samples, False))
+            p25 = np.percentile(arr, 25, axis=0)
+            p75 = np.percentile(arr, 75, axis=0)
+            iqr = p75 - p25
+            outlier_idx[var] |= np.any((arr < p25 - iqr_factor * iqr) | (arr > p75 + iqr_factor * iqr),
+                                       axis=tuple(range(1, arr.ndim)))
 
-    return nan_idx, outlier_idx
+    discard_idx = nan_idx
 
+    all_outliers = np.full_like(nan_idx, False)
+    for var, idx in outlier_idx.items():
+        all_outliers |= idx
 
-def output_bad_sims(samples, outputs, folder, nan_idx, outlier_idx):
-    bad_idx = nan_idx | outlier_idx
-    num_samples = bad_idx.size
+    if np.any(nan_idx):
+        warning_func(f'Discarded {np.sum(nan_idx)}/{num_samples} samples with nans.')
+    if np.any(all_outliers):
+        warning_func(f'Detected {np.sum(all_outliers)}/{num_samples} outliers.')
 
-    if np.any(bad_idx):
-        num_nan = np.sum(nan_idx)
-        num_out = np.sum(outlier_idx)
-        system.logger.warning(
-            f'Filtered out {np.sum(bad_idx)}/{num_samples} bad samples from the {folder} data '
-            f'({num_nan} nan and {num_out} outliers).'
-        )
+    if discard_outliers:
+        warning_func(f'Discarding outliers...')
+        discard_idx |= all_outliers
 
-        if num_nan > 0:
-            with open(Path(system.root_dir) / folder / 'nans.pkl', 'wb') as fd:
-                pickle.dump({'inputs': {str(var): arr[nan_idx, ...] for var, arr in samples.items()},
-                             'outputs': {str(var): arr[nan_idx, ...] for var, arr in outputs.items()}}, fd)
-
-        if num_out > 0:
-            with open(Path(system.root_dir) / folder / 'outliers.pkl', 'wb') as fd:
-                pickle.dump({'inputs': {str(var): arr[outlier_idx, ...] for var, arr in samples.items()},
-                             'outputs': {str(var): arr[outlier_idx, ...] for var, arr in outputs.items()}}, fd)
+    return discard_idx, outlier_idx
 
 
-def gen_compression_data(system: System, num_samples: int, rank: int, energy_tol: float, executor: Executor, verbose: bool = False, discard_outliers: bool = True):
+def gen_compression_data(system: System, num_samples: int, rank: int, energy_tol: float, executor: Executor,
+                         verbose: bool = False, discard_outliers: bool = True):
     """Compute compression maps for field quantities (only SVD supported).
 
     Will create a `compression` directory in the `system.root_dir` and save the compression data there.
@@ -185,6 +186,8 @@ def gen_compression_data(system: System, num_samples: int, rank: int, energy_tol
     :param rank: the rank of the SVD compression. Defaults to None, which will defer to `energy_tol`.
     :param energy_tol: the energy tolerance for the SVD compression. Defaults to 0.95.
     :param executor: the parallel executor for training the surrogate (i.e. a `concurrent.futures.Executor` instance)
+    :param verbose: whether to print verbose output. Defaults to False.
+    :param discard_outliers: whether to discard outliers from the compression data. Defaults to True.
     """
     system.logger.info(f'Generating compression data for {system.name} -- {num_samples} samples...')
     os.mkdir(Path(system.root_dir) / 'compression')
@@ -195,16 +198,23 @@ def gen_compression_data(system: System, num_samples: int, rank: int, energy_tol
     outputs = system.predict(samples, use_model='best', model_dir=Path(system.root_dir) / 'compression',
                              executor=executor, verbose=verbose)
 
-    # Filter bad samples and outliers (by interquartile range)
-    nan_idx, outlier_idx = _outlier_indices(outputs, discard_outliers=discard_outliers)
-    bad_idx = nan_idx | outlier_idx
     samples, coords = to_model_dataset(samples, system.inputs())
     samples.update(coords)
 
+    # Filter bad samples and outliers (by interquartile range)
+    discard_idx, outlier_idx = _filter_outputs(outputs, discard_outliers=discard_outliers, logger=system.logger)
+
     with open(Path(system.root_dir) / 'compression' / 'compression.pkl', 'wb') as fd:
-        xt = {str(var): arr[~bad_idx, ...] for var, arr in samples.items()}
-        yt = {str(var): arr[~bad_idx, ...] for var, arr in outputs.items()}
-        pickle.dump({'compression': (xt, yt)}, fd)
+        dump = {'data': ({str(var): arr[~discard_idx, ...] for var, arr in samples.items()},
+                         {str(var): arr[~discard_idx, ...] for var, arr in outputs.items()}),
+                'outliers': {}}
+
+        for var, idx in outlier_idx.items():
+            if np.any(idx):
+                dump['outliers'][str(var)] = ({str(v): arr[idx, ...] for v, arr in samples.items()},
+                                              {str(v): arr[idx, ...] for v, arr in outputs.items()})
+
+        pickle.dump(dump, fd)
 
     for var in system.outputs():
         if var.compression is not None:
@@ -216,16 +226,13 @@ def gen_compression_data(system: System, num_samples: int, rank: int, energy_tol
 
             match var.compression.method.lower():
                 case 'svd':
-                    data_matrix = {field: var.normalize(_object_to_numeric(outputs[field][~bad_idx, ...])) for field in
-                                   var.compression.fields}
+                    data_matrix = {field: var.normalize(_object_to_numeric(outputs[field][~discard_idx, ...]))
+                                   for field in var.compression.fields}
                     var.compression.compute_map(data_matrix, rank=rank, energy_tol=energy_tol)
                 case other:
                     raise ValueError(f"Compression method '{other}' not supported.")
 
     system.save_to_file(f'{system.name}_compression.yml', Path(system.root_dir) / 'compression')
-
-    # Write bad sims to file
-    output_bad_sims(samples, outputs, 'compression', nan_idx, outlier_idx)
 
     # Plot and save some results
     for var in system.outputs():
@@ -244,7 +251,7 @@ def gen_compression_data(system: System, num_samples: int, rank: int, energy_tol
             # Special plots for specific field quantities
             if var.name in ['u_ion', 'j_ion']:
                 coords = var.compression.coords
-                A = _object_to_numeric(outputs[var.name][~bad_idx, ...])
+                A = _object_to_numeric(outputs[var.name][~discard_idx, ...])
                 lb = np.percentile(A, 5, axis=0)
                 mid = np.percentile(A, 50, axis=0)
                 ub = np.percentile(A, 95, axis=0)
@@ -261,7 +268,8 @@ def gen_compression_data(system: System, num_samples: int, rank: int, energy_tol
                 fig.savefig(Path(system.root_dir) / 'compression' / f'{var.name}_range.png', dpi=300, format='png')
 
 
-def gen_test_set(system: System, num_samples: int, executor: Executor, verbose: bool = False, discard_outliers: bool = True):
+def gen_test_set(system: System, num_samples: int, executor: Executor, verbose: bool = False,
+                 discard_outliers: bool = True):
     """Generate a test set of high-fidelity model solves.
 
     Will create a `test_set` directory in the `system.root_dir` and save the test set data there.
@@ -269,6 +277,8 @@ def gen_test_set(system: System, num_samples: int, executor: Executor, verbose: 
     :param system: the `amisc.System` surrogate object with the model and input/output variable information.
     :param num_samples: the number of samples to use for generating the test set data.
     :param executor: the parallel executor for training the surrogate (i.e. a `concurrent.futures.Executor` instance)
+    :param verbose: whether to print verbose output. Defaults to False.
+    :param discard_outliers: whether to discard outliers from the test set data. Defaults to True.
     """
     system.logger.info(f'Generating test set data for {system.name} -- {num_samples} samples...')
     os.mkdir(Path(system.root_dir) / 'test_set')
@@ -279,19 +289,23 @@ def gen_test_set(system: System, num_samples: int, executor: Executor, verbose: 
     outputs = system.predict(samples, use_model='best', model_dir=Path(system.root_dir) / 'test_set',
                              executor=executor, verbose=verbose)
 
-    # Filter bad samples and outliers (by interquartile range)
-    nan_idx, outlier_idx = _outlier_indices(outputs, discard_outliers=discard_outliers)
-    bad_idx = nan_idx | outlier_idx
     samples, coords = to_model_dataset(samples, system.inputs())
     samples.update(coords)
 
-    with open(Path(system.root_dir) / 'test_set' / 'test_set.pkl', 'wb') as fd:
-        xt = {str(var): arr[~bad_idx, ...] for var, arr in samples.items()}
-        yt = {str(var): arr[~bad_idx, ...] for var, arr in outputs.items()}
-        pickle.dump({'test_set': (xt, yt)}, fd)
+    # Filter bad samples and outliers (by interquartile range)
+    discard_idx, outlier_idx = _filter_outputs(outputs, discard_outliers=discard_outliers, logger=system.logger)
 
-    # Write bad samples to file
-    output_bad_sims(samples, outputs, 'test_set', nan_idx, outlier_idx)
+    with open(Path(system.root_dir) / 'test_set' / 'test_set.pkl', 'wb') as fd:
+        dump = {'test_set': ({str(var): arr[~discard_idx, ...] for var, arr in samples.items()},
+                             {str(var): arr[~discard_idx, ...] for var, arr in outputs.items()}),
+                'outliers': {}}
+
+        for var, idx in outlier_idx.items():
+            if np.any(idx):
+                dump['outliers'][str(var)] = ({str(v): arr[idx, ...] for v, arr in samples.items()},
+                                              {str(v): arr[idx, ...] for v, arr in outputs.items()})
+
+        pickle.dump(dump, fd)
 
 
 if __name__ == '__main__':
@@ -311,6 +325,7 @@ if __name__ == '__main__':
             raise ValueError(f"Unsupported executor type: {args.executor}")
 
     with pool_executor(max_workers=args.max_workers) as executor:
-        gen_compression_data(system, args.compression_samples, args.rank, args.energy_tol, executor, verbose=True, discard_outliers=False)
+        gen_compression_data(system, args.compression_samples, args.rank, args.energy_tol, executor,
+                             verbose=True, discard_outliers=False)
         gen_test_set(system, args.test_samples, executor, verbose=True, discard_outliers=False)
         system.logger.info('Data generation complete.')
