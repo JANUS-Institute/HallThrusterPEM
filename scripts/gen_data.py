@@ -5,6 +5,7 @@ Script to be used with `train_hpc.sh` for generating compression (SVD) data and 
 Call as:
 
 `python gen_data.py <config_file> [--output_dir <output_dir>] [--rank <rank>] [--energy_tol <energy_tol>]
+                                  [--reconstruction_tol <reconstruction_tol>] [--discard_outliers] [--iqr_factor <iqr_factor>]
                                   [--compression_samples <compression_samples>] [--test_samples <test_samples>]
                                   [--executor <executor>] [--max_workers <max_workers>]`
 
@@ -13,9 +14,12 @@ Arguments:
 - `config_file` - the path to the `amisc` YAML configuration file with the model and input/output variable information.
 - `output_dir` - the directory to save all test set and compression data. Defaults to the same path as the config file.
                  If not specified as an 'amisc_{timestamp}' directory, a new directory will be created.
-- `rank` - the rank of the SVD compression. Defaults to None, which will defer to `energy_tol`.
-- `energy_tol` - the energy tolerance for the SVD compression. Defaults to 0.95.
+- `rank` - the rank of the SVD compression. Defaults to None, which will defer to `energy_tol` or `reconstruction_tol`.
+- `energy_tol` - the energy tolerance for the SVD compression. Defaults to None, which will defer to `reconstruction_tol`.
+- `reconstruction_tol` - the reconstruction error tolerance for the SVD compression. Defaults to 0.05.
 - `compression_samples` - the number of samples to use for generating the SVD compression data. Defaults to 500.
+- `discard_outliers` - whether to discard outliers from the compression and test set data. Defaults to False.
+- `iqr_factor` - the factor to multiply the IQR by to determine outliers. Defaults to 1.5.
 - `test_samples` - the number of samples to use for generating the test set data. Defaults to 500.
 - `executor` - the parallel executor for training surrogate. Options are `thread` or `process`. Default (`process`).
 - `max_workers` - the maximum number of workers to use for parallel processing. Defaults to using max number of
@@ -46,7 +50,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from amisc.typing import COORDS_STR_ID
 from uqtils import ax_default
-from amisc import YamlLoader, System, to_model_dataset
+from amisc import YamlLoader, System, to_model_dataset, VariableList
 
 parser = argparse.ArgumentParser(description=
                                  'Generate compression (SVD) data and test set data for training a surrogate.')
@@ -56,13 +60,21 @@ parser.add_argument('--output_dir', type=str, default=None,
                     help='the directory to save the generated SVD data and test set data. Defaults to same '
                          'directory as <config_file>.')
 parser.add_argument('--rank', type=int, default=None,
-                    help='the rank of the SVD compression. Defaults to None, which will defer to `energy_tol`.')
-parser.add_argument('--energy_tol', type=float, default=0.95,
-                    help='the energy tolerance for the SVD compression. Defaults to 0.95.')
+                    help='the rank of the SVD compression. Defaults to None, which will defer to `energy_tol`'
+                         'or `reconstruction_tol`.')
+parser.add_argument('--energy_tol', type=float, default=None,
+                    help='the energy tolerance for the SVD compression. Defaults to None, which will defer to '
+                         '`reconstruction_tol`.')
+parser.add_argument('-reconstruction_tol', type=float, default=0.05,
+                    help='the reconstruction tolerance for the SVD compression. Defaults to 0.05.')
 parser.add_argument('--compression_samples', type=int, default=500,
                     help='the number of samples to use for generating the SVD compression data. Defaults to 500.')
 parser.add_argument('--test_samples', type=int, default=500,
                     help='the number of samples to use for generating the test set data. Defaults to 500.')
+parser.add_argument('--discard_outliers', action='store_true', default=False,
+                    help='whether to discard outliers from the compression and test set data. Defaults to False.')
+parser.add_argument('--iqr_factor', type=float, default=1.5,
+                    help='the factor to multiply the IQR by to determine outliers. Defaults to 1.5.')
 parser.add_argument('--executor', type=str, default='process',
                     help='the parallel executor for training the surrogate. Options are `thread` or `process`. '
                          'Default (`process`).')
@@ -80,8 +92,6 @@ def _extract_grid_coords(field_var: str, model_dir: str | Path):
 
     UPDATE: If the wrapper model returns "{{ var }}_coords" in the output, then this will be used as the grid
     coordinates with no need to hard code. Otherwise, will default to this hard code check here.
-
-    For now, just hard code how to extract grid coordinates for each specific field quantity (just `u_ion` and `j_ion`).
     """
     match field_var:
         case 'u_ion':
@@ -110,7 +120,7 @@ def _object_to_numeric(array: np.ndarray):
         return array
 
 
-def _filter_outputs(outputs: dict, iqr_factor: float = 1.5, discard_outliers: bool = True, logger: Logger = None):
+def _filter_outputs(outputs: dict, iqr_factor: float = 1.5, discard_outliers: bool = False, logger: Logger = None):
     """Return indices of outputs to discard (either nan or outliers).
 
     Compute outliers based on the interquartile range (IQR) method. Outliers are defined as values that are less than
@@ -127,6 +137,7 @@ def _filter_outputs(outputs: dict, iqr_factor: float = 1.5, discard_outliers: bo
     num_samples = next(iter(outputs.values())).shape[0]
     outlier_idx = {}
     nan_idx = np.full(num_samples, False)
+    cnt_thresh = 0.75  # Only count a QoI as an outlier if more than 75% of its values are outliers; always true for scalars
 
     for var, arr in outputs.items():
         if COORDS_STR_ID in str(var):
@@ -144,8 +155,8 @@ def _filter_outputs(outputs: dict, iqr_factor: float = 1.5, discard_outliers: bo
                     p25 = np.percentile(field_qty, 25)
                     p75 = np.percentile(field_qty, 75)
                     iqr = p75 - p25
-                    outlier_idx[var][i] |= np.any((field_qty < p25 - iqr_factor * iqr) |
-                                                  (field_qty > p75 + iqr_factor * iqr))
+                    outlier_idx[var][i] |= np.sum((field_qty < p25 - iqr_factor * iqr) |
+                                                  (field_qty > p75 + iqr_factor * iqr)) > int(cnt_thresh * field_qty.size)
         else:
             # Directly use scalar numeric arrays (or obj arrays that were successfully converted)
             nan_idx |= np.any(np.isnan(arr), axis=tuple(range(1, arr.ndim)))
@@ -154,8 +165,8 @@ def _filter_outputs(outputs: dict, iqr_factor: float = 1.5, discard_outliers: bo
             p25 = np.percentile(arr, 25, axis=0)
             p75 = np.percentile(arr, 75, axis=0)
             iqr = p75 - p25
-            outlier_idx[var] |= np.any((arr < p25 - iqr_factor * iqr) | (arr > p75 + iqr_factor * iqr),
-                                       axis=tuple(range(1, arr.ndim)))
+            outlier_idx[var] |= np.sum((arr < p25 - iqr_factor * iqr) | (arr > p75 + iqr_factor * iqr),
+                                       axis=tuple(range(1, arr.ndim))) > int(cnt_thresh * np.prod(arr.shape[1:]))
 
     discard_idx = nan_idx
 
@@ -175,8 +186,30 @@ def _filter_outputs(outputs: dict, iqr_factor: float = 1.5, discard_outliers: bo
     return discard_idx, outlier_idx
 
 
-def gen_compression_data(system: System, num_samples: int, rank: int, energy_tol: float, executor: Executor,
-                         verbose: bool = False, discard_outliers: bool = True):
+def _normalize_outputs(outputs: dict, variables: VariableList):
+    """Normalize outputs for outlier detection.
+
+    :param outputs: dictionary of output arrays, where each array has shape `(num_samples, ...)`.
+    :param variables: list of `Variable` objects for the output quantities
+    :returns: dictionary of normalized output arrays
+    """
+    norm_outputs = {}
+    for var in variables:
+        if var in outputs:
+            norm_outputs[var.name] = var.normalize(_object_to_numeric(outputs[var.name]))
+
+    return norm_outputs
+
+
+def gen_compression_data(system: System,
+                         num_samples: int = 500,
+                         rank: int = None,
+                         energy_tol: float = None,
+                         reconstruction_tol: float = 0.05,
+                         iqr_factor: float = 1.5,
+                         executor: Executor = None,
+                         verbose: bool = False,
+                         discard_outliers: bool = False):
     """Compute compression maps for field quantities (only SVD supported).
 
     Will create a `compression` directory in the `system.root_dir` and save the compression data there.
@@ -185,9 +218,11 @@ def gen_compression_data(system: System, num_samples: int, rank: int, energy_tol
     :param num_samples: the number of samples to use for generating the SVD compression data.
     :param rank: the rank of the SVD compression. Defaults to None, which will defer to `energy_tol`.
     :param energy_tol: the energy tolerance for the SVD compression. Defaults to 0.95.
+    :param reconstruction_tol: the reconstruction tolerance for the SVD compression. Defaults to 0.05.
+    :param iqr_factor: the factor to multiply the IQR by to determine outliers. Defaults to 1.5.
     :param executor: the parallel executor for training the surrogate (i.e. a `concurrent.futures.Executor` instance)
     :param verbose: whether to print verbose output. Defaults to False.
-    :param discard_outliers: whether to discard outliers from the compression data. Defaults to True.
+    :param discard_outliers: whether to discard outliers from the compression data. Defaults to False.
     """
     system.logger.info(f'Generating compression data for {system.name} -- {num_samples} samples...')
     os.mkdir(Path(system.root_dir) / 'compression')
@@ -201,8 +236,11 @@ def gen_compression_data(system: System, num_samples: int, rank: int, energy_tol
     samples, coords = to_model_dataset(samples, system.inputs())
     samples.update(coords)
 
-    # Filter bad samples and outliers (by interquartile range)
-    discard_idx, outlier_idx = _filter_outputs(outputs, discard_outliers=discard_outliers, logger=system.logger)
+    norm_outputs = _normalize_outputs(outputs, system.outputs())
+
+    # Filter bad samples and outliers in norm space (by interquartile range)
+    discard_idx, outlier_idx = _filter_outputs(norm_outputs, discard_outliers=discard_outliers, iqr_factor=iqr_factor,
+                                               logger=system.logger)
 
     with open(Path(system.root_dir) / 'compression' / 'compression.pkl', 'wb') as fd:
         dump = {'data': ({str(var): arr[~discard_idx, ...] for var, arr in samples.items()},
@@ -228,7 +266,8 @@ def gen_compression_data(system: System, num_samples: int, rank: int, energy_tol
                 case 'svd':
                     data_matrix = {field: var.normalize(_object_to_numeric(outputs[field][~discard_idx, ...]))
                                    for field in var.compression.fields}
-                    var.compression.compute_map(data_matrix, rank=rank, energy_tol=energy_tol)
+                    var.compression.compute_map(data_matrix, rank=rank, energy_tol=energy_tol,
+                                                reconstruction_tol=reconstruction_tol)
                 case other:
                     raise ValueError(f"Compression method '{other}' not supported.")
 
@@ -240,12 +279,18 @@ def gen_compression_data(system: System, num_samples: int, rank: int, energy_tol
             u, s, vt = np.linalg.svd(var.compression.data_matrix)
             energy_frac = np.cumsum(s ** 2 / np.sum(s ** 2))
 
-            fig, ax = plt.subplots(figsize=(6, 5), layout='tight')
-            ax.plot(energy_frac, '.k')
-            ax.plot(energy_frac[:var.compression.rank], 'or', label=f'Rank={var.compression.rank}')
-            ax.axhline(y=var.compression.energy_tol, color='red', linestyle='--', linewidth=1, label='Energy tol')
-            ax.set_yscale('log')
-            ax_default(ax, 'Singular value index', 'Cumulative energy fraction', legend=True)
+            fig, ax = plt.subplots(1, 2, figsize=(11, 5), layout='tight')
+            ax[0].plot(s, '.k')
+            ax[0].plot(s[:var.compression.rank], 'or', label=f'Rank={var.compression.rank}')
+            ax[0].set_yscale('log')
+            ax[0].grid()
+            ax_default(ax[0], 'Singular value index', 'Singular value', legend=True)
+            ax[1].plot(energy_frac, '.k')
+            ax[1].plot(energy_frac[:var.compression.rank], 'or', label=f'Rank={var.compression.rank}')
+            ax[1].axhline(y=var.compression.energy_tol, color='red', linestyle='--', linewidth=1, label='Energy tol')
+            ax[1].set_yscale('log')
+            ax[1].grid()
+            ax_default(ax[1], 'Singular value index', 'Cumulative energy fraction', legend=True)
             fig.savefig(Path(system.root_dir) / 'compression' / f'{var.name}_svd.png', dpi=300, format='png')
 
             # Special plots for specific field quantities
@@ -264,12 +309,17 @@ def gen_compression_data(system: System, num_samples: int, rank: int, energy_tol
                     xlabel = 'Angle from thruster centerline (rad)'
                 else:
                     xlabel = 'Axial location (m)'
+                ax.grid()
                 ax_default(ax, xlabel, var.get_tex(units=True, symbol=False), legend=False)
                 fig.savefig(Path(system.root_dir) / 'compression' / f'{var.name}_range.png', dpi=300, format='png')
 
 
-def gen_test_set(system: System, num_samples: int, executor: Executor, verbose: bool = False,
-                 discard_outliers: bool = True):
+def gen_test_set(system: System,
+                 num_samples: int = 500,
+                 executor: Executor = None,
+                 verbose: bool = False,
+                 discard_outliers: bool = False,
+                 iqr_factor: float = 1.5):
     """Generate a test set of high-fidelity model solves.
 
     Will create a `test_set` directory in the `system.root_dir` and save the test set data there.
@@ -278,7 +328,8 @@ def gen_test_set(system: System, num_samples: int, executor: Executor, verbose: 
     :param num_samples: the number of samples to use for generating the test set data.
     :param executor: the parallel executor for training the surrogate (i.e. a `concurrent.futures.Executor` instance)
     :param verbose: whether to print verbose output. Defaults to False.
-    :param discard_outliers: whether to discard outliers from the test set data. Defaults to True.
+    :param discard_outliers: whether to discard outliers from the test set data. Defaults to False.
+    :param iqr_factor: the factor to multiply the IQR by to determine outliers. Defaults to 1.5.
     """
     system.logger.info(f'Generating test set data for {system.name} -- {num_samples} samples...')
     os.mkdir(Path(system.root_dir) / 'test_set')
@@ -292,8 +343,11 @@ def gen_test_set(system: System, num_samples: int, executor: Executor, verbose: 
     samples, coords = to_model_dataset(samples, system.inputs())
     samples.update(coords)
 
+    norm_outputs = _normalize_outputs(outputs, system.outputs())
+
     # Filter bad samples and outliers (by interquartile range)
-    discard_idx, outlier_idx = _filter_outputs(outputs, discard_outliers=discard_outliers, logger=system.logger)
+    discard_idx, outlier_idx = _filter_outputs(norm_outputs, discard_outliers=discard_outliers, iqr_factor=iqr_factor,
+                                               logger=system.logger)
 
     with open(Path(system.root_dir) / 'test_set' / 'test_set.pkl', 'wb') as fd:
         dump = {'test_set': ({str(var): arr[~discard_idx, ...] for var, arr in samples.items()},
@@ -325,7 +379,9 @@ if __name__ == '__main__':
             raise ValueError(f"Unsupported executor type: {args.executor}")
 
     with pool_executor(max_workers=args.max_workers) as executor:
-        gen_compression_data(system, args.compression_samples, args.rank, args.energy_tol, executor,
-                             verbose=True, discard_outliers=False)
-        gen_test_set(system, args.test_samples, executor, verbose=True, discard_outliers=False)
+        gen_compression_data(system, num_samples=args.compression_samples, rank=args.rank, energy_tol=args.energy_tol,
+                             reconstruction_tol=args.reconstruction_tol, executor=executor, verbose=True,
+                             discard_outliers=args.discard_outliers, iqr_factor=args.iqr_factor)
+        gen_test_set(system, num_samples=args.test_samples, executor=executor, verbose=True,
+                     discard_outliers=args.discard_outliers, iqr_factor=args.iqr_factor)
         system.logger.info('Data generation complete.')

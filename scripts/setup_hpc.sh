@@ -37,7 +37,7 @@ else
 fi
 
 pdm self update
-pdm sync --prod -G mpi -G scripts
+pdm sync --prod -G mpi -G scripts -L ../pdm.lock
 
 pdm run python install_hallthruster.py "$@"
 
@@ -54,4 +54,4 @@ if [[ -z "${SBATCH_ACCOUNT}" || -z "${SBATCH_MAIL_USER}" ]]; then
   echo "export SBATCH_MAIL_USER=${SBATCH_MAIL_USER}" >> ~/.bashrc
 fi
 
-echo "Environment setup complete! Use 'pdm train <config_file>' to build a surrogate."
+echo "Environment setup complete! Use 'train_hpc.sh' to build a surrogate."
