@@ -6,7 +6,9 @@
 
 Includes:
 
-- `hallthruster_jl()` - PEM wrapper to run HallThruster.jl for a single set of inputs
+- `run_hallthruster_jl` - General wrapper to run HallThruster.jl for a single set of inputs
+- `hallthruster_jl()` - PEM wrapper to run HallThruster.jl for a set of PEM inputs
+- `get_jl_env` - Get the path of the julia environment created for HallThruster.jl for a specific git ref
 - `PEM_TO_JULIA` - Mapping of PEM variable names to a path in the HallThruster.jl input/output structure (defaults)
 """
 import subprocess
