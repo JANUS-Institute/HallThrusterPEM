@@ -8,6 +8,7 @@ Call as:
 `python fit_surr.py <config_file> [--output_dir <output_dir>] [--search] [--executor <executor>]
                                   [--max_workers <max_workers>] [--runtime_hr <runtime_hr>]
                                   [--max_iter <max_iter>] [--targets <targets>] [--train_single_fidelity]`
+                                  [--max_tol <max_tol>] [--save_interval <save_interval>] [--discard_outliers]
 
 Arguments:
 
@@ -28,6 +29,7 @@ Arguments:
                             (mainly to compare cost during training). Defaults to False.
 - `max_tol` - the maximum tolerance for the surrogate training. Defaults to 1e-3.
 - `save_interval` - the interval to save the surrogate during training. Defaults to 10.
+- `discard_outliers` - whether to discard outliers from the test set data. Defaults to False.
 
 !!! Note
     The compression and test set data should be generated **first** by running `gen_data.py`.

@@ -39,6 +39,7 @@ Includes:
 - `plot_compression()` - create plots of the compression data.
 - `plot_test_set()` - create plots of the test set data.
 - `plot_outliers()` - plot histograms of outliers detected in the output data.
+
 """
 import argparse
 import json
@@ -332,11 +333,11 @@ def plot_outliers(outputs: dict, outlier_idx: dict, iqr_factor: float = 1.5, sub
         all_data = _object_to_numeric(outputs[var])
         outliers = all_data[idx, ...]
 
-        p2 = np.percentile(all_data, 2.5, axis=0)
-        p25 = np.percentile(all_data, 25, axis=0)
-        p50 = np.percentile(all_data, 50, axis=0)
-        p75 = np.percentile(all_data, 75, axis=0)
-        p98 = np.percentile(all_data, 97.5, axis=0)
+        p2 = np.nanpercentile(all_data, 2.5, axis=0)
+        p25 = np.nanpercentile(all_data, 25, axis=0)
+        p50 = np.nanpercentile(all_data, 50, axis=0)
+        p75 = np.nanpercentile(all_data, 75, axis=0)
+        p98 = np.nanpercentile(all_data, 97.5, axis=0)
         iqr = p75 - p25
         lb_iqr = p25 - iqr_factor * iqr
         ub_iqr = p75 + iqr_factor * iqr
@@ -363,12 +364,12 @@ def plot_outliers(outputs: dict, outlier_idx: dict, iqr_factor: float = 1.5, sub
         else:
             axes = tuple(range(1, outliers.ndim))
             ax.hist(all_data, bins=30, facecolor='gray', edgecolor='k', alpha=0.5)
-            ax.hist(np.mean(outliers, axis=axes), facecolor='r', edgecolor='k', alpha=0.3, label='Outliers')
-            ax.axvline(x=np.mean(p50, axis=axes), color='k', linestyle='-', linewidth=1.5, label='Median')
-            ax.axvline(x=np.mean(p2, axis=axes), color='b', linestyle='-', linewidth=1.5, label=r'95\% bounds')
-            ax.axvline(x=np.mean(p98, axis=axes), color='b', linestyle='-', linewidth=1.5)
-            ax.axvline(x=np.mean(lb_iqr, axis=axes), color='gray', linestyle='--', linewidth=1.5, label='IQR bounds')
-            ax.axvline(x=np.mean(ub_iqr, axis=axes), color='gray', linestyle='--', linewidth=1.5)
+            ax.hist(np.nanmean(outliers, axis=axes), facecolor='r', edgecolor='k', alpha=0.3, label='Outliers')
+            ax.axvline(x=np.nanmean(p50, axis=axes), color='k', linestyle='-', linewidth=1.5, label='Median')
+            ax.axvline(x=np.nanmean(p2, axis=axes), color='b', linestyle='-', linewidth=1.5, label=r'95\% bounds')
+            ax.axvline(x=np.nanmean(p98, axis=axes), color='b', linestyle='-', linewidth=1.5)
+            ax.axvline(x=np.nanmean(lb_iqr, axis=axes), color='gray', linestyle='--', linewidth=1.5, label='IQR bounds')
+            ax.axvline(x=np.nanmean(ub_iqr, axis=axes), color='gray', linestyle='--', linewidth=1.5)
             ax.set_xlabel(var)
             if row == 0 and col == num_col - 1:
                 ax.legend()
@@ -410,9 +411,9 @@ def plot_compression(system: System, data: dict):
             if var.name in ['u_ion', 'j_ion']:
                 coords = var.compression.coords
                 A = _object_to_numeric(outputs[var.name])
-                lb = np.percentile(A, 2.5, axis=0)
-                mid = np.percentile(A, 50, axis=0)
-                ub = np.percentile(A, 97.5, axis=0)
+                lb = np.nanpercentile(A, 2.5, axis=0)
+                mid = np.nanpercentile(A, 50, axis=0)
+                ub = np.nanpercentile(A, 97.5, axis=0)
 
                 fig, ax = plt.subplots(figsize=(6, 5), layout='tight')
                 ax.plot(coords, mid, '-k')
@@ -428,9 +429,6 @@ def plot_compression(system: System, data: dict):
 
     fig, ax = plot_outliers(outputs, outlier_idx, iqr_factor=iqr_factor)
     fig.savefig(Path(system.root_dir) / 'compression' / 'outliers.png', dpi=300, format='png')
-
-    fig, ax = plot_outliers(outputs, nan_idx, iqr_factor=iqr_factor)
-    fig.savefig(Path(system.root_dir) / 'compression' / 'nans.png', dpi=300, format='png')
 
 
 def plot_test_set(system: System, data: dict):
@@ -449,9 +447,6 @@ def plot_test_set(system: System, data: dict):
 
     fig, ax = plot_outliers(outputs, outlier_idx, iqr_factor=iqr_factor)
     fig.savefig(Path(system.root_dir) / 'test_set' / 'outliers.png', dpi=300, format='png')
-
-    fig, ax = plot_outliers(outputs, nan_idx, iqr_factor=iqr_factor)
-    fig.savefig(Path(system.root_dir) / 'test_set' / 'nans.png', dpi=300, format='png')
 
 
 if __name__ == '__main__':
