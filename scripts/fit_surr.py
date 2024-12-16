@@ -8,6 +8,7 @@ Call as:
 `python fit_surr.py <config_file> [--output_dir <output_dir>] [--search] [--executor <executor>]
                                   [--max_workers <max_workers>] [--runtime_hr <runtime_hr>]
                                   [--max_iter <max_iter>] [--targets <targets>] [--train_single_fidelity]`
+                                  [--max_tol <max_tol>] [--save_interval <save_interval>] [--discard_outliers]
 
 Arguments:
 
@@ -28,6 +29,7 @@ Arguments:
                             (mainly to compare cost during training). Defaults to False.
 - `max_tol` - the maximum tolerance for the surrogate training. Defaults to 1e-3.
 - `save_interval` - the interval to save the surrogate during training. Defaults to 10.
+- `discard_outliers` - whether to discard outliers from the test set data. Defaults to False.
 
 !!! Note
     The compression and test set data should be generated **first** by running `gen_data.py`.
@@ -38,8 +40,9 @@ Includes:
 """
 import argparse
 import copy
+import pickle
 import shutil
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, Executor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 import os
 from pathlib import Path
 
@@ -75,16 +78,21 @@ parser.add_argument('--max_tol', type=float, default=1e-3,
                     help='the maximum tolerance for the surrogate training. Defaults to 1e-3.')
 parser.add_argument('--save_interval', type=int, default=10,
                     help='the interval to save the surrogate during training. Defaults to 10.')
+parser.add_argument('--discard_outliers', action='store_true', default=False,
+                    help='whether to discard outliers from the test set data. Defaults to False.')
 
 args, _ = parser.parse_known_args()
 
 
-def train_surrogate(system: System, executor: Executor, train_single_fidelity: bool = False, **kwargs):
-    """Train an `amisc.System` surrogate."""
-    test_set = pth if (pth := system.root_dir / 'test_set' / 'test_set.pkl').exists() else None
+def train_surrogate(system: System, train_single_fidelity: bool = False, **fit_kwargs):
+    """Train an `amisc.System` surrogate.
 
-    fit_kwargs = dict(num_refine=500, estimate_bounds=True, update_bounds=True, test_set=test_set,
-                      executor=executor, plot_interval=1, **kwargs)
+    :param system: the `amisc.System` object to train the surrogate on.
+    :param train_single_fidelity: whether to train a single-fidelity surrogate in addition to the multi-fidelity
+                                  surrogate.
+    :param fit_kwargs: additional keyword arguments for the surrogate training (passed to `System.fit()`).
+    """
+    fit_kwargs = dict(num_refine=500, estimate_bounds=True, update_bounds=True, plot_interval=1, **fit_kwargs)
 
     system.fit(**fit_kwargs)
     system.plot_allocation()
@@ -182,9 +190,29 @@ if __name__ == '__main__':
         case _:
             raise ValueError(f"Unsupported executor type: {args.executor}")
 
+    # Load the test set data
+    test_set = pth if (pth := system.root_dir / 'test_set' / 'test_set.pkl').exists() else None
+
+    if test_set is not None:
+        with open(test_set, 'rb') as fd:
+            data = pickle.load(fd)
+            num_samples = next(iter(data['test_set'][0].values())).shape[0]
+            discard_idx = np.full(num_samples, False)
+
+            for var, idx in data.get('nan_idx', {}).items():
+                discard_idx |= idx
+
+            if args.discard_outliers:
+                for var, idx in data.get('outlier_idx', {}).items():
+                    discard_idx |= idx
+
+            test_set = ({k: v[~discard_idx, ...] for k, v in data['test_set'][0].items()},
+                        {k: v[~discard_idx, ...] for k, v in data['test_set'][1].items()})
+
     with pool_executor(max_workers=args.max_workers) as executor:
         fit_kwargs = {'runtime_hr': args.runtime_hr, 'max_iter': args.max_iter, 'targets': args.targets,
-                      'save_interval': args.save_interval, 'max_tol': args.max_tol}
-        train_surrogate(system, executor, args.train_single_fidelity, **fit_kwargs)
+                      'save_interval': args.save_interval, 'max_tol': args.max_tol, 'test_set': test_set,
+                      'executor': executor}
+        train_surrogate(system, train_single_fidelity=args.train_single_fidelity, **fit_kwargs)
 
     system.logger.info(f'Surrogate training complete. Output directory: {system.root_dir}')
