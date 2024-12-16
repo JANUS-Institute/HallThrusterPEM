@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 
 from hallmd.models.thruster import hallthruster_jl, _convert_to_julia, _convert_to_pem, PEM_TO_JULIA
 
-SHOW_PLOTS = True
+SHOW_PLOTS = False
 
 
 def test_julia_conversion():
@@ -74,7 +74,7 @@ def test_sim_hallthruster_jl(tmp_path, plots=SHOW_PLOTS):
         plt.show()
 
 
-def test_run_hallthruster_jl(tmp_path, plots=SHOW_PLOTS, git_ref='v1.0'):
+def test_run_hallthruster_jl(tmp_path, plots=SHOW_PLOTS, git_ref='0.18.0'):
     """Test actually calling HallThruster.jl using the Python wrapper function (with PEMv0 settings)."""
     num_cells = 200
     pem_inputs = {'V_a': 300, 'mdot_a': 5.16e-6, 'P_b': 3.5e-5, 'V_cc': 32.5, 'T_e': 1.33, 'u_n': 141.2,

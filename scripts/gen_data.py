@@ -5,6 +5,7 @@ Script to be used with `train_hpc.sh` for generating compression (SVD) data and 
 Call as:
 
 `python gen_data.py <config_file> [--output_dir <output_dir>] [--rank <rank>] [--energy_tol <energy_tol>]
+                                  [--reconstruction_tol <reconstruction_tol>] [--discard_outliers] [--iqr_factor <iqr_factor>]
                                   [--compression_samples <compression_samples>] [--test_samples <test_samples>]
                                   [--executor <executor>] [--max_workers <max_workers>]`
 
@@ -13,9 +14,12 @@ Arguments:
 - `config_file` - the path to the `amisc` YAML configuration file with the model and input/output variable information.
 - `output_dir` - the directory to save all test set and compression data. Defaults to the same path as the config file.
                  If not specified as an 'amisc_{timestamp}' directory, a new directory will be created.
-- `rank` - the rank of the SVD compression. Defaults to None, which will defer to `energy_tol`.
-- `energy_tol` - the energy tolerance for the SVD compression. Defaults to 0.95.
+- `rank` - the rank of the SVD compression. Defaults to None, which will defer to `energy_tol` or `reconstruction_tol`.
+- `energy_tol` - the energy tolerance for the SVD compression. Defaults to None, which will defer to `reconstruction_tol`.
+- `reconstruction_tol` - the reconstruction error tolerance for the SVD compression. Defaults to 0.05.
 - `compression_samples` - the number of samples to use for generating the SVD compression data. Defaults to 500.
+- `discard_outliers` - whether to discard outliers from the compression and test set data. Defaults to False.
+- `iqr_factor` - the factor to multiply the IQR by to determine outliers. Defaults to 1.5.
 - `test_samples` - the number of samples to use for generating the test set data. Defaults to 500.
 - `executor` - the parallel executor for training surrogate. Options are `thread` or `process`. Default (`process`).
 - `max_workers` - the maximum number of workers to use for parallel processing. Defaults to using max number of
@@ -30,8 +34,12 @@ run the true underlying models/solvers that many times -- so set accordingly and
 
 Includes:
 
-- `gen_compression_data()` - generate the compression maps for field quantities (only SVD supported).
-- `gen_test_set()` - generate a test set for evaluating surrogate performance.
+- `generate_data()` - generate the compression or test set data for training a surrogate.
+- `process_compression()` - compute the compression maps for field quantities (only SVD supported).
+- `plot_compression()` - create plots of the compression data.
+- `plot_test_set()` - create plots of the test set data.
+- `plot_outliers()` - plot histograms of outliers detected in the output data.
+
 """
 import argparse
 import json
@@ -55,13 +63,21 @@ parser.add_argument('--output_dir', type=str, default=None,
                     help='the directory to save the generated SVD data and test set data. Defaults to same '
                          'directory as <config_file>.')
 parser.add_argument('--rank', type=int, default=None,
-                    help='the rank of the SVD compression. Defaults to None, which will defer to `energy_tol`.')
-parser.add_argument('--energy_tol', type=float, default=0.95,
-                    help='the energy tolerance for the SVD compression. Defaults to 0.95.')
+                    help='the rank of the SVD compression. Defaults to None, which will defer to `energy_tol`'
+                         'or `reconstruction_tol`.')
+parser.add_argument('--energy_tol', type=float, default=None,
+                    help='the energy tolerance for the SVD compression. Defaults to None, which will defer to '
+                         '`reconstruction_tol`.')
+parser.add_argument('-reconstruction_tol', type=float, default=0.05,
+                    help='the reconstruction tolerance for the SVD compression. Defaults to 0.05.')
 parser.add_argument('--compression_samples', type=int, default=500,
                     help='the number of samples to use for generating the SVD compression data. Defaults to 500.')
 parser.add_argument('--test_samples', type=int, default=500,
                     help='the number of samples to use for generating the test set data. Defaults to 500.')
+parser.add_argument('--discard_outliers', action='store_true', default=False,
+                    help='whether to discard outliers from the compression and test set data. Defaults to False.')
+parser.add_argument('--iqr_factor', type=float, default=1.5,
+                    help='the factor to multiply the IQR by to determine outliers. Defaults to 1.5.')
 parser.add_argument('--executor', type=str, default='process',
                     help='the parallel executor for training the surrogate. Options are `thread` or `process`. '
                          'Default (`process`).')
@@ -79,8 +95,6 @@ def _extract_grid_coords(field_var: str, model_dir: str | Path):
 
     UPDATE: If the wrapper model returns "{{ var }}_coords" in the output, then this will be used as the grid
     coordinates with no need to hard code. Otherwise, will default to this hard code check here.
-
-    For now, just hard code how to extract grid coordinates for each specific field quantity (just `u_ion` and `j_ion`).
     """
     match field_var:
         case 'u_ion':
@@ -109,16 +123,23 @@ def _object_to_numeric(array: np.ndarray):
         return array
 
 
-def _outlier_indices(outputs: dict, iqr_factor: float = 1.5):
-    """Compute outliers based on the interquartile range (IQR) method. Outliers are defined as values that are less than
+def _filter_outputs(outputs: dict, iqr_factor: float = 1.5):
+    """Return indices of outputs to discard (either nan or outliers).
+
+    Compute outliers based on the interquartile range (IQR) method. Outliers are defined as values that are less than
     `Q1 - 1.5 * IQR` or greater than `Q3 + 1.5 * IQR`, where Q1 and Q3 are the 25th and 75th percentiles, respectively.
 
     :param outputs: dictionary of output arrays, where each array has shape `(num_samples, ...)`.
     :param iqr_factor: the factor to multiply the IQR by to determine outliers. Defaults to 1.5.
-    :returns outlier_idx: boolean array of shape `(num_samples,)` indicating outliers.
+    :returns: `nan_idx` and `outlier_idx` -- a `dict` with boolean arrays of shape `(num_samples,)` indicating nan
+              samples for each output, and a `dict` with a boolean array of shape `(num_samples,)` indicating outliers
+              for each output
     """
     num_samples = next(iter(outputs.values())).shape[0]
-    outlier_idx = np.full(num_samples, False)
+    outlier_idx = {}
+    nan_idx = {}
+    cnt_thresh = 0.75  # Only count a QoI as an outlier if more than 75% of its values are outliers; always true for scalars
+
     for var, arr in outputs.items():
         if COORDS_STR_ID in str(var):
             continue
@@ -128,56 +149,141 @@ def _outlier_indices(outputs: dict, iqr_factor: float = 1.5):
         except Exception:
             # Might have object arrays of different shapes, so instead estimate outliers for each sample individually
             if np.issubdtype(arr.dtype, np.object_):
+                nan_idx.setdefault(var, np.full(num_samples, False))
+                outlier_idx.setdefault(var, np.full(num_samples, False))
                 for i, field_qty in enumerate(arr):
-                    outlier_idx[i] |= np.any(np.isnan(field_qty))
+                    nan_idx[var][i] |= np.any(np.isnan(field_qty))
 
                     p25 = np.percentile(field_qty, 25)
                     p75 = np.percentile(field_qty, 75)
                     iqr = p75 - p25
-                    outlier_idx[i] |= np.any((field_qty < p25 - iqr_factor * iqr) |
-                                             (field_qty > p75 + iqr_factor * iqr))
+                    outlier_idx[var][i] |= np.sum((field_qty < p25 - iqr_factor * iqr) |
+                                                  (field_qty > p75 + iqr_factor * iqr)) > int(cnt_thresh * field_qty.size)
         else:
             # Directly use scalar numeric arrays (or obj arrays that were successfully converted)
-            outlier_idx |= np.any(np.isnan(arr), axis=tuple(range(1, arr.ndim)))
+            nan_idx.setdefault(var, np.full(num_samples, False))
+            outlier_idx.setdefault(var, np.full(num_samples, False))
+
+            nan_idx[var] |= np.any(np.isnan(arr), axis=tuple(range(1, arr.ndim)))
 
             p25 = np.percentile(arr, 25, axis=0)
             p75 = np.percentile(arr, 75, axis=0)
             iqr = p75 - p25
-            outlier_idx |= np.any((arr < p25 - iqr_factor * iqr) | (arr > p75 + iqr_factor * iqr),
-                                  axis=tuple(range(1, arr.ndim)))
+            outlier_idx[var] |= np.sum((arr < p25 - iqr_factor * iqr) | (arr > p75 + iqr_factor * iqr),
+                                       axis=tuple(range(1, arr.ndim))) > int(cnt_thresh * np.prod(arr.shape[1:]))
 
-    return outlier_idx
+    return nan_idx, outlier_idx
 
 
-def gen_compression_data(system: System, num_samples: int, rank: int, energy_tol: float, executor: Executor):
-    """Compute compression maps for field quantities (only SVD supported).
+def _get_discard_idx(nan_idx: dict,
+                     outlier_idx: dict,
+                     discard_outliers: bool = False,
+                     warn_func: callable = None,
+                     warn_description: str = ''):
+    """Get the indices of samples to discard based on nans and outliers.
 
-    Will create a `compression` directory in the `system.root_dir` and save the compression data there.
-
-    :param system: the `amisc.System` surrogate object with the model and input/output variable information.
-    :param num_samples: the number of samples to use for generating the SVD compression data.
-    :param rank: the rank of the SVD compression. Defaults to None, which will defer to `energy_tol`.
-    :param energy_tol: the energy tolerance for the SVD compression. Defaults to 0.95.
-    :param executor: the parallel executor for training the surrogate (i.e. a `concurrent.futures.Executor` instance)
+    :param nan_idx: a `dict` with boolean arrays of shape `(num_samples,)` indicating nan samples for each output
+    :param outlier_idx: a `dict` with boolean arrays of shape `(num_samples,)` indicating outliers for each output
+    :param discard_outliers: whether to discard outliers from the data. Defaults to False.
+    :param warn_func: a function to use for warnings. No warnings by default.
+    :param warn_description: a description to use in the warning message. Defaults to an empty string.
+    :returns: a boolean array of shape `(num_samples,)` indicating samples to discard
     """
-    system.logger.info(f'Generating compression data for {system.name} -- {num_samples} samples...')
-    os.mkdir(Path(system.root_dir) / 'compression')
+    num_samples = next(iter(nan_idx.values())).shape[0]
+    discard_idx = np.full(num_samples, False)
+
+    all_nan = np.full(num_samples, False)
+    for var, idx in nan_idx.items():
+        all_nan |= idx
+
+    discard_idx |= all_nan  # always discard nan samples
+
+    all_outliers = np.full(num_samples, False)
+    for var, idx in outlier_idx.items():
+        all_outliers |= idx
+
+    if warn_func is not None:
+        if np.any(all_nan):
+            warn_func(f'Discarded {np.sum(all_nan)}/{num_samples} {warn_description} samples with nans.')
+        if np.any(all_outliers):
+            warn_func(f'Detected {np.sum(all_outliers)}/{num_samples} {warn_description} outliers.')
+
+    if discard_outliers:
+        if warn_func is not None:
+            system.logger.warning(f'Discarding outliers...')
+        discard_idx |= all_outliers
+
+    return discard_idx
+
+
+def generate_data(system: System, description: str,
+                  num_samples: int = 500,
+                  executor: Executor = None,
+                  verbose: bool = False,
+                  iqr_factor: float = 1.5):
+    """Randomly sample the input space and compute the models for the `system` object. Will save the data to a `.pkl`
+     file in the `system.root_dir/description` directory.
+
+    :param system: the `amisc.System` object with the model and input/output variable information. The `system.root_dir`
+                   must be set to the directory where the data will be saved.
+    :param description: the description of the data being generated (e.g. 'compression', 'test_set', etc.), will be
+                        used as an output directory and file name for all generated data.
+    :param num_samples: the number of samples to use for generating the data. Defaults to 500.
+    :param executor: the parallel executor for evaluating the models (i.e. a `concurrent.futures.Executor` instance)
+    :param verbose: whether to print verbose output. Defaults to False.
+    :param iqr_factor: the factor to multiply the IQR by to determine outliers. Defaults to 1.5.
+    :returns: the `pickle` dump of the generated data (i.e. a `dict` with the data and indices of outliers/nans)
+    """
+    system.logger.info(f'Generating {description} data for {system.name} -- {num_samples} samples...')
+    os.mkdir(Path(system.root_dir) / description)
     samples_operating = {v.name: v.normalize(v.sample_domain(num_samples)) for v in system.inputs()
                          if v.category == 'operating'}  # full domain for operating conditions (pdf otherwise)
     samples_params = {v.name: v.normalize(v.sample(num_samples)) for v in system.inputs() if v.category != 'operating'}
     samples = dict(**samples_operating, **samples_params)
-    outputs = system.predict(samples, use_model='best', model_dir=Path(system.root_dir) / 'compression',
-                             executor=executor)
+    outputs = system.predict(samples, use_model='best', model_dir=Path(system.root_dir) / description,
+                             executor=executor, verbose=verbose)
 
-    # Filter bad samples and outliers (by interquartile range)
-    bad_idx = _outlier_indices(outputs)
     samples, coords = to_model_dataset(samples, system.inputs())
     samples.update(coords)
 
-    with open(Path(system.root_dir) / 'compression' / 'compression.pkl', 'wb') as fd:
-        xt = {str(var): arr[~bad_idx, ...] for var, arr in samples.items()}
-        yt = {str(var): arr[~bad_idx, ...] for var, arr in outputs.items()}
-        pickle.dump({'compression': (xt, yt)}, fd)
+    norm_outputs = {}
+    for var in system.outputs():
+        if var in outputs:
+            norm_outputs[var.name] = var.normalize(_object_to_numeric(outputs[var.name]))
+
+    # Get indices of bad samples and outliers (by interquartile range)
+    nan_idx, outlier_idx = _filter_outputs(norm_outputs, iqr_factor=iqr_factor)
+
+    with open(Path(system.root_dir) / description / f'{description}.pkl', 'wb') as fd:
+        dump = {description: (samples, outputs), 'nan_idx': nan_idx, 'outlier_idx': outlier_idx,
+                'iqr_factor': iqr_factor}
+        pickle.dump(dump, fd)
+
+    return dump
+
+
+def process_compression(system: System, data: dict,
+                        rank: int = None,
+                        energy_tol: float = None,
+                        reconstruction_tol: float = 0.05,
+                        discard_outliers: bool = False):
+    """Compute compression maps for field quantities (only SVD supported).
+
+    Will save the compression maps to the `system.root_dir/compression` directory.
+
+    :param system: the `amisc.System` surrogate object with the model and input/output variable information.
+    :param data: the compression data from `generate_data` (i.e. a `dict` with the data and indices of outliers/nans)
+    :param rank: the rank of the SVD compression. Defers to `reconstruction_tol` if not provided.
+    :param energy_tol: the energy tolerance for the SVD compression. Defers to `reconstruction_tol` if not provided.
+    :param reconstruction_tol: the reconstruction error tolerance for the SVD compression. Defaults to 0.05.
+    :param discard_outliers: whether to discard outliers from the compression data. Defaults to False.
+    """
+    outputs = data['compression'][1]
+    nan_idx = data['nan_idx']
+    outlier_idx = data['outlier_idx']
+
+    discard_idx = _get_discard_idx(nan_idx, outlier_idx, discard_outliers=discard_outliers,
+                                   warn_func=system.logger.warning, warn_description='compression')
 
     for var in system.outputs():
         if var.compression is not None:
@@ -189,42 +295,125 @@ def gen_compression_data(system: System, num_samples: int, rank: int, energy_tol
 
             match var.compression.method.lower():
                 case 'svd':
-                    data_matrix = {field: var.normalize(_object_to_numeric(outputs[field][~bad_idx, ...])) for field in
-                                   var.compression.fields}
-                    var.compression.compute_map(data_matrix, rank=rank, energy_tol=energy_tol)
+                    data_matrix = {field: var.normalize(_object_to_numeric(outputs[field][~discard_idx, ...]))
+                                   for field in var.compression.fields}
+                    var.compression.compute_map(data_matrix, rank=rank, energy_tol=energy_tol,
+                                                reconstruction_tol=reconstruction_tol)
                 case other:
                     raise ValueError(f"Compression method '{other}' not supported.")
 
     system.save_to_file(f'{system.name}_compression.yml', Path(system.root_dir) / 'compression')
 
-    if np.any(bad_idx):
-        system.logger.warning(f'Filtered out {np.sum(bad_idx)}/{num_samples} bad samples from the compression data '
-                              f'(nan or outliers).')
-        with open(Path(system.root_dir) / 'compression' / 'outliers.pkl', 'wb') as fd:
-            pickle.dump({'inputs': {str(var): arr[bad_idx, ...] for var, arr in samples.items()},
-                         'outputs': {str(var): arr[bad_idx, ...] for var, arr in outputs.items()}}, fd)
 
-    # Plot and save some results
+def plot_outliers(outputs: dict, outlier_idx: dict, iqr_factor: float = 1.5, subplot_size: float = 2.5,
+                  fields_1d: list[str] = None, fields_log: dict = None):
+    """Plot histograms of outliers detected in the output data at the given indices.
+
+    :param outputs: dictionary of output arrays, where each array has shape `(num_samples, ...)`.
+    :param outlier_idx: dictionary with boolean arrays of shape `(num_samples,)` indicating outliers for each output
+    :param iqr_factor: the factor to multiply the IQR by to determine outliers. Defaults to 1.5.
+    :param subplot_size: the size of each subplot in inches. Defaults to 2.5.
+    :param fields_1d: a list of field quantities to plot as 1D line plots. Defaults to `['u_ion', 'j_ion']`. Otherwise,
+           all field quantities will be plotted as histograms of the mean value.
+    :param fields_log: a dictionary of field qtys to set the y-axis to log scale. Defaults to {'j_ion': True}.
+    :returns: the `fig, ax` for the plot
+    """
+    fields_1d = fields_1d or ['u_ion', 'j_ion']
+    fields_log = fields_log or {'j_ion': True}
+    num_plots = len(outlier_idx.keys())
+    num_col = int(np.floor(np.sqrt(num_plots)))
+    num_row = int(np.ceil(num_plots / num_col))
+
+    fig, axs = plt.subplots(num_row, num_col, figsize=(num_col * subplot_size, num_row * subplot_size), layout='tight',
+                            squeeze=False)
+    for i, (var, idx) in enumerate(outlier_idx.items()):
+        row = i // num_col
+        col = i % num_col
+        ax = axs[row, col]
+        all_data = _object_to_numeric(outputs[var])
+        outliers = all_data[idx, ...]
+
+        p2 = np.nanpercentile(all_data, 2.5, axis=0)
+        p25 = np.nanpercentile(all_data, 25, axis=0)
+        p50 = np.nanpercentile(all_data, 50, axis=0)
+        p75 = np.nanpercentile(all_data, 75, axis=0)
+        p98 = np.nanpercentile(all_data, 97.5, axis=0)
+        iqr = p75 - p25
+        lb_iqr = p25 - iqr_factor * iqr
+        ub_iqr = p75 + iqr_factor * iqr
+
+        # Line plots for 1d field quantities
+        if var in fields_1d:
+            coords = np.linspace(0, 1, len(p50))
+            ax.plot(coords, p50, '-k', label='Median')
+            ax.fill_between(coords, lb_iqr, ub_iqr, alpha=0.5, edgecolor=(0.5, 0.5, 0.5), facecolor='gray',
+                            label='IQR bounds')
+            ax.plot(coords, p2, '-b', label=r'95\% bounds')
+            ax.plot(coords, p98, '-b')
+            ax.plot(np.nan, np.nan, '--', label='Outliers')
+            for arr in outliers:
+                ax.plot(coords, arr, '--', alpha=0.3)
+            ax.set_xlabel('Normalized field location')
+            ax.set_ylabel(var)
+            ax.grid()
+            ax.legend()
+            if var in fields_log:
+                ax.set_yscale('log')
+
+        # Histograms for everything else
+        else:
+            axes = tuple(range(1, outliers.ndim))
+            ax.hist(all_data, bins=30, facecolor='gray', edgecolor='k', alpha=0.5)
+            ax.hist(np.nanmean(outliers, axis=axes), facecolor='r', edgecolor='k', alpha=0.3, label='Outliers')
+            ax.axvline(x=np.nanmean(p50, axis=axes), color='k', linestyle='-', linewidth=1.5, label='Median')
+            ax.axvline(x=np.nanmean(p2, axis=axes), color='b', linestyle='-', linewidth=1.5, label=r'95\% bounds')
+            ax.axvline(x=np.nanmean(p98, axis=axes), color='b', linestyle='-', linewidth=1.5)
+            ax.axvline(x=np.nanmean(lb_iqr, axis=axes), color='gray', linestyle='--', linewidth=1.5, label='IQR bounds')
+            ax.axvline(x=np.nanmean(ub_iqr, axis=axes), color='gray', linestyle='--', linewidth=1.5)
+            ax.set_xlabel(var)
+            if row == 0 and col == num_col - 1:
+                ax.legend()
+
+    return fig, axs
+
+
+def plot_compression(system: System, data: dict):
+    """Generate plots of the compression data for field quantities.
+
+    :param system: the `amisc.System` surrogate object with the model and input/output variable information.
+    :param data: the compression data from `generate_data` (i.e. a `dict` with the data and indices of outliers/nans)
+    """
+    outputs = data['compression'][1]
+    nan_idx = data['nan_idx']
+    outlier_idx = data['outlier_idx']
+    iqr_factor = data['iqr_factor']
+
     for var in system.outputs():
         if var.compression is not None:
             u, s, vt = np.linalg.svd(var.compression.data_matrix)
             energy_frac = np.cumsum(s ** 2 / np.sum(s ** 2))
 
-            fig, ax = plt.subplots(figsize=(6, 5), layout='tight')
-            ax.plot(energy_frac, '.k')
-            ax.plot(energy_frac[:var.compression.rank], 'or', label=f'Rank={var.compression.rank}')
-            ax.axhline(y=var.compression.energy_tol, color='red', linestyle='--', linewidth=1, label='Energy tol')
-            ax.set_yscale('log')
-            ax_default(ax, 'Singular value index', 'Cumulative energy fraction', legend=True)
+            fig, ax = plt.subplots(1, 2, figsize=(11, 5), layout='tight')
+            ax[0].plot(s, '.k')
+            ax[0].plot(s[:var.compression.rank], 'or', label=f'Rank={var.compression.rank}')
+            ax[0].set_yscale('log')
+            ax[0].grid()
+            ax_default(ax[0], 'Singular value index', 'Singular value', legend=True)
+            ax[1].plot(energy_frac, '.k')
+            ax[1].plot(energy_frac[:var.compression.rank], 'or', label=f'Rank={var.compression.rank}')
+            ax[1].axhline(y=var.compression.energy_tol, color='red', linestyle='--', linewidth=1, label='Energy tol')
+            ax[1].set_yscale('log')
+            ax[1].grid()
+            ax_default(ax[1], 'Singular value index', 'Cumulative energy fraction', legend=True)
             fig.savefig(Path(system.root_dir) / 'compression' / f'{var.name}_svd.png', dpi=300, format='png')
 
             # Special plots for specific field quantities
             if var.name in ['u_ion', 'j_ion']:
                 coords = var.compression.coords
-                A = _object_to_numeric(outputs[var.name][~bad_idx, ...])
-                lb = np.percentile(A, 5, axis=0)
-                mid = np.percentile(A, 50, axis=0)
-                ub = np.percentile(A, 95, axis=0)
+                A = _object_to_numeric(outputs[var.name])
+                lb = np.nanpercentile(A, 2.5, axis=0)
+                mid = np.nanpercentile(A, 50, axis=0)
+                ub = np.nanpercentile(A, 97.5, axis=0)
 
                 fig, ax = plt.subplots(figsize=(6, 5), layout='tight')
                 ax.plot(coords, mid, '-k')
@@ -234,44 +423,30 @@ def gen_compression_data(system: System, num_samples: int, rank: int, energy_tol
                     xlabel = 'Angle from thruster centerline (rad)'
                 else:
                     xlabel = 'Axial location (m)'
+                ax.grid()
                 ax_default(ax, xlabel, var.get_tex(units=True, symbol=False), legend=False)
                 fig.savefig(Path(system.root_dir) / 'compression' / f'{var.name}_range.png', dpi=300, format='png')
 
+    fig, ax = plot_outliers(outputs, outlier_idx, iqr_factor=iqr_factor)
+    fig.savefig(Path(system.root_dir) / 'compression' / 'outliers.png', dpi=300, format='png')
 
-def gen_test_set(system: System, num_samples: int, executor: Executor):
-    """Generate a test set of high-fidelity model solves.
 
-    Will create a `test_set` directory in the `system.root_dir` and save the test set data there.
+def plot_test_set(system: System, data: dict):
+    """Plot results for the test set. Will save the plots to the `system.root_dir/test_set` directory.
 
     :param system: the `amisc.System` surrogate object with the model and input/output variable information.
-    :param num_samples: the number of samples to use for generating the test set data.
-    :param executor: the parallel executor for training the surrogate (i.e. a `concurrent.futures.Executor` instance)
+    :param data: the test set data from `generate_data` (i.e. a `dict` with the data and indices of outliers/nans)
     """
-    system.logger.info(f'Generating test set data for {system.name} -- {num_samples} samples...')
-    os.mkdir(Path(system.root_dir) / 'test_set')
-    samples_operating = {v.name: v.normalize(v.sample_domain(num_samples)) for v in system.inputs()
-                         if v.category == 'operating'}  # full domain for operating conditions (pdf otherwise)
-    samples_params = {v.name: v.normalize(v.sample(num_samples)) for v in system.inputs() if v.category != 'operating'}
-    samples = dict(**samples_operating, **samples_params)
-    outputs = system.predict(samples, use_model='best', model_dir=Path(system.root_dir) / 'test_set',
-                             executor=executor)
+    outputs = data['test_set'][1]
+    nan_idx = data['nan_idx']
+    outlier_idx = data['outlier_idx']
+    iqr_factor = data['iqr_factor']
 
-    # Filter bad samples and outliers (by interquartile range)
-    bad_idx = _outlier_indices(outputs)
-    samples, coords = to_model_dataset(samples, system.inputs())
-    samples.update(coords)
+    discard_idx = _get_discard_idx(nan_idx, outlier_idx, discard_outliers=args.discard_outliers,
+                                   warn_func=system.logger.warning, warn_description='test set')
 
-    with open(Path(system.root_dir) / 'test_set' / 'test_set.pkl', 'wb') as fd:
-        xt = {str(var): arr[~bad_idx, ...] for var, arr in samples.items()}
-        yt = {str(var): arr[~bad_idx, ...] for var, arr in outputs.items()}
-        pickle.dump({'test_set': (xt, yt)}, fd)
-
-    if np.any(bad_idx):
-        system.logger.warning(f'Filtered out {np.sum(bad_idx)}/{num_samples} bad samples from the test set data '
-                              f'(nan or outliers).')
-        with open(Path(system.root_dir) / 'test_set' / 'outliers.pkl', 'wb') as fd:
-            pickle.dump({'inputs': {str(var): arr[bad_idx, ...] for var, arr in samples.items()},
-                         'outputs': {str(var): arr[bad_idx, ...] for var, arr in outputs.items()}}, fd)
+    fig, ax = plot_outliers(outputs, outlier_idx, iqr_factor=iqr_factor)
+    fig.savefig(Path(system.root_dir) / 'test_set' / 'outliers.png', dpi=300, format='png')
 
 
 if __name__ == '__main__':
@@ -291,6 +466,15 @@ if __name__ == '__main__':
             raise ValueError(f"Unsupported executor type: {args.executor}")
 
     with pool_executor(max_workers=args.max_workers) as executor:
-        gen_compression_data(system, args.compression_samples, args.rank, args.energy_tol, executor)
-        gen_test_set(system, args.test_samples, executor)
-        system.logger.info('Data generation complete.')
+        compression_data = generate_data(system, 'compression', num_samples=args.compression_samples,
+                                         executor=executor, verbose=True, iqr_factor=args.iqr_factor)
+        test_set_data = generate_data(system, 'test_set', num_samples=args.test_samples,
+                                      executor=executor, verbose=True, iqr_factor=args.iqr_factor)
+
+    process_compression(system, compression_data, rank=args.rank, energy_tol=args.energy_tol,
+                        reconstruction_tol=args.reconstruction_tol, discard_outliers=args.discard_outliers)
+
+    plot_compression(system, compression_data)
+    plot_test_set(system, test_set_data)
+
+    system.logger.info('Data generation complete.')
