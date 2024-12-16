@@ -6,7 +6,7 @@
 
 Run as:
 
-python install_hallthruster.py --julia-version 1.10 --hallthruster-version 0.17.2 --git-ref main
+python install_hallthruster.py --julia-version 1.10 --hallthruster-version 0.18.0 --git-ref main
 
 Note: If `git-ref` is specified, this will override the `hallthruster-version` and instead install from GitHub.
 
@@ -22,7 +22,7 @@ from packaging.version import Version
 
 PLATFORM = platform.system().lower()
 JULIA_VERSION_DEFAULT = "1.10"
-HALLTHRUSTER_VERSION_DEFAULT = "0.17.2"
+HALLTHRUSTER_VERSION_DEFAULT = "0.18.0"
 HALLTHRUSTER_URL = "https://github.com/UM-PEPL/HallThruster.jl"
 HALLTHRUSTER_NAME = "HallThruster"
 
