@@ -78,12 +78,16 @@ def current_density(inputs: Dataset):
 
     # Calculate divergence angle from https://aip.scitation.org/doi/10.1063/5.0066849
     # Requires alpha = [0, ..., 90] deg, from thruster exit-plane to thruster centerline (need to flip)
-    num_int = np.flip(j_ion - j_cex, axis=-1) * np.cos(alpha_rad) * np.sin(alpha_rad)
-    den_int = np.flip(j_ion - j_cex, axis=-1) * np.cos(alpha_rad)
+    # do j_beam + j_scat instead of j_ion - j_cex to avoid catastrophic loss of precision when
+    # j_beam and j_scat << j_cex
+    j_non_cex = np.flip((j_beam + j_scat).real, axis=-1)
+    den_integrand = j_non_cex * np.cos(alpha_rad)
+    num_integrand = den_integrand * np.sin(alpha_rad)
 
     with np.errstate(divide='ignore', invalid='ignore'):
-        cos_div = simpson(num_int, x=alpha_rad, axis=-1) / simpson(den_int, x=alpha_rad, axis=-1)
-        cos_div = np.atleast_1d(cos_div)
+        num = simpson(num_integrand, x=alpha_rad, axis=-1)
+        den = simpson(den_integrand, x=alpha_rad, axis=-1)
+        cos_div = np.atleast_1d(num/den)
         cos_div[cos_div == np.inf] = np.nan
 
     div_angle = np.arccos(cos_div)  # Divergence angle (rad)
