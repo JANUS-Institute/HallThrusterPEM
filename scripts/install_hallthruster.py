@@ -4,21 +4,19 @@
 2) Ensure the specified Julia version is installed using juliaup.
 3) Install HallThruster.jl with the specified version (or git ref).
 
-Run as:
-
-python install_hallthruster.py --julia-version 1.10 --hallthruster-version 0.18.0 --git-ref main
+Usage: python install_hallthruster.py --julia-version 1.10 --hallthruster-version 0.18.0 --git-ref main
 
 Note: If `git-ref` is specified, this will override the `hallthruster-version` and instead install from GitHub.
-
 """
 import argparse
 import os
 import shlex
 import subprocess
 import platform
+from packaging.version import Version
+
 from hallmd.models.thruster import get_jl_env
 
-from packaging.version import Version
 
 PLATFORM = platform.system().lower()
 JULIA_VERSION_DEFAULT = "1.10"
@@ -144,7 +142,7 @@ if __name__ == "__main__":
     parser.add_argument("-j", "--julia-version", default=JULIA_VERSION_DEFAULT,
                         help="The Julia version to install (default: 1.10)")
     parser.add_argument("-t", "--hallthruster-version", default=HALLTHRUSTER_VERSION_DEFAULT,
-                        help="The HallThruster.jl version to install (default: 0.17.2)")
+                        help="The HallThruster.jl version to install (default: 0.18.0)")
     parser.add_argument("-r", "--git-ref", default=None,
                         help="Install from this git ref (branch, hash, etc.) from the HallThruster.jl "
                              "GitHub repository.")

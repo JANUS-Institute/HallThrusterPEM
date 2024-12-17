@@ -1,29 +1,31 @@
 """ `gen_data.py`
 
-Script to be used with `train_hpc.sh` for generating compression (SVD) data and test set data for training a surrogate.
+Script to be used with `train.sh` for generating compression (SVD) data and test set data for training a surrogate.
+The type of compression (and additional parameters, i.e. rank, tol, etc.) for each variable should be specified in
+the config file.
 
-Call as:
+USAGE: `python gen_data.py <config_file> [OPTIONS]
 
-`python gen_data.py <config_file> [--output_dir <output_dir>] [--rank <rank>] [--energy_tol <energy_tol>]
-                                  [--reconstruction_tol <reconstruction_tol>] [--discard_outliers] [--iqr_factor <iqr_factor>]
-                                  [--compression_samples <compression_samples>] [--test_samples <test_samples>]
-                                  [--executor <executor>] [--max_workers <max_workers>]`
+REQUIRED:
+<config_file>
+        the path to the `amisc` YAML configuration file with the model and input/output variable information.
 
-Arguments:
-
-- `config_file` - the path to the `amisc` YAML configuration file with the model and input/output variable information.
-- `output_dir` - the directory to save all test set and compression data. Defaults to the same path as the config file.
-                 If not specified as an 'amisc_{timestamp}' directory, a new directory will be created.
-- `rank` - the rank of the SVD compression. Defaults to None, which will defer to `energy_tol` or `reconstruction_tol`.
-- `energy_tol` - the energy tolerance for the SVD compression. Defaults to None, which will defer to `reconstruction_tol`.
-- `reconstruction_tol` - the reconstruction error tolerance for the SVD compression. Defaults to 0.05.
-- `compression_samples` - the number of samples to use for generating the SVD compression data. Defaults to 500.
-- `discard_outliers` - whether to discard outliers from the compression and test set data. Defaults to False.
-- `iqr_factor` - the factor to multiply the IQR by to determine outliers. Defaults to 1.5.
-- `test_samples` - the number of samples to use for generating the test set data. Defaults to 500.
-- `executor` - the parallel executor for training surrogate. Options are `thread` or `process`. Default (`process`).
-- `max_workers` - the maximum number of workers to use for parallel processing. Defaults to using max number of
-                  available CPUs.
+OPTIONS:
+-o, --output-dir
+        the directory to save all test set and compression data. Defaults to the same path as the config file.
+        If not specified as an 'amisc_{timestamp}' directory, a new directory will be created.
+-e, --executor=thread
+        the parallel executor for evaluating the models. Options are `thread` or `process`. Defaults to `thread`.
+-w, --max-workers
+        the maximum number of workers to use for parallel processing. Defaults to using max available CPUs.
+-d, --discard-outliers
+        whether to discard outliers from the compression and test set data. Defaults to False.
+-c, --compression-samples=500
+        the number of samples to use for generating the SVD compression data. Defaults to 500.
+-t, --test-samples=500
+        the number of samples to use for generating the test set data. Defaults to 500.
+-q, --iqr-factor=1.5
+        the factor to multiply the IQR by to determine outliers. Defaults to 1.5.
 
 Note that a total of `compression_samples` + `test_samples` samples will be generated, which will
 run the true underlying models/solvers that many times -- so set accordingly and be prepared for a long runtime.
@@ -32,14 +34,12 @@ run the true underlying models/solvers that many times -- so set accordingly and
     New compression data and test set data should be generated anytime _anything_ changes about
     the model or the model inputs. This script should be called before `fit_surr.py`.
 
-Includes:
-
+INCLUDES:
 - `generate_data()` - generate the compression or test set data for training a surrogate.
 - `process_compression()` - compute the compression maps for field quantities (only SVD supported).
 - `plot_compression()` - create plots of the compression data.
 - `plot_test_set()` - create plots of the test set data.
 - `plot_outliers()` - plot histograms of outliers detected in the output data.
-
 """
 import argparse
 import json
@@ -59,31 +59,24 @@ parser = argparse.ArgumentParser(description=
                                  'Generate compression (SVD) data and test set data for training a surrogate.')
 parser.add_argument('config_file', type=str,
                     help='the path to the `amisc` YAML config file with model and input/output variable information.')
-parser.add_argument('--output_dir', type=str, default=None,
+parser.add_argument('-o', '--output-dir', type=str, default=None,
                     help='the directory to save the generated SVD data and test set data. Defaults to same '
                          'directory as <config_file>.')
-parser.add_argument('--rank', type=int, default=None,
-                    help='the rank of the SVD compression. Defaults to None, which will defer to `energy_tol`'
-                         'or `reconstruction_tol`.')
-parser.add_argument('--energy_tol', type=float, default=None,
-                    help='the energy tolerance for the SVD compression. Defaults to None, which will defer to '
-                         '`reconstruction_tol`.')
-parser.add_argument('-reconstruction_tol', type=float, default=0.05,
-                    help='the reconstruction tolerance for the SVD compression. Defaults to 0.05.')
-parser.add_argument('--compression_samples', type=int, default=500,
-                    help='the number of samples to use for generating the SVD compression data. Defaults to 500.')
-parser.add_argument('--test_samples', type=int, default=500,
-                    help='the number of samples to use for generating the test set data. Defaults to 500.')
-parser.add_argument('--discard_outliers', action='store_true', default=False,
-                    help='whether to discard outliers from the compression and test set data. Defaults to False.')
-parser.add_argument('--iqr_factor', type=float, default=1.5,
-                    help='the factor to multiply the IQR by to determine outliers. Defaults to 1.5.')
-parser.add_argument('--executor', type=str, default='process',
-                    help='the parallel executor for training the surrogate. Options are `thread` or `process`. '
-                         'Default (`process`).')
-parser.add_argument('--max_workers', type=int, default=None,
+parser.add_argument('-e', '--executor', type=str, default='thread', choices=['thread', 'process'],
+                    help='the parallel executor for evaluating the models. Options are `thread` or `process`. '
+                         'Default to `thread`.')
+parser.add_argument('-w', '--max-workers', type=int, default=None,
                     help='the maximum number of workers to use for parallel processing. Defaults to using max'
                          'number of available CPUs.')
+parser.add_argument('-d', '--discard-outliers', action='store_true', default=False,
+                    help='whether to discard outliers from the compression and test set data. Defaults to False.')
+parser.add_argument('-c', '--compression-samples', type=int, default=500,
+                    help='the number of samples to use for generating the SVD compression data. Defaults to 500.')
+parser.add_argument('-t', '--test-samples', type=int, default=500,
+                    help='the number of samples to use for generating the test set data. Defaults to 500.')
+parser.add_argument('-q', '--iqr-factor', type=float, default=1.5,
+                    help='the factor to multiply the IQR by to determine outliers. Defaults to 1.5.')
+
 
 args, _ = parser.parse_known_args()
 
@@ -236,10 +229,7 @@ def generate_data(system: System, description: str,
     """
     system.logger.info(f'Generating {description} data for {system.name} -- {num_samples} samples...')
     os.mkdir(Path(system.root_dir) / description)
-    samples_operating = {v.name: v.normalize(v.sample_domain(num_samples)) for v in system.inputs()
-                         if v.category == 'operating'}  # full domain for operating conditions (pdf otherwise)
-    samples_params = {v.name: v.normalize(v.sample(num_samples)) for v in system.inputs() if v.category != 'operating'}
-    samples = dict(**samples_operating, **samples_params)
+    samples = system.sample_inputs(num_samples, normalize=True, use_pdf=['calibration', 'nuisance'])
     outputs = system.predict(samples, use_model='best', model_dir=Path(system.root_dir) / description,
                              executor=executor, verbose=verbose)
 
@@ -262,20 +252,14 @@ def generate_data(system: System, description: str,
     return dump
 
 
-def process_compression(system: System, data: dict,
-                        rank: int = None,
-                        energy_tol: float = None,
-                        reconstruction_tol: float = 0.05,
-                        discard_outliers: bool = False):
-    """Compute compression maps for field quantities (only SVD supported).
+def process_compression(system: System, data: dict, discard_outliers: bool = False):
+    """Compute compression maps for field quantities (only SVD supported). The compression parameters, such as
+    rank, reconstruction tolerance, etc. should be specified in the config file that was used to load the `system`.
 
     Will save the compression maps to the `system.root_dir/compression` directory.
 
     :param system: the `amisc.System` surrogate object with the model and input/output variable information.
     :param data: the compression data from `generate_data` (i.e. a `dict` with the data and indices of outliers/nans)
-    :param rank: the rank of the SVD compression. Defers to `reconstruction_tol` if not provided.
-    :param energy_tol: the energy tolerance for the SVD compression. Defers to `reconstruction_tol` if not provided.
-    :param reconstruction_tol: the reconstruction error tolerance for the SVD compression. Defaults to 0.05.
     :param discard_outliers: whether to discard outliers from the compression data. Defaults to False.
     """
     outputs = data['compression'][1]
@@ -297,15 +281,14 @@ def process_compression(system: System, data: dict,
                 case 'svd':
                     data_matrix = {field: var.normalize(_object_to_numeric(outputs[field][~discard_idx, ...]))
                                    for field in var.compression.fields}
-                    var.compression.compute_map(data_matrix, rank=rank, energy_tol=energy_tol,
-                                                reconstruction_tol=reconstruction_tol)
+                    var.compression.compute_map(data_matrix)
                 case other:
                     raise ValueError(f"Compression method '{other}' not supported.")
 
     system.save_to_file(f'{system.name}_compression.yml', Path(system.root_dir) / 'compression')
 
 
-def plot_outliers(outputs: dict, outlier_idx: dict, iqr_factor: float = 1.5, subplot_size: float = 2.5,
+def plot_outliers(outputs: dict, outlier_idx: dict, iqr_factor: float = 1.5, subplot_size: float = 3,
                   fields_1d: list[str] = None, fields_log: dict = None):
     """Plot histograms of outliers detected in the output data at the given indices.
 
@@ -348,7 +331,7 @@ def plot_outliers(outputs: dict, outlier_idx: dict, iqr_factor: float = 1.5, sub
             ax.plot(coords, p50, '-k', label='Median')
             ax.fill_between(coords, lb_iqr, ub_iqr, alpha=0.5, edgecolor=(0.5, 0.5, 0.5), facecolor='gray',
                             label='IQR bounds')
-            ax.plot(coords, p2, '-b', label=r'95\% bounds')
+            ax.plot(coords, p2, '-b', label='95% bounds')
             ax.plot(coords, p98, '-b')
             ax.plot(np.nan, np.nan, '--', label='Outliers')
             for arr in outliers:
@@ -366,7 +349,7 @@ def plot_outliers(outputs: dict, outlier_idx: dict, iqr_factor: float = 1.5, sub
             ax.hist(all_data, bins=30, facecolor='gray', edgecolor='k', alpha=0.5)
             ax.hist(np.nanmean(outliers, axis=axes), facecolor='r', edgecolor='k', alpha=0.3, label='Outliers')
             ax.axvline(x=np.nanmean(p50, axis=axes), color='k', linestyle='-', linewidth=1.5, label='Median')
-            ax.axvline(x=np.nanmean(p2, axis=axes), color='b', linestyle='-', linewidth=1.5, label=r'95\% bounds')
+            ax.axvline(x=np.nanmean(p2, axis=axes), color='b', linestyle='-', linewidth=1.5, label='95% bounds')
             ax.axvline(x=np.nanmean(p98, axis=axes), color='b', linestyle='-', linewidth=1.5)
             ax.axvline(x=np.nanmean(lb_iqr, axis=axes), color='gray', linestyle='--', linewidth=1.5, label='IQR bounds')
             ax.axvline(x=np.nanmean(ub_iqr, axis=axes), color='gray', linestyle='--', linewidth=1.5)
@@ -471,8 +454,7 @@ if __name__ == '__main__':
         test_set_data = generate_data(system, 'test_set', num_samples=args.test_samples,
                                       executor=executor, verbose=True, iqr_factor=args.iqr_factor)
 
-    process_compression(system, compression_data, rank=args.rank, energy_tol=args.energy_tol,
-                        reconstruction_tol=args.reconstruction_tol, discard_outliers=args.discard_outliers)
+    process_compression(system, compression_data, discard_outliers=args.discard_outliers)
 
     plot_compression(system, compression_data)
     plot_test_set(system, test_set_data)

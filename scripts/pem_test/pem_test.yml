@@ -1,5 +1,5 @@
 !System
-name: PEM v0 (SPT-100)
+name: PEM test
 hallmd_version: 0.3.0
 components: !Component
   - name: Cathode
@@ -63,25 +63,25 @@ components: !Component
     model: !!python/name:hallmd.models.thruster.hallthruster_jl
     version: 0.18.0
     thruster: SPT-100
+    julia_script: ../tests/sim_hallthruster.jl
     config:
-#      thruster: SPT-100                 # moved to separate thruster kwarg
-      discharge_voltage: 300             # overwritten by V_a
-      anode_mass_flow_rate: 5.0e-6       # overwritten by mdot_a
-      cathode_coupling_voltage: 30              # overwritten by V_cc
-      background_pressure_Torr: 1.0e-5   # overwritten by P_b
-      cathode_Tev: 3                     # overwritten by T_e
-      neutral_velocity: 300              # overwritten by u_n
-      ncharge: 1                         # overwritten by model_fidelity[1]
-      transition_length: 0.003           # overwritten by l_t
+      discharge_voltage: 300
+      anode_mass_flow_rate: 5.0e-6
+      cathode_coupling_voltage: 32.5
+      background_pressure_Torr: 1.0e-6
+      cathode_Tev: 1.32721
+      neutral_velocity: 141.24234
+      ncharge: 1
+      transition_length: 1.87915e-3
       anom_model:
         type: LogisticPressureShift
         model:
           type: TwoZoneBohm
-          c1: 0.00625  # overwritten by a_1
-          c2: 0.0625   # overwritten by a_2 * a_1
-        dz: 0.2        # overwritten by dz
-        z0: -0.03104   # overwritten by z0
-        pstar: 45.0e-6 # overwritten by p0
+          c1: 0.0068
+          c2: 0.0994
+        dz: 0.4
+        z0: -0.03104
+        pstar: 56.86006e-6
         alpha: 15
       domain: [0, 0.08]
       propellant: Xenon
@@ -91,24 +91,24 @@ components: !Component
       neutral_ingestion_multiplier: 1.0
     simulation:
       adaptive: true
-      dt: 1.0e-9        # overwritten by model_fidelity[0]
+      dt: 1.0e-9
       min_dt: 1.0e-10
       max_dt: 1.0e-7
       grid:
         type: EvenGrid
-        num_cells: 100   # overwritten by model_fidelity[0]
-      duration: 0.002   # s
+        num_cells: 100
+      duration: 0.002
       num_save: 1000
       verbose: false
     postprocess:
       average_start_time: 0.001  # s
     model_fidelity: (2, 2)
-    data_fidelity: (2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2)
+    data_fidelity: (2, 2, 2, 2)
     training_data:
       method: sparse-grid
       knots_per_level: 2
     inputs: !Variable
-      - name: P_b
+      - name: V_cc
       - name: V_a
       - name: mdot_a
         description: Anode mass flow rate
@@ -116,25 +116,8 @@ components: !Component
         tex: "$\\dot{m}_a$"
         units: kg/s
         nominal: 5.0e-6
-        distribution: Relative(3)
         domain: (2.0e-6, 7.0e-6)
         norm: linear(1e6)
-      - name: T_e
-      - name: u_n
-        description: Neutral velocity
-        category: calibration
-        tex: "$u_n$"
-        units: m/s
-        nominal: 141.24234
-        distribution: U(100, 500)
-      - name: l_t
-        description: Inner to outer transition length
-        category: calibration
-        tex: "$l_t$"
-        units: m
-        nominal: 1.87915e-3
-        distribution: U(1.0e-3, 20.0e-3)
-        norm: linear(1e3)
       - name: a_1
         description: Anomalous transport scale inside channel
         category: calibration
@@ -142,33 +125,12 @@ components: !Component
         nominal: 0.00680237
         distribution: LogUniform(0.00316, 0.1)
         norm: log10
-      - name: a_2
-        description: Anomalous transport scale outside channel
-        category: calibration
-        tex: "$a_2$"
-        nominal: 14.645
-        distribution: Uniform(10, 100)
-      - name: dz
-        description: Anomalous shift displacement
-        category: calibration
-        tex: "$\\Delta_z$"
-        nominal: 0.4
-        distribution: N(0.2, 0.07)
-      - name: z0
-        description: Upstream anomalous shift axial limit
-        category: calibration
-        tex: "$z_0$"
-        nominal: -0.03104
-        distribution: N(-0.12, 0.04)
-      - name: p0
-        description: Upstream anomalous shift pressure limit
-        category: calibration
-        tex: "$p_0$"
-        units: Torr
-        nominal: 56.86006e-6
-        distribution: N(45.0e-6, 7.0e-6)
-        norm: linear(1e6)
-      - name: V_cc
+#      - name: a_2
+#        description: Anomalous transport scale outside channel
+#        category: calibration
+#        tex: "$a_2$"
+#        nominal: 14.645
+#        distribution: Uniform(10, 100)
     outputs: !Variable
       - name: I_B0
         description: Ion beam current
