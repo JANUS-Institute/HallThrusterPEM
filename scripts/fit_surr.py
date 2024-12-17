@@ -1,42 +1,49 @@
 """ `fit_surr.py`
 
-Script to be used with `train_hpc.sh` for building an MD surrogate managed by Slurm on an
-HPC system. Runs the training procedure for the given PEM configuration file.
+Script to be used with `train.sh` for building a multidisciplinary surrogate.
 
-Call as:
+USAGE: `python fit_surr.py <config_file> [OPTIONS]
 
-`python fit_surr.py <config_file> [--output_dir <output_dir>] [--search] [--executor <executor>]
-                                  [--max_workers <max_workers>] [--runtime_hr <runtime_hr>]
-                                  [--max_iter <max_iter>] [--targets <targets>] [--train_single_fidelity]`
-                                  [--max_tol <max_tol>] [--save_interval <save_interval>] [--discard_outliers]
+REQUIRED:
+<config_file>
+        the path to the `amisc` YAML configuration file with the model and input/output variable information.
 
-Arguments:
-
-- `config_file` - the path to the `amisc` YAML configuration file with the model and input/output variable information.
-- `output_dir` - the directory to save all surrogate data. Defaults to the same path as the config file.
-                 If not specified as an 'amisc_{timestamp}' directory, a new directory will be created.
-- `search` - whether to search for the most recent compression save file in the output directory. Defaults to False.
-             Typically, should only let this be set by `train_hpc.sh`, since the compression data will be generated
-             immediately before training the surrogate. If you are calling `fit_surr.py` on your own, leave this
-             as False, but your `config_file` must have all the data it needs to train the surrogate.
-- `executor` - the parallel executor for training surrogate. Options are `thread` or `process`. Default (`process`).
-- `max_workers` - the maximum number of workers to use for parallel processing. Defaults to max available CPUs.
-- `runtime_hr` - the runtime in hours for training the surrogate. Defaults to 3 hours. Will run until completion of
-                 last iteration past this runtime, which may end up being longer.
-- `max_iter` - the maximum number of iterations to run the surrogate training. Defaults to 200.
-- `targets` - the target output variables to train the surrogate on. Defaults to all output variables.
-- `train_single_fidelity` - whether to train a single-fidelity surrogate in addition to the multi-fidelity surrogate,
-                            (mainly to compare cost during training). Defaults to False.
-- `max_tol` - the maximum tolerance for the surrogate training. Defaults to 1e-3.
-- `save_interval` - the interval to save the surrogate during training. Defaults to 10.
-- `discard_outliers` - whether to discard outliers from the test set data. Defaults to False.
+OPTIONS:
+-o, --output-dir
+        the directory to save all surrogate data. Defaults to the same path as the config file.
+        If not specified as an 'amisc_{timestamp}' directory, a new directory will be created.
+-e, --executor=thread
+        the parallel executor for training surrogate. Options are `thread` or `process`. Default to `thread`.
+-w, --max-workers
+        the maximum number of workers to use for parallel processing. Defaults to max available CPUs.
+-d, --discard-outliers
+        whether to discard outliers from the test set data. Defaults to False.
+-s, --search
+        whether to search for the most recent compression save file in the output directory. Defaults to False.
+        Typically, should only let this be set by `train.sh`, since the compression data will be generated
+        immediately before training the surrogate. If you are calling `fit_surr.py` on your own, leave this
+        as False, but your <config_file> must have all the data it needs to train the surrogate.
+-r, --runtime-hr=3
+        the runtime in hours for training the surrogate. Defaults to 3 hours. Will run until completion of
+        last iteration past this runtime, which may end up being longer.
+-i, --max-iter=200
+        the maximum number of iterations to run the surrogate training. Defaults to 200.
+-m, --max-tol=1e-3
+        the maximum tolerance for the surrogate training. Defaults to 1e-3.
+-T, --targets
+        the target output variables to train the surrogate on. Defaults to all output variables.
+-f, --fidelity=multi
+        the fidelity setting for surrogate training. Options are `multi`, `single`, or `both`. Defaults to `multi`.
+-n, --save-interval=10
+        the interval to save the surrogate during training. Defaults to 10.
+-p, --pdf
+        whether to use variable PDF weighting during training. Defaults to False.
 
 !!! Note
     The compression and test set data should be generated **first** by running `gen_data.py`.
 
-Includes:
-
-- `train_surrogate()` - train a surrogate from a PEM configuration file
+INCLUDES:
+- `train_surrogate()` - train a surrogate from a PEM configuration file.
 """
 import argparse
 import copy
@@ -45,6 +52,7 @@ import shutil
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 import os
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -55,98 +63,139 @@ from amisc import System
 parser = argparse.ArgumentParser(description='Train a surrogate from a PEM configuration file.')
 parser.add_argument('config_file', type=str,
                     help='the path to the `amisc` YAML config file with model and input/output variable information.')
-parser.add_argument('--output_dir', type=str, default=None,
+parser.add_argument('-o', '--output-dir', type=str, default=None,
                     help='the directory to save the generated surrogate data. Defaults to same '
                          'directory as <config_file>.')
-parser.add_argument('--search', action='store_true', default=False,
-                    help='whether to search for the most recent compression save file in the output directory.')
-parser.add_argument('--executor', type=str, default='process',
+parser.add_argument('-e', '--executor', type=str, default='thread', choices=['thread', 'process'],
                     help='the parallel executor for training the surrogate. Options are `thread` or `process`. '
-                         'Default (`process`).')
-parser.add_argument('--max_workers', type=int, default=None,
+                         'Default to `thread`.')
+parser.add_argument('-w', '--max-workers', type=int, default=None,
                     help='the maximum number of workers to use for parallel processing. Defaults to using max'
                          'number of available CPUs.')
-parser.add_argument('--runtime_hr', type=float, default=3.0,
-                    help='the maximum runtime in hours for training the surrogate. Defaults to 3 hours.')
-parser.add_argument('--max_iter', type=int, default=200,
-                    help='the maximum number of iterations to run the surrogate training. Defaults to 200.')
-parser.add_argument('--targets', type=str, nargs='+', default=None,
-                    help='the target output variables to train the surrogate on. Defaults to all output variables.')
-parser.add_argument('--train_single_fidelity', action='store_true', default=False,
-                    help='whether to train a single-fidelity surrogate in addition to the multi-fidelity surrogate.')
-parser.add_argument('--max_tol', type=float, default=1e-3,
-                    help='the maximum tolerance for the surrogate training. Defaults to 1e-3.')
-parser.add_argument('--save_interval', type=int, default=10,
-                    help='the interval to save the surrogate during training. Defaults to 10.')
-parser.add_argument('--discard_outliers', action='store_true', default=False,
+parser.add_argument('-d', '--discard-outliers', action='store_true', default=False,
                     help='whether to discard outliers from the test set data. Defaults to False.')
+parser.add_argument('-s', '--search', action='store_true', default=False,
+                    help='whether to search for the most recent compression save file in the output directory.')
+parser.add_argument('-r', '--runtime-hr', type=float, default=3.0,
+                    help='the maximum runtime in hours for training the surrogate. Defaults to 3 hours.')
+parser.add_argument('-i', '--max-iter', type=int, default=200,
+                    help='the maximum number of iterations to run the surrogate training. Defaults to 200.')
+parser.add_argument('-m', '--max-tol', type=float, default=1e-3,
+                    help='the maximum tolerance for the surrogate training. Defaults to 1e-3.')
+parser.add_argument('-T', '--targets', type=str, nargs='+', default=None,
+                    help='the target output variables to train the surrogate on. Defaults to all output variables.')
+parser.add_argument('-f', '--fidelity', type=str, default='multi', choices=['multi', 'single', 'both'],
+                    help='the fidelity setting for surrogate training. Options are `multi`, `single`, or `both`.')
+parser.add_argument('-n', '--save-interval', type=int, default=10,
+                    help='the interval to save the surrogate during training. Defaults to 10.')
+parser.add_argument('-p', '--pdf', action='store_true', default=False,
+                    help='whether to use variable PDF weighting during training. Defaults to False.')
 
 args, _ = parser.parse_known_args()
 
 
-def train_surrogate(system: System, train_single_fidelity: bool = False, **fit_kwargs):
+def train_surrogate(system: System, fidelity: Literal['multi', 'single', 'both'] = 'multi', **fit_kwargs):
     """Train an `amisc.System` surrogate.
 
     :param system: the `amisc.System` object to train the surrogate on.
-    :param train_single_fidelity: whether to train a single-fidelity surrogate in addition to the multi-fidelity
-                                  surrogate.
+    :param fidelity: whether to train a multi-fidelity surrogate, a single-fidelity, or both. Default is multi-fidelity.
+                     For multi-fidelity, the config file must have the model_fidelity indices set for each component.
+                     For single-fidelity, the model_fidelity indices will be set to empty for each component --
+                     the component models should handle this case internally.
     :param fit_kwargs: additional keyword arguments for the surrogate training (passed to `System.fit()`).
     """
-    fit_kwargs = dict(num_refine=500, estimate_bounds=True, update_bounds=True, plot_interval=1, **fit_kwargs)
+    fit_kwargs = dict(num_refine=1000, estimate_bounds=True, update_bounds=True, plot_interval=5, **fit_kwargs)
+    targets = fit_kwargs.get('targets', None)
+    base_dir = system.root_dir
 
-    system.fit(**fit_kwargs)
-    system.plot_allocation()
+    if fidelity in ['multi', 'both']:
+        system.fit(**fit_kwargs)
+        system.plot_allocation()
 
-    # Compare single-fidelity and multi-fidelity surrogates
-    if train_single_fidelity:
-        mf_cost_alloc, mf_eval_alloc, mf_cost_cum, mf_eval_cum = system.get_allocation()
+        mf_cost_alloc, mf_model_cost, mf_overhead_cost, mf_model_evals = system.get_allocation()
         mf_train_history = copy.deepcopy(system.train_history)
 
+        idx = np.where(mf_model_evals != 0)
+        system.logger.info(f'Minimum model evaluations per iteration: {np.min(mf_model_evals[idx]):.2f}')
+        system.logger.info(f'Average model evaluations per iteration: {np.mean(mf_model_evals[idx]):.2f}')
+        system.logger.info(f'Maximum model evaluations per iteration: {np.max(mf_model_evals[idx]):.2f}')
+
+        targets = targets or list(mf_train_history[-1]['test_error'].keys())
+        num_plot = min(len(targets), 3)
+        mf_test = np.full((len(mf_train_history), num_plot), np.nan)
+        for j, mf_res in enumerate(mf_train_history):
+            for i, var in enumerate(targets[:num_plot]):
+                if (perf := mf_res.get('test_error')) is not None:
+                    mf_test[j, i] = perf[var]
+
+        # Get the cost of a single high-fidelity evaluation (for each model separately, and then sum)
+        highest_cost = []
+        for comp in system.components:
+            if comp.name in mf_cost_alloc:
+                highest_cost.append(max(system[comp.name].model_costs.values()))
+        highest_cost = sum(highest_cost)
+
+    if fidelity in ['single', 'both']:
         # Reset data for single-fidelity training
         system.clear()
         for comp in system.components:
             comp.model_fidelity = ()   # Should use each model's default value for model_fidelity if applicable
 
-        system.root_dir = system.root_dir / 'amisc_single_fidelity'
+        if fidelity == 'both':
+            system.root_dir = system.root_dir / 'amisc_single_fidelity'
+
         system.fit(**fit_kwargs)
 
-        sf_cost_alloc, sf_eval_alloc, sf_cost_cum, sf_eval_cum = system.get_allocation()
+        sf_cost_alloc, sf_model_cost, sf_overhead_cost, sf_model_evals = system.get_allocation()
         sf_train_history = copy.deepcopy(system.train_history)
 
-        # Gather test set performance for plotting
-        targets = fit_kwargs.get('targets', None) or list(mf_train_history[-1]['test_error'].keys())
+        idx = np.where(sf_model_evals != 0)
+        system.logger.info(f'Minimum model evaluations per iteration: {np.min(sf_model_evals[idx]):.2f}')
+        system.logger.info(f'Average model evaluations per iteration: {np.mean(sf_model_evals[idx]):.2f}')
+        system.logger.info(f'Maximum model evaluations per iteration: {np.max(sf_model_evals[idx]):.2f}')
+
+        targets = targets or list(sf_train_history[-1]['test_error'].keys())
         num_plot = min(len(targets), 3)
-        mf_test = np.full((len(mf_train_history), num_plot), np.nan)
         sf_test = np.full((len(sf_train_history), num_plot), np.nan)
-        for j, (mf_res, sf_res) in enumerate(zip(mf_train_history, sf_train_history)):
+        for j, sf_res in enumerate(sf_train_history):
             for i, var in enumerate(targets[:num_plot]):
-                if (perf := mf_res.get('test_error')) is not None:
-                    mf_test[j, i] = perf[var]
                 if (perf := sf_res.get('test_error')) is not None:
                     sf_test[j, i] = perf[var]
 
         # Get the cost of a single high-fidelity evaluation (for each model separately, and then sum)
-        single_sf_cost = []
-        sf_alpha = ()  # No fidelity indices for single-fidelity
+        highest_cost = []
         for comp in system.components:
             if comp.name in sf_cost_alloc:
-                single_sf_cost.append(sf_cost_alloc[comp.name][sf_alpha] / sf_eval_alloc[comp.name][sf_alpha])
-        single_sf_cost = sum(single_sf_cost)
+                highest_cost.append(max(system[comp.name].model_costs.values()))
+        highest_cost = sum(highest_cost)
 
-        # Plot QoI L2 error on test set vs. cost
-        labels = [system.outputs()[var].get_tex(units=True) for var in targets]
-        fig, axs = plt.subplots(1, num_plot, sharey='row', figsize=(3.5 * num_plot, 4), layout='tight', squeeze=False)
-        for i in range(num_plot):
-            ax = axs[0, i]
-            ax.plot(mf_cost_cum / single_sf_cost, mf_test[:, i], '-k', label='Multi-fidelity (MF)')
-            ax.plot(sf_cost_cum / single_sf_cost, sf_test[:, i], '--k', label='Single-fidelity (SF)')
-            ax.set_yscale('log')
-            ax.set_xscale('log')
-            ax.grid()
-            ax.set_title(labels[i])
-            ylabel = r'Relative error' if i == 0 else ''
-            ax_default(ax, r'Cost (number of SF evals)', ylabel, legend=i+1 == num_plot)
-        fig.savefig(system.root_dir / 'error_v_cost.pdf', bbox_inches='tight', format='pdf')
+    # Plot QoI L2 error on test set vs. cost
+    labels = [system.outputs()[var].get_tex(units=True) for var in targets]
+    fig, axs = plt.subplots(1, num_plot, sharey='row', figsize=(3.5 * num_plot, 4), layout='tight', squeeze=False)
+    for i in range(num_plot):
+        ax = axs[0, i]
+        if fidelity in ['multi', 'both']:
+            ax.plot(np.cumsum(mf_model_cost) / highest_cost, mf_test[:, i], '-k', label='Multi-fidelity (MF)')
+        if fidelity in ['single', 'both']:
+            ax.plot(np.cumsum(sf_model_cost) / highest_cost, sf_test[:, i], '--k', label='Single-fidelity (SF)')
+        ax.set_yscale('log')
+        ax.set_xscale('log')
+        ax.grid()
+        ax.set_title(labels[i])
+        ylabel = r'Relative error' if i == 0 else ''
+        ax_default(ax, r'Cost (number of model evals)', ylabel, legend=i+1 == num_plot)
+    fig.savefig(base_dir / 'error_v_cost.pdf', bbox_inches='tight', format='pdf')
+
+    # Plot algorithm overhead
+    fig, ax = plt.subplots(figsize=(6, 5), layout='tight')
+    if fidelity in ['multi', 'both']:
+        ax.plot(np.cumsum(mf_overhead_cost) / highest_cost, '-k', label='Multi-fidelity (MF)')
+    if fidelity in ['single', 'both']:
+        ax.plot(np.cumsum(sf_overhead_cost) / highest_cost, '--k', label='Single-fidelity (SF)')
+    ax.set_yscale('log')
+    ax.grid()
+    ax_default(ax, 'Iteration', 'Overhead cost (number of model evals)', legend=True)
+    fig.savefig(base_dir / 'overhead.pdf', bbox_inches='tight', format='pdf')
 
 
 if __name__ == '__main__':
@@ -191,7 +240,8 @@ if __name__ == '__main__':
             raise ValueError(f"Unsupported executor type: {args.executor}")
 
     # Load the test set data
-    test_set = pth if (pth := system.root_dir / 'test_set' / 'test_set.pkl').exists() else None
+    base_dir = system.root_dir
+    test_set = pth if (pth := base_dir / 'test_set' / 'test_set.pkl').exists() else None
 
     if test_set is not None:
         with open(test_set, 'rb') as fd:
@@ -212,7 +262,7 @@ if __name__ == '__main__':
     with pool_executor(max_workers=args.max_workers) as executor:
         fit_kwargs = {'runtime_hr': args.runtime_hr, 'max_iter': args.max_iter, 'targets': args.targets,
                       'save_interval': args.save_interval, 'max_tol': args.max_tol, 'test_set': test_set,
-                      'executor': executor}
-        train_surrogate(system, train_single_fidelity=args.train_single_fidelity, **fit_kwargs)
+                      'executor': executor, 'weight_fcns': None if not args.pdf else 'pdf'}
+        train_surrogate(system, fidelity=args.fidelity, **fit_kwargs)
 
-    system.logger.info(f'Surrogate training complete. Output directory: {system.root_dir}')
+    system.logger.info(f'Surrogate training complete. Output directory: {base_dir}')
