@@ -70,6 +70,7 @@ if command -v sbatch &> /dev/null && [[ "$LOCAL" == "false" ]]; then
                          --mem-per-cpu="${MEM_PER_CPU}" \
                          --ntasks-per-node=1 \
                          --cpus-per-task="${GEN_CPUS}" \
+                         --output=./logs/%x-%j.log \
                          --wrap="set -e; pdm run python gen_data.py ${args[*]}" | awk '{print $4}')
         echo "Gen data job submitted with Job ID: $job1_id"
     else
