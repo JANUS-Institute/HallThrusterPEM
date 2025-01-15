@@ -13,7 +13,7 @@ OPTIONS:
         directory to save model outputs. Defaults to the surrogate's root directory, or cwd otherwise.
 -e, --executor=thread
         parallel executor for running the model. Options are `thread` or `process`. Defaults to `thread`.
--w, --max-workers
+-w, --slice-cpus
         maximum number of workers for parallel processing. Defaults to all available CPUs.
 -s, --search
         flag to search for the most recent amisc timestamp directory and the most recent iteration within that
@@ -43,7 +43,8 @@ parser = argparse.ArgumentParser(description='Plot 1d slices of the surrogate ag
 parser.add_argument('config_file', type=str, help='Path to the amisc YAML surrogate save file.')
 parser.add_argument('-o', '--output-dir', type=str, default=None, help='Directory to save model outputs.')
 parser.add_argument('-e', '--executor', type=str, default='thread', help='Parallel executor for running the model.')
-parser.add_argument('-w', '--max-workers', type=int, default=None, help='Maximum number of workers for parallel processing.')
+parser.add_argument('-w', '--slice-cpus', type=int, default=None,
+                    help='Maximum number of workers for parallel processing.')
 parser.add_argument('-s', '--search', action='store_true', default=False,
                     help='flag to search for the most recent amisc timestamp directory.')
 parser.add_argument('-I', '--inputs', type=str, nargs='+', default=None, help='List of input variables for the slice.')
@@ -117,7 +118,7 @@ if __name__ == '__main__':
         case _:
             raise ValueError(f"Unsupported executor type: {args.executor}")
 
-    with pool_executor(max_workers=args.max_workers) as executor:
+    with pool_executor(max_workers=args.slice_cpus) as executor:
         nominal = {str(var): var.sample_domain((1,)) for var in system.inputs()}  # Random nominal test point
         slice_kwargs = dict(inputs=args.inputs, outputs=args.outputs, num_steps=args.num_steps,
                             show_model=args.show_model, save_dir=save_dir, executor=executor,
