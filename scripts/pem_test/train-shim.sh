@@ -4,4 +4,4 @@
                                  --inputs P_b V_a mdot_a a_1 \
                                  --outputs T I_B0 I_d u_ion \
                                  --show-model best worst \
-                                 --gen-cpus 12 --fit-cpus 12 --slice-cpus 12 --mem-per-cpu 1g "$@"
+                                 -w 12 "$@"

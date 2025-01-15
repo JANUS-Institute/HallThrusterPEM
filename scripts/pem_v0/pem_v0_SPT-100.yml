@@ -61,7 +61,7 @@ components: !Component
         domain: (0, 60)
   - name: Thruster
     model: !!python/name:hallmd.models.thruster.hallthruster_jl
-    version: 0.18.0
+    version: 0.18.1
     thruster: SPT-100
     config:
 #      thruster: SPT-100                 # moved to separate thruster kwarg

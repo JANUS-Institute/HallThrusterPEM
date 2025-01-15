@@ -14,7 +14,7 @@ OPTIONS:
         If not specified as an 'amisc_{timestamp}' directory, a new directory will be created.
 -e, --executor=thread
         the parallel executor for training surrogate. Options are `thread` or `process`. Default to `thread`.
--w, --max-workers
+-w, --fit-cpus
         the maximum number of workers to use for parallel processing. Defaults to max available CPUs.
 -d, --discard-outliers
         whether to discard outliers from the test set data. Defaults to False.
@@ -38,6 +38,8 @@ OPTIONS:
         the interval to save the surrogate during training. Defaults to 10.
 -p, --pdf
         whether to use variable PDF weighting during training. Defaults to False.
+-C, --cache-interval=0
+        the interval to cache component training data during training. Defaults to 0 (no caching).
 
 !!! Note
     The compression and test set data should be generated **first** by running `gen_data.py`.
@@ -69,7 +71,7 @@ parser.add_argument('-o', '--output-dir', type=str, default=None,
 parser.add_argument('-e', '--executor', type=str, default='thread', choices=['thread', 'process'],
                     help='the parallel executor for training the surrogate. Options are `thread` or `process`. '
                          'Default to `thread`.')
-parser.add_argument('-w', '--max-workers', type=int, default=None,
+parser.add_argument('-w', '--fit-cpus', type=int, default=None,
                     help='the maximum number of workers to use for parallel processing. Defaults to using max'
                          'number of available CPUs.')
 parser.add_argument('-d', '--discard-outliers', action='store_true', default=False,
@@ -90,6 +92,8 @@ parser.add_argument('-n', '--save-interval', type=int, default=10,
                     help='the interval to save the surrogate during training. Defaults to 10.')
 parser.add_argument('-p', '--pdf', action='store_true', default=False,
                     help='whether to use variable PDF weighting during training. Defaults to False.')
+parser.add_argument('-C', '--cache-interval', type=int, default=0,
+                    help='the interval to cache component training data during training. Defaults to 0 (no caching).')
 
 args, _ = parser.parse_known_args()
 
@@ -259,10 +263,11 @@ if __name__ == '__main__':
             test_set = ({k: v[~discard_idx, ...] for k, v in data['test_set'][0].items()},
                         {k: v[~discard_idx, ...] for k, v in data['test_set'][1].items()})
 
-    with pool_executor(max_workers=args.max_workers) as executor:
+    with pool_executor(max_workers=args.fit_cpus) as executor:
         fit_kwargs = {'runtime_hr': args.runtime_hr, 'max_iter': args.max_iter, 'targets': args.targets,
                       'save_interval': args.save_interval, 'max_tol': args.max_tol, 'test_set': test_set,
-                      'executor': executor, 'weight_fcns': None if not args.pdf else 'pdf'}
+                      'executor': executor, 'weight_fcns': None if not args.pdf else 'pdf',
+                      'cache_interval': args.cache_interval}
         train_surrogate(system, fidelity=args.fidelity, **fit_kwargs)
 
     system.logger.info(f'Surrogate training complete. Output directory: {base_dir}')
