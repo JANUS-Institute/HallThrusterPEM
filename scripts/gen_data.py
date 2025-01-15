@@ -16,7 +16,7 @@ OPTIONS:
         If not specified as an 'amisc_{timestamp}' directory, a new directory will be created.
 -e, --executor=thread
         the parallel executor for evaluating the models. Options are `thread` or `process`. Defaults to `thread`.
--w, --max-workers
+-w, --gen-cpus
         the maximum number of workers to use for parallel processing. Defaults to using max available CPUs.
 -d, --discard-outliers
         whether to discard outliers from the compression and test set data. Defaults to False.
@@ -65,7 +65,7 @@ parser.add_argument('-o', '--output-dir', type=str, default=None,
 parser.add_argument('-e', '--executor', type=str, default='thread', choices=['thread', 'process'],
                     help='the parallel executor for evaluating the models. Options are `thread` or `process`. '
                          'Default to `thread`.')
-parser.add_argument('-w', '--max-workers', type=int, default=None,
+parser.add_argument('-w', '--gen-cpus', type=int, default=None,
                     help='the maximum number of workers to use for parallel processing. Defaults to using max'
                          'number of available CPUs.')
 parser.add_argument('-d', '--discard-outliers', action='store_true', default=False,
@@ -448,7 +448,7 @@ if __name__ == '__main__':
         case _:
             raise ValueError(f"Unsupported executor type: {args.executor}")
 
-    with pool_executor(max_workers=args.max_workers) as executor:
+    with pool_executor(max_workers=args.gen_cpus) as executor:
         compression_data = generate_data(system, 'compression', num_samples=args.compression_samples,
                                          executor=executor, verbose=True, iqr_factor=args.iqr_factor)
         test_set_data = generate_data(system, 'test_set', num_samples=args.test_samples,
