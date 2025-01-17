@@ -1,0 +1,13 @@
+The overarching goal of this software package is summarized by the abstract:
+
+> We study the analysis and refinement of a predictive engineering model for enabling rapid prediction of Hall thruster system performance across a range of operating and environmental conditions and epistemic and aleatoric uncertainties. In particular, we describe an approach by which experimentally-observed facility effects are assimilated into the model, with a specific focus on facility background pressure. We propose a multifidelity, multidisciplinary approach for Bayesian calibration of an integrated system comprised of a set of component models. Furthermore, we perform uncertainty quantification over the calibrated model to assess the effects of epistemic and aleatoric uncertainty. This approach is realized on a coupled system of cathode, thruster, and plume models that predicts global quantities of interest (QoIs) such as thrust, efficiency, and discharge current as a function of operating conditions such as discharge voltage, mass flow rate, and background chamber pressure. As part of the calibration and prediction, we propose a number of metrics for assessing predictive model quality. Based on these metrics, we found that our proposed framework produces a calibrated model that is more accurate, sometimes by an order of magnitude, than engineering models using nominal parameters found in the literature. We also found for many QoIs that the remaining uncertainty was not sufficient to account for discrepancy with experimental data, and that existing models for facility effects do not sufficiently capture experimental trends. Finally, we confirmed through a global sensitivity analysis the prior intuition that anomalous transport dominates model uncertainty, and we conclude by suggesting several paths for future model improvement. We envision that the proposed metrics and procedures can guide the refinement of future model development activities.
+>
+> - [Eckels et al 2024](https://rdcu.be/dVmim)
+
+Our first iteration of this framework comes in the form of the three-component feedforward system illustrated below:
+
+![The three-component feedforward Hall thruster model](https://raw.githubusercontent.com/JANUS-Institute/HallThrusterPEM/refs/heads/main/docs/assets/pem_v0.svg)
+
+**Fig 1.** The three-component feedforward Hall thruster model (Eckels et al 2024).
+
+This software package provides the testbench for rapid iteration and improvement of Hall thruster models in this multidisciplinary framework. Please see the [scripts](https://github.com/JANUS-Institute/HallThrusterPEM/blob/main/scripts) folder for our current progress. Please see the journal paper for specific details on the theory and background of the models and methods.

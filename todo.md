@@ -1,22 +1,15 @@
-sketch out an OO design (keep data-parsing internal for now, but could be its own janus repo later)
-  - mc, mcmc, sa, models, data, etc.
-  - easy to version, deploy, test new PEMs
-
-- clean up data API
+## To do
+- clean up data API (make consistent with device API)
 - clean up UQ scripts for v0
-
 - add H9 check
 - upload to pypi
-- update readme install, quickstart, project structure
-- clean up docstrings and reference/theory docs
+- documentation
 
-OO design
+## Notes on Data API
 - Have a "Data" class that the hallmd testing framework knows how to work with
 - Have a "Model" class similarly
 - Have an "Analysis" class that knows how to combine "Model" and "Data"
 - seems like we'll need to define a common file format for each qoi used by the model, and experiments should write a processing script that gets their raw data into that format -- should keep/record all raw data, processing scripts, notes on processing (README), as well as other metadata
-
-Data details
 - base Data - has units, name, measurement values, coords, metadata, uncertainty, operating conditions
 - implementing Data classes (i.e. ThrusterData) would require a set of operating conditions
 - Have a base "Dataloader" class that transforms raw file data into "Data" classes
@@ -27,10 +20,9 @@ Data details
 - how would you handle the same qoi measured for different operating conditions (or even different metadata details)
 - how would you handle time-resolved data
 - how would you have a single file format for multiple qois or "Data" types
-- would it be better so that people define a dataloader _per_ dataset (so they write a wrapper to load their own format into the common "Data") 
+- would it be better so that people define a dataloader _per_ dataset (so they write a wrapper to load their own format into the common "Data")
   - this would suck, better to have a single interface and people can translate their data to the format (so long as the interface is designed well)
 - should you group "Data" by experiment/sweep/time or paper where it was recorded?
-
 - what should a single "Data" be responsible for
 - what should a single datafile be responsible for in the most generally useful way
 
@@ -50,7 +42,7 @@ Experiments would like:
 - Grouped by experiment/datafile -- all files from the same day/test/campaign in one location
 
 Questions:
-- walk me through a typical experiment or test campaign (how long, how much data, etc.)
+- typical experiment or test campaign (how long, how much data, etc.)
 - how do you record data? proprietary binary formats or text/csv ? By-hand or automatic from logger?
 - What operating conditions do you record/measure and their uncertainties
 - What qois do you record/measure and their uncertainties?
@@ -65,7 +57,7 @@ Sean clark (UIUC)
 Janice Cabrerra (GT)
 - csv for everything (1d sweeps)
 - only 5-ish operating conditions (3 pressures)
-- no lif, mostly thrust, Id, jion 
+- no lif, mostly thrust, Id, jion
 
 Madison (UM)
 - pressure, two ion gauges on a DAQ save every second or 100 ms, one on the wall, one a meter from the front of thruster and 1m behind, Phillips MKS (same as GT)

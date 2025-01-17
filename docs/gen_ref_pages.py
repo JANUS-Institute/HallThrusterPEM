@@ -23,7 +23,7 @@ for path in sorted(src.rglob("*.py")):
     doc_path = path.relative_to(src).with_suffix(".md")
     module_parts = tuple(module_path.parts)
 
-    if module_parts[-1] == '__main__.py':
+    if module_parts[-1] in ['__main__.py', 'dataloader.py']:
         continue
 
     # Construct doc navigation path based on src directory layout

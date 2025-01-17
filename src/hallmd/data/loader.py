@@ -1,9 +1,7 @@
-""" `loader.py`
+"""Module for loading experimental data for specific thrusters.
 
-Module for loading experimental data for specific thrusters.
+Includes:
 
-Includes
---------
 - `spt100_data()` - loads data for the SPT-100
 
 !!! Info "Loading raw data"

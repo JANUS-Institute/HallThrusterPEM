@@ -1,9 +1,9 @@
-site_name: Multidisciplinary Hall thruster modeling
+site_name: Hall thruster PEM
 site_url: https://JANUS-Institute.github.io/HallThrusterPEM/
 site_author: Joshua Eckels
 repo_name: JANUS-Institute/HallThrusterPEM
 repo_url: https://github.com/JANUS-Institute/HallThrusterPEM
-copyright: Copyright &copy 2024 Joshua Eckels
+copyright: Copyright &copy 2025 <a href="https://januselectricpropulsion.com/">JANUS Institute</a>
 watch: [mkdocs.yml, README.md, CONTRIBUTING.md, CHANGELOG.md, src]
 
 theme:
@@ -88,7 +88,6 @@ nav:
       - Coverage report: coverage.md
       - Changelog: changelog.md
   - How-to Guides:
-      - Old: guides/how-to-guides.md
       - Load experimental data: guides/data.md
       - Run a Hall thruster model: guides/model.md
       - Build a surrogate: guides/surrogate.md
@@ -96,15 +95,12 @@ nav:
       - Validate a model: guides/validate.md
   - API reference: reference/  # literate-nav + gen-files
   - Theory:
-      - Experimental data:
-          - Summary: theory/data.md
-          - SPT-100: theory/spt100.md
-      - Models:
-          - Summary: theory/models.md
+      - Summary: theory/summary.md
 
 exclude_docs: |
   abbreviations.md
   gen_ref_pages.py
+  TODOC.md
 
 extra:
   social:
