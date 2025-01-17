@@ -11,23 +11,23 @@ Includes:
 - `get_jl_env` - Get the path of the julia environment created for HallThruster.jl for a specific git ref
 - `PEM_TO_JULIA` - Mapping of PEM variable names to a path in the HallThruster.jl input/output structure (defaults)
 """
-import subprocess
-import warnings
-from importlib import resources
-from pathlib import Path
-import time
 import copy
 import json
-import tempfile
 import os
 import random
 import string
-from typing import Literal, Callable
+import subprocess
+import tempfile
+import time
+import warnings
+from importlib import resources
+from pathlib import Path
+from typing import Callable, Literal
 
 import numpy as np
 from amisc.typing import Dataset
 
-from hallmd.utils import load_device, FUNDAMENTAL_CHARGE, MOLECULAR_WEIGHTS, AVOGADRO_CONSTANT
+from hallmd.utils import AVOGADRO_CONSTANT, FUNDAMENTAL_CHARGE, MOLECULAR_WEIGHTS, load_device
 
 __all__ = ['run_hallthruster_jl', 'hallthruster_jl', 'get_jl_env', 'PEM_TO_JULIA']
 
@@ -228,7 +228,7 @@ def run_hallthruster_jl(json_input: dict | str | Path, jl_env: str | Path = None
                         **kwargs) -> dict:
     """Python wrapper for `HallThruster.run_simulation(json_input)` in Julia.
 
-    :param json_input: either a dictionary containing `config`, `simulation`, and `postprocess` options for 
+    :param json_input: either a dictionary containing `config`, `simulation`, and `postprocess` options for
             HallThruster.jl, or a string/Path containing a path to a JSON file with those inputs.
     :param jl_env: The julia environment containing HallThruster.jl. Defaults to global Julia environment.
     :param jl_script: path to a custom Julia script to run. The script should accept the input json file path as

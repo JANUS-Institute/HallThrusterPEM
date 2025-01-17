@@ -2,10 +2,10 @@
 # It is not intended for manual editing.
 
 [metadata]
-groups = ["default", "dev", "doc", "editable", "mpi", "scripts", "test"]
+groups = ["default", "dev", "doc", "mpi", "scripts", "test"]
 strategy = ["inherit_metadata"]
 lock_version = "4.5.0"
-content_hash = "sha256:14105efae6b29d37c79034cd53af6e7c794a72115aae0f900924a7999039cbb4"
+content_hash = "sha256:38b60aecfdc5ba173de673bf30ce3d66a912164927045e103a4d2904cd5ffce9"
 
 [[metadata.targets]]
 requires_python = ">=3.11"
@@ -14,10 +14,8 @@ requires_python = ">=3.11"
 name = "amisc"
 version = "0.7.0"
 requires_python = ">=3.11"
-editable = true
-path = "../amisc"
 summary = "Efficient framework for building surrogates of multidisciplinary systems using the adaptive multi-index stochastic collocation (AMISC) technique."
-groups = ["default", "editable"]
+groups = ["default"]
 dependencies = [
     "dill>=0.3.9",
     "matplotlib>=3.9",
@@ -27,13 +25,17 @@ dependencies = [
     "pyyaml>=6.0.2",
     "scipy>=1.14",
 ]
+files = [
+    {file = "amisc-0.7.0-py3-none-any.whl", hash = "sha256:b0d5c1ae1c89e8f48a3ddd55d5c12ce606cf96951649d330869037728038dc46"},
+    {file = "amisc-0.7.0.tar.gz", hash = "sha256:7eb7fc05fac50c7a898729f3b878f2a1440d78ff85c5e042da835480c59a4d99"},
+]
 
 [[package]]
 name = "annotated-types"
 version = "0.7.0"
 requires_python = ">=3.8"
 summary = "Reusable constraint types to use with typing.Annotated"
-groups = ["default", "dev", "editable"]
+groups = ["default", "dev"]
 dependencies = [
     "typing-extensions>=4.0.0; python_version < \"3.9\"",
 ]
@@ -206,7 +208,7 @@ name = "contourpy"
 version = "1.3.1"
 requires_python = ">=3.10"
 summary = "Python library for calculating contours of 2D quadrilateral grids"
-groups = ["default", "editable", "scripts"]
+groups = ["default", "scripts"]
 dependencies = [
     "numpy>=1.23",
 ]
@@ -404,7 +406,7 @@ name = "cycler"
 version = "0.12.1"
 requires_python = ">=3.8"
 summary = "Composable style cycles"
-groups = ["default", "editable", "scripts"]
+groups = ["default", "scripts"]
 files = [
     {file = "cycler-0.12.1-py3-none-any.whl", hash = "sha256:85cef7cff222d8644161529808465972e51340599459b8ac3ccbac5a854e0d30"},
     {file = "cycler-0.12.1.tar.gz", hash = "sha256:88bb128f02ba341da8ef447245a9e138fae777f6a23943da4540077d3601eb1c"},
@@ -426,7 +428,7 @@ name = "dill"
 version = "0.3.9"
 requires_python = ">=3.8"
 summary = "serialize all of Python"
-groups = ["default", "editable"]
+groups = ["default"]
 files = [
     {file = "dill-0.3.9-py3-none-any.whl", hash = "sha256:468dff3b89520b474c0397703366b7b95eebe6303f108adf9b19da1f702be87a"},
     {file = "dill-0.3.9.tar.gz", hash = "sha256:81aa267dddf68cbfe8029c42ca9ec6a4ab3b22371d1c450abc54422577b4512c"},
@@ -483,7 +485,7 @@ name = "fonttools"
 version = "4.55.3"
 requires_python = ">=3.8"
 summary = "Tools to manipulate font files"
-groups = ["default", "editable", "scripts"]
+groups = ["default", "scripts"]
 files = [
     {file = "fonttools-4.55.3-cp311-cp311-macosx_10_9_universal2.whl", hash = "sha256:8c4491699bad88efe95772543cd49870cf756b019ad56294f6498982408ab03e"},
     {file = "fonttools-4.55.3-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:5323a22eabddf4b24f66d26894f1229261021dacd9d29e89f7872dd8c63f0b8b"},
@@ -567,7 +569,7 @@ files = [
 
 [[package]]
 name = "griffe"
-version = "1.5.4"
+version = "1.5.5"
 requires_python = ">=3.9"
 summary = "Signatures for entire Python programs. Extract the structure, the frame, the skeleton of your project, to generate API documentation or find breaking changes in your API."
 groups = ["doc"]
@@ -576,8 +578,8 @@ dependencies = [
     "colorama>=0.4",
 ]
 files = [
-    {file = "griffe-1.5.4-py3-none-any.whl", hash = "sha256:ed33af890586a5bebc842fcb919fc694b3dc1bc55b7d9e0228de41ce566b4a1d"},
-    {file = "griffe-1.5.4.tar.gz", hash = "sha256:073e78ad3e10c8378c2f798bd4ef87b92d8411e9916e157fd366a17cc4fd4e52"},
+    {file = "griffe-1.5.5-py3-none-any.whl", hash = "sha256:2761b1e8876c6f1f9ab1af274df93ea6bbadd65090de5f38f4cb5cc84897c7dd"},
+    {file = "griffe-1.5.5.tar.gz", hash = "sha256:35ee5b38b93d6a839098aad0f92207e6ad6b70c3e8866c08ca669275b8cba585"},
 ]
 
 [[package]]
@@ -723,7 +725,7 @@ name = "kiwisolver"
 version = "1.4.8"
 requires_python = ">=3.10"
 summary = "A fast implementation of the Cassowary constraint solver"
-groups = ["default", "editable", "scripts"]
+groups = ["default", "scripts"]
 files = [
     {file = "kiwisolver-1.4.8-cp311-cp311-macosx_10_9_universal2.whl", hash = "sha256:a4d3601908c560bdf880f07d94f31d734afd1bb71e96585cace0e38ef44c6d84"},
     {file = "kiwisolver-1.4.8-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:856b269c4d28a5c0d5e6c1955ec36ebfd1651ac00e1ce0afa3e28da95293b561"},
@@ -885,7 +887,7 @@ name = "matplotlib"
 version = "3.10.0"
 requires_python = ">=3.10"
 summary = "Python plotting package"
-groups = ["default", "editable", "scripts"]
+groups = ["default", "scripts"]
 dependencies = [
     "contourpy>=1.0.1",
     "cycler>=0.10",
@@ -1224,7 +1226,7 @@ name = "networkx"
 version = "3.4.2"
 requires_python = ">=3.10"
 summary = "Python package for creating and manipulating graphs and networks"
-groups = ["default", "editable"]
+groups = ["default"]
 files = [
     {file = "networkx-3.4.2-py3-none-any.whl", hash = "sha256:df5d4365b724cf81b8c6a7312509d0c22386097011ad1abe274afd5e9d3bbc5f"},
     {file = "networkx-3.4.2.tar.gz", hash = "sha256:307c3669428c5362aab27c8a1260aa8f47c4e91d3891f48be0141738d8d053e1"},
@@ -1246,7 +1248,7 @@ name = "numpy"
 version = "2.2.1"
 requires_python = ">=3.10"
 summary = "Fundamental package for array computing in Python"
-groups = ["default", "editable", "scripts"]
+groups = ["default", "scripts"]
 files = [
     {file = "numpy-2.2.1-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:40f9e544c1c56ba8f1cf7686a8c9b5bb249e665d40d626a23899ba6d5d9e1484"},
     {file = "numpy-2.2.1-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:f9b57eaa3b0cd8db52049ed0330747b0364e899e8a606a624813452b8203d5f7"},
@@ -1296,7 +1298,7 @@ name = "packaging"
 version = "24.2"
 requires_python = ">=3.8"
 summary = "Core utilities for Python packages"
-groups = ["default", "dev", "doc", "editable", "scripts", "test"]
+groups = ["default", "dev", "doc", "scripts", "test"]
 files = [
     {file = "packaging-24.2-py3-none-any.whl", hash = "sha256:09abb1bccd265c01f4a3aa3f7a7db064b36514d2cba19a2f694fe6150451a759"},
     {file = "packaging-24.2.tar.gz", hash = "sha256:c228a6dc5e932d346bc5739379109d49e8853dd8223571c7c5b55260edc0b97f"},
@@ -1328,7 +1330,7 @@ name = "pillow"
 version = "11.1.0"
 requires_python = ">=3.9"
 summary = "Python Imaging Library (Fork)"
-groups = ["default", "editable", "scripts"]
+groups = ["default", "scripts"]
 files = [
     {file = "pillow-11.1.0-cp311-cp311-macosx_10_10_x86_64.whl", hash = "sha256:e06695e0326d05b06833b40b7ef477e475d0b1ba3a6d27da1bb48c23209bf457"},
     {file = "pillow-11.1.0-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:96f82000e12f23e4f29346e42702b6ed9a2f2fea34a740dd5ffffcc8c539eb35"},
@@ -1448,7 +1450,7 @@ name = "pydantic"
 version = "2.10.5"
 requires_python = ">=3.8"
 summary = "Data validation using Python type hints"
-groups = ["default", "dev", "editable"]
+groups = ["default", "dev"]
 dependencies = [
     "annotated-types>=0.6.0",
     "pydantic-core==2.27.2",
@@ -1464,7 +1466,7 @@ name = "pydantic-core"
 version = "2.27.2"
 requires_python = ">=3.8"
 summary = "Core functionality for Pydantic validation and serialization"
-groups = ["default", "dev", "editable"]
+groups = ["default", "dev"]
 dependencies = [
     "typing-extensions!=4.7.0,>=4.6.0",
 ]
@@ -1559,7 +1561,7 @@ name = "pyparsing"
 version = "3.2.1"
 requires_python = ">=3.9"
 summary = "pyparsing module - Classes and methods to define and execute parsing grammars"
-groups = ["default", "editable", "scripts"]
+groups = ["default", "scripts"]
 files = [
     {file = "pyparsing-3.2.1-py3-none-any.whl", hash = "sha256:506ff4f4386c4cec0590ec19e6302d3aedb992fdc02c761e90416f158dacf8e1"},
     {file = "pyparsing-3.2.1.tar.gz", hash = "sha256:61980854fd66de3a90028d679a954d5f2623e83144b5afe5ee86f43d762e5f0a"},
@@ -1604,7 +1606,7 @@ name = "python-dateutil"
 version = "2.9.0.post0"
 requires_python = "!=3.0.*,!=3.1.*,!=3.2.*,>=2.7"
 summary = "Extensions to the standard Python datetime module"
-groups = ["default", "doc", "editable", "scripts"]
+groups = ["default", "doc", "scripts"]
 dependencies = [
     "six>=1.5",
 ]
@@ -1646,7 +1648,7 @@ name = "pyyaml"
 version = "6.0.2"
 requires_python = ">=3.8"
 summary = "YAML parser and emitter for Python"
-groups = ["default", "dev", "doc", "editable"]
+groups = ["default", "dev", "doc"]
 files = [
     {file = "PyYAML-6.0.2-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:cc1c1159b3d456576af7a3e4d1ba7e6924cb39de8f67111c735f6fc832082774"},
     {file = "PyYAML-6.0.2-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:1e2120ef853f59c7419231f3bf4e7021f1b936f6ebd222406c3b60212205d2ee"},
@@ -1708,17 +1710,18 @@ files = [
 
 [[package]]
 name = "referencing"
-version = "0.35.1"
-requires_python = ">=3.8"
+version = "0.36.0"
+requires_python = ">=3.9"
 summary = "JSON Referencing + Python"
 groups = ["dev"]
 dependencies = [
     "attrs>=22.2.0",
     "rpds-py>=0.7.0",
+    "typing-extensions; python_version < \"3.13\"",
 ]
 files = [
-    {file = "referencing-0.35.1-py3-none-any.whl", hash = "sha256:eda6d3234d62814d1c64e305c1331c9a3a6132da475ab6382eaa997b21ee75de"},
-    {file = "referencing-0.35.1.tar.gz", hash = "sha256:25b42124a6c8b632a425174f24087783efb348a6f1e0008e63cd4466fedf703c"},
+    {file = "referencing-0.36.0-py3-none-any.whl", hash = "sha256:01fc2916bab821aa3284d645bbbb41ba39609e7ff47072416a39ec2fb04d10d9"},
+    {file = "referencing-0.36.0.tar.gz", hash = "sha256:246db964bb6101905167895cd66499cfb2aabc5f83277d008c52afe918ef29ba"},
 ]
 
 [[package]]
@@ -1887,7 +1890,7 @@ name = "scipy"
 version = "1.15.1"
 requires_python = ">=3.10"
 summary = "Fundamental algorithms for scientific computing in Python"
-groups = ["default", "editable", "scripts"]
+groups = ["default", "scripts"]
 dependencies = [
     "numpy<2.5,>=1.23.5",
 ]
@@ -1931,7 +1934,7 @@ name = "six"
 version = "1.17.0"
 requires_python = "!=3.0.*,!=3.1.*,!=3.2.*,>=2.7"
 summary = "Python 2 and 3 compatibility utilities"
-groups = ["default", "doc", "editable", "scripts"]
+groups = ["default", "doc", "scripts"]
 files = [
     {file = "six-1.17.0-py2.py3-none-any.whl", hash = "sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274"},
     {file = "six-1.17.0.tar.gz", hash = "sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81"},
@@ -2000,7 +2003,7 @@ name = "typing-extensions"
 version = "4.12.2"
 requires_python = ">=3.8"
 summary = "Backported and Experimental Type Hints for Python 3.8+"
-groups = ["default", "dev", "editable"]
+groups = ["default", "dev"]
 files = [
     {file = "typing_extensions-4.12.2-py3-none-any.whl", hash = "sha256:04e5ca0351e0f3f85c6853954072df659d0d13fac324d0072316b67d7794700d"},
     {file = "typing_extensions-4.12.2.tar.gz", hash = "sha256:1a7ead55c7e559dd4dee8856e3a88b41225abfe1ce8df57b7c13915fe121ffb8"},
