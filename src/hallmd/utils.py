@@ -3,8 +3,6 @@
 Includes:
 
 - `load_device()` - Load a device configuration from the `hallmd.devices` directory.
-- `data_write()` - Convenience function for writing .json data to file.
-- `plot_qoi()` - Convenience plotting tool for showing QoI with UQ bounds
 """
 import json
 import os
@@ -47,12 +45,13 @@ def load_device(device_name: str, device_file: str = 'device.yml', device_dir: s
     be converted to an absolute path.
 
     !!! Example "Loading a device configuration"
-    Currently, the only provided device configuration is for the SPT-100 thruster.
-    ```python
-    from hallmd.utils import load_device
+        Currently, the only provided device configuration is for the SPT-100 thruster.
+        ```python
+        from hallmd.utils import load_device
 
-    device = load_device('SPT-100')
-    ```
+        device = load_device('SPT-100')
+        ```
+
     You may put custom configurations in the `hallmd.devices` directory or specify a custom directory with a custom
     configuration file:
     ```yaml
@@ -61,7 +60,8 @@ def load_device(device_name: str, device_file: str = 'device.yml', device_dir: s
       channel_length: 1
       inner_radius: 2
       outer_radius: 3
-    magnetic_field: bfield.csv
+    magnetic_field:
+      file: bfield.csv
     shielded: false
     ```
 

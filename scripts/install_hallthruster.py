@@ -17,8 +17,6 @@ from pathlib import Path
 
 from packaging.version import Version
 
-from hallmd.models.thruster import get_jl_env
-
 
 ENV = os.environ.copy()
 PLATFORM = platform.system().lower()
@@ -26,6 +24,16 @@ JULIA_VERSION_DEFAULT = "1.10"
 HALLTHRUSTER_VERSION_DEFAULT = "0.18.1"
 HALLTHRUSTER_URL = "https://github.com/UM-PEPL/HallThruster.jl"
 HALLTHRUSTER_NAME = "HallThruster"
+
+
+def get_jl_env(git_ref: str) -> Path:
+    """Get the path of the julia environment created for HallThruster.jl for a specific git ref.
+
+    :param git_ref: The git ref (i.e. commit hash, version tag, branch, etc.) of HallThruster.jl to use.
+    """
+    global_env_dir = Path('~/.julia/environments/').expanduser()
+    env_path = global_env_dir / f"hallthruster_{git_ref}"
+    return env_path
 
 
 def run_command(command, capture_output=True, text=None, shell=False, env=None):

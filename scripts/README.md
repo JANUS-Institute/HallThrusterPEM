@@ -2,7 +2,7 @@ This directory is used for running UQ analysis on different PEM configurations a
 
 ## Predictive engineering models (PEM)
 
-We define a "PEM" as a set of coupled component models that predicts global performance metrics and quantities of interest (QoIs), such as thrust, ion velocity, and efficiency, as a function of global inputs, such as discharge voltage, mass flow rate, and background chamber pressure. 
+We define a "PEM" as a set of coupled component models that predicts global performance metrics and quantities of interest (QoIs), such as thrust, ion velocity, and efficiency, as a function of global inputs, such as discharge voltage, mass flow rate, and background chamber pressure.
 
 We currently define two PEM configurations:
 
@@ -11,7 +11,7 @@ We currently define two PEM configurations:
 
 See the corresponding directories for config files and analysis scripts.
 
-A PEM must define the sets of parameters and ranges over which it seeks to be applicable. Any significant change to the parameters, underlying models, or the addition of new models or parameters would warrant a new "pem_vXX" directory for analysis. The underlying models themselves (rather than the specific parameters or configurations) should be maintained in the `src/hallmd` Python package. The `hallmd` package also maintains devices, experimental data, and utility functions for each.
+A PEM must define the sets of parameters and ranges over which it seeks to be applicable. Any significant change to the parameters, underlying models, or the addition of new models or parameters would warrant a new "pem_vXX" directory for analysis. The underlying models themselves (rather than the specific parameters or configurations) are maintained in the `src/hallmd` Python package by convention. The `hallmd` package also maintains devices, experimental data, and utility functions for each.
 
 ## Scripts
 There are a few general scripts that can be used for any PEM configuration:
@@ -19,13 +19,13 @@ There are a few general scripts that can be used for any PEM configuration:
 ### Environment setup
 Installs `pdm` and the `hallmd` package. Also installs Julia and `HallThruster.jl`.
 ```shell
-source setup_env.sh --hallthruster-version=0.17.2 --julia-version=1.10
+source setup_env.sh --hallthruster-version=0.18.1 --julia-version=1.10
 ```
 
 ### Train a surrogate
 Loads a surrogate configuration from file, generates compression and test set data, trains the surrogate, and plots diagnostics.
 ```shell
-./train.sh pem_v0/pem_v0_SPT-100.yml --compression_samples=100 --test_samples=100 --max_iter=100 --executor=thread
+./train.sh pem_v0/pem_v0_SPT-100.yml --compression_samples=100 --test_samples=100 --max_iter=100 --executor=process
 ```
 
 ## PEM analysis procedure

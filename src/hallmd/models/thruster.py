@@ -31,6 +31,7 @@ from hallmd.utils import AVOGADRO_CONSTANT, FUNDAMENTAL_CHARGE, MOLECULAR_WEIGHT
 
 __all__ = ['run_hallthruster_jl', 'hallthruster_jl', 'get_jl_env', 'PEM_TO_JULIA']
 
+HALLTHRUSTER_VERSION_DEFAULT = "0.18.1"
 
 # Maps PEM variable names to a path in the HallThruster.jl input/output structure (default values here)
 with open(resources.files('hallmd.models') / 'pem_to_julia.json', 'r') as fd:
@@ -309,14 +310,14 @@ def run_hallthruster_jl(json_input: dict | str | Path, jl_env: str | Path = None
     return output_data
 
 
-def hallthruster_jl(thruster_inputs: Dataset,
+def hallthruster_jl(thruster_inputs: Dataset = None,
                     thruster: Literal['SPT-100'] | str | dict = 'SPT-100',
                     config: dict = None,
                     simulation: dict = None,
                     postprocess: dict = None,
                     model_fidelity: tuple = (2, 2),
                     output_path: str | Path = None,
-                    version: str = None,
+                    version: str = HALLTHRUSTER_VERSION_DEFAULT,
                     pem_to_julia: dict = 'default',
                     fidelity_function: Callable[[tuple[int, ...]], dict] = 'default',
                     julia_script: str | Path = None,
@@ -333,7 +334,7 @@ def hallthruster_jl(thruster_inputs: Dataset,
         The mass flow rate and discharge voltage are specified in `thruster_inputs` as `mdot_a` (kg/s) and
         `V_a` (V), respectively. The domain is specified as a list `[left_bound, right_bound]` in the
         `config` dictionary. See the
-        [HallThruster.jl docs](https://um-pepl.github.io/HallThruster.jl/stable/config/) for more details.
+        [HallThruster.jl docs](https://um-pepl.github.io/HallThruster.jl/dev/reference/config/) for more details.
 
     :param thruster_inputs: named key-value pairs of thruster inputs: `P_b`, `V_a`, `mdot_a`, `T_e`, `u_n`, `l_t`,
                             `a_1`, `a_2`, `delta_z`, `z0`, `p0`, and `V_cc` for background pressure (Torr), anode
@@ -343,10 +344,11 @@ def hallthruster_jl(thruster_inputs: Dataset,
     :param thruster: the name of the thruster to simulate (must be importable from `hallmd.devices`, see
                      [`load_device`][hallmd.utils.load_device]), or a dictionary that provides geometry and
                      magnetic field information of the thruster to simulate; see the
-                     [Hallthruster.jl docs](https://um-pepl.github.io/HallThruster.jl/dev/run/). Will override
-                     `thruster` in `config` if provided. If None, will defer to `config`. Defaults to the SPT-100.
+                     [Hallthruster.jl docs](https://um-pepl.github.io/HallThruster.jl/dev/tutorials/simulation//run/).
+                     Will override `thruster` in `config` if provided. If None, will defer to `config`.
+                     Defaults to the SPT-100.
     :param config: dictionary of configs for `HallThruster.jl`, see the
-                   [Hallthruster.jl docs](https://um-pepl.github.io/HallThruster.jl/stable/config/) for
+                   [Hallthruster.jl docs](https://um-pepl.github.io/HallThruster.jl/dev/reference/config/) for
                    options and formatting.
     :param simulation: dictionary of simulation parameters for `HallThruster.jl`
     :param postprocess: dictionary of post-processing parameters for `Hallthruster.jl`
@@ -354,7 +356,7 @@ def hallthruster_jl(thruster_inputs: Dataset,
                            via `ncells = model_fidelity[0] * 50 + 100` and `ncharge = model_fidelity[1] + 1`.
                            Will override `ncells` and `ncharge` in `simulation` and `config` if provided.
     :param output_path: base path to save output files, will write to current directory if not specified
-    :param version: version of HallThruster.jl to use (defaults to whatever is installed in global julia env); will
+    :param version: version of HallThruster.jl to use (defaults to 0.18.1); will
                     search for a global `hallthruster_{version}` environment in the `~/.julia/environments/` directory.
                     Can also specify a specific git ref (i.e. branch, commit hash, etc.) to use from GitHub. If the
                     `hallthruster_{version}` environment does not exist, an error will be raised -- you should create
@@ -382,6 +384,8 @@ def hallthruster_jl(thruster_inputs: Dataset,
         tmp = copy.deepcopy(PEM_TO_JULIA)
         tmp.update(pem_to_julia)
         pem_to_julia = tmp
+
+    thruster_inputs = thruster_inputs or {}
 
     # Format PEM inputs for HallThruster.jl
     json_data = _format_hallthruster_jl_input(thruster_inputs, thruster=thruster, config=config, simulation=simulation,

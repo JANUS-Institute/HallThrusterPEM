@@ -12,7 +12,7 @@
 Prototype of a predictive engineering model (PEM) of a Hall thruster. Integrates sub-models from multiple disciplines to simulate a Hall thruster operating in a vacuum chamber. Uses uncertainty quantification techniques to extrapolate model predictions to a space-like environment.
 
 ## ⚙️ Installation
-Using [pdm](https://github.com/pdm-project/pdm):
+Ensure you are using Python 3.11 or later. You can install using [pdm](https://github.com/pdm-project/pdm):
 ```shell
 pip install --user pdm
 git clone https://github.com/JANUS-Institute/HallThrusterPEM.git  # or download the source from releases
@@ -20,85 +20,68 @@ cd HallThrusterPEM
 pdm install --prod
 ```
 
-`hallmd` uses the [`HallThruster.jl`](https://github.com/UM-PEPL/HallThruster.jl) Julia package. Please see their docs for setting up Julia and installing. Alternatively, you may run the provided [install script](https://raw.githubusercontent.com/JANUS-Institute/HallThrusterPEM/main/install_hallthruster.py), which will install both Julia and `HallThruster.jl`.
+`hallmd` uses the [`HallThruster.jl`](https://github.com/UM-PEPL/HallThruster.jl) Julia package. Please see their docs for setting up Julia and installing. Alternatively, you may run the provided [install script](https://raw.githubusercontent.com/JANUS-Institute/HallThrusterPEM/refs/heads/main/scripts/install_hallthruster.py), which will install both Julia and `HallThruster.jl`.
 
 Assuming `python` is available on your path:
 
-=== Linux/Mac
+=== "Linux/Mac"
     ```shell
-    curl -sSL https://raw.githubusercontent.com/JANUS-Institute/HallThrusterPEM/main/install_hallthruster.py | python -
+    curl -sSL https://raw.githubusercontent.com/JANUS-Institute/HallThrusterPEM/refs/heads/main/scripts/install_hallthruster.py | python -
     ```
 
-=== Windows
+=== "Windows"
     ```shell
-    powershell -c "Invoke-WebRequest -Uri https://raw.githubusercontent.com/JANUS-Institute/HallThrusterPEM/main/install_hallthruster.py | python -"
+    powershell -c "Invoke-WebRequest -Uri https://raw.githubusercontent.com/JANUS-Institute/HallThrusterPEM/refs/heads/main/scripts/install_hallthruster.py | python -"
     ```
 
 ## 📍 Quickstart
 ```python
-import numpy as np
 import matplotlib.pyplot as plt
 
-from hallmd.models.pem import pem_v0
-from hallmd.data.loader import spt100_data
-from hallmd.utils import plot_qoi
+from hallmd.models import hallthruster_jl
 
-system = pem_v0()
-system.fit(max_iter=10)
 
-# Show model predictions vs experimental thrust data
-data = spt100_data(['T'])[0]
-inputs = data['x']  # Pressure, Anode voltage, Anode mass flow rate
-Nx, num_samples = inputs.shape[0], 100
-xs = np.zeros((Nx, num_samples, len(system.exo_vars)))
+config = {
+    'discharge_voltage': 300,
+    'anode_mass_flow_rate': 5e-6,
+    'background_pressure_Torr': 1e-5,
+    'propellant': 'Xenon',
+    'domain': [0, 0.08]
+}
 
-for i in range(Nx):
-    nominal = dict(PB=inputs[i, 0], Va=inputs[i, 1], mdot_a=inputs[i, 2])
-    xs[i, :, :] = system.sample_inputs(num_samples, use_pdf=True, nominal=nominal)
+outputs = hallthruster_jl(thruster='SPT-100', config=config)
 
-ys = system.predict(xs, qoi_ind='T')*1000       # Predicted thrust [mN]
-y = data['y']*1000                              # Experimental thrust [mN]
-y_err = 2 * np.sqrt(data['var_y'])*1000         # Experimental noise [mN]
+ion_velocity = outputs['u_ion']
+grid = outputs['u_ion_coords']
 
 fig, ax = plt.subplots()
-pressure = 10 ** data[:, 0]
-idx = np.argsort(pressure)
-ax.errorbar(pressure, y, yerr=y_err, fmt='or', capsize=3, label='Experiment')
-plot_qoi(ax, pressure[idx], ys[idx, :], 'Background pressure (Torr)', 'Thrust (mN)', legend=True)
+ax.plot(grid, ion_velocity)
+ax.set_xlabel('Axial location (m)')
+ax.set_ylabel('Ion velocity (m/s)')
 plt.show()
 ```
 
-## Project structure
+## 🗂️ Project structure
 ```tree
-HallThrusterPEM                 # Root project directory
-|- docs                         # Documentation and references
-|- scripts                      # Scripts for building PEM surrogates
-|  |- pem_v0                    # PEM v0 surrogate scripts
-|  |  |- gen_data.sh
-|  |  |- train_surr.sh
-|  |- debug                     # Scripts for debugging SLURM workflow
-|  |- analysis                  # Scripts for UQ analysis (Monte Carlo, Sobol, etc.)
-|  |- ...
-|- src/hallmd                   # Python package source code root
-|  |- models                    # Python wrappers for sub-models
-|  |  |- thruster.py
-|  |  |- ...
-|  |- data                      # Experimental data
-|  |  |- spt100                 # Contains all data for the SPT-100
-|  |  |- ...
-|  |  |- loader.py              # Helper functions for loading data
-|  |- utils.py                  # Useful utility functions
-|  |- juliapkg.json             # Specifies version of Hallthruster.jl
-|- tests                        # Testing for models, generating data, and plotting results
-|- results                      # Test scripts write data here (but kept out of the repo)
-|- pdm.lock                     # Frozen dependencies file
-|- setup_env.sh                 # Convenience script for setting up pdm environment
+HallThrusterPEM
+    docs/
+    scripts/           # Scripts for building predictive engineering models (PEMs)
+        pem_v0/        # PEM v0 coupling of cathode -> thruster -> plume
+    src/hallmd         # Python package source code root
+        models/        # Python wrappers for sub-models
+        data/          # Experimental data
+        devices/       # Device information (thrusters, equipment, etc.)
+        utils.py       # Utility functions
+    tests/             # Testing for Python package
+    pdm.lock           # Frozen dependencies file
 ```
+
+For more info on building PEMs with `hallmd`, see the [scripts](https://github.com/JANUS-Institute/HallThrusterPEM/blob/main/scripts).
 
 ## 🏗️ Contributing
 See the [contribution](https://github.com/JANUS-Institute/HallThrusterPEM/blob/main/CONTRIBUTING.md) guidelines.
 
 ## 📖 Reference
-[[1](https://rdcu.be/dVmim)] Eckels, J. et al., "Hall thruster model improvement by multidisciplinary uncertainty quantification," Journal of Electric Propulsion, September 2024.
+[[1](https://rdcu.be/dVmim)] Eckels, J. et al., "Hall thruster model improvement by multidisciplinary uncertainty quantification," _Journal of Electric Propulsion_, vol 3, no 19, September 2024.
 
 <sup><sub>Made with the [copier-numpy](https://github.com/eckelsjd/copier-numpy.git) template.</sub></sup>

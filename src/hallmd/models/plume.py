@@ -22,7 +22,7 @@ def current_density(inputs: Dataset):
     thruster centerline. Also compute the plume divergence angle. Will return the ion current density at 91 points,
     from 0 to 90 deg in 1 deg increments. The angular locations are returned as `j_ion_coords` in radians.
 
-    :param inputs: input arrays - `P_b`, `c0`, `c1`, `c2`, `c3`, `c4`, `c5`, `sigma_cex`, `r_m`, `I_B0` for background
+    :param inputs: input arrays - `P_b`, `c0`, `c1`, `c2`, `c3`, `c4`, `c5`, `sigma_cex`, `r_p`, `I_B0` for background
                    pressure (Torr), plume fit coefficients, charge-exchange cross-section ($m^2$), radial distance
                    from thruster exit plane (m), and total initial ion beam current (A).
     :returns outputs: output arrays - `j_ion` for ion current density ($A/m^2$) at the `j_ion_coords` locations,
