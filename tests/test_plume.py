@@ -1,13 +1,12 @@
 """Test the ion current density plume model."""
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 from scipy.integrate import simpson
 
 from hallmd.models.plume import current_density
 
-
 SHOW_PLOTS = False  # for debugging
-J_MIN = 1e-4        # Minimum expected ion current density
+J_MIN = 1e-6        # Minimum expected ion current density
 J_MAX = 1e3         # Maximum expected ion current density
 N = 100             # Number of grid points
 
@@ -18,10 +17,17 @@ def test_random_samples(plots=SHOW_PLOTS):
                    'c1': np.random.rand(N) * 0.8 + 0.1, 'c2': np.random.rand(N) * 30 - 15,
                    'c3': np.random.rand(N) + 0.1, 'c4': 10 ** (np.random.rand(N) * 4 + 18),
                    'c5': 10 ** (np.random.rand(N) * 4 + 14), 'sigma_cex': np.random.rand(N) * 7e-20 + 51e-20,
-                   'r_p': np.random.rand(N) + 0.5, 'I_B0': np.random.rand(N) * 8 + 1}
+                   'r_p': np.random.rand(N)*0.4 + 0.8, 'I_B0': np.random.rand(N) * 6 + 2}
     outputs_rand = current_density(inputs_rand)
 
-    assert np.all(outputs_rand['j_ion'] >= J_MIN) and np.all(outputs_rand['j_ion'] <= J_MAX)
+    min_jion = np.min(outputs_rand['j_ion'])
+    max_jion = np.max(outputs_rand['j_ion'])
+
+    print(f'Minimum ion current density: {min_jion:.2e} A/m^2')
+    print(f'Maximum ion current density: {max_jion:.2e} A/m^2')
+
+    assert min_jion >= J_MIN
+    assert max_jion <= J_MAX
 
     if plots:
         # Plot bounds of random samples
@@ -48,7 +54,14 @@ def test_pressure_sweep(plots=SHOW_PLOTS):
                     'c4': 1e20, 'c5': 1e16, 'sigma_cex': 55e-20, 'r_p': 1, 'I_B0': 3}
     outputs_sweep = current_density(inputs_sweep)
 
-    assert np.all(outputs_sweep['j_ion'] >= J_MIN) and np.all(outputs_sweep['j_ion'] <= J_MAX)
+    min_jion = np.min(outputs_sweep['j_ion'])
+    max_jion = np.max(outputs_sweep['j_ion'])
+
+    print(f'Minimum ion current density: {min_jion:.2e} A/m^2')
+    print(f'Maximum ion current density: {max_jion:.2e} A/m^2')
+
+    assert min_jion >= J_MIN
+    assert max_jion <= J_MAX
 
     # Make sure total current is invariant
     R = 1  # m

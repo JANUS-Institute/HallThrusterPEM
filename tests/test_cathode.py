@@ -1,6 +1,6 @@
 """Test the cathode coupling model."""
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 
 from hallmd.models.cathode import cathode_coupling
 
@@ -12,7 +12,7 @@ def test_cathode_coupling(plots=False):
 
     # Test scalar usage
     inputs = {'P_b': 10e-6, 'V_a': 300, 'T_e': 3, 'V_vac': 30, 'Pstar': 20e-6, 'P_T': 50e-6}
-    outputs = cathode_coupling(inputs)
+    outputs = cathode_coupling(inputs)  # noqa: F841
 
     # Test vectorized usage
     N = 100

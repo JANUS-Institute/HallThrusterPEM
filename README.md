@@ -6,7 +6,7 @@
 ![build](https://img.shields.io/github/actions/workflow/status/JANUS-Institute/HallThrusterPEM/deploy.yml?logo=github)
 ![docs](https://img.shields.io/github/actions/workflow/status/JANUS-Institute/HallThrusterPEM/docs.yml?logo=materialformkdocs&logoColor=%2523cccccc&label=docs)
 ![tests](https://img.shields.io/github/actions/workflow/status/JANUS-Institute/HallThrusterPEM/tests.yml?logo=github&logoColor=%2523cccccc&label=tests)
-![Code Coverage](https://img.shields.io/badge/coverage-89%25-yellowgreen?logo=codecov)
+![Code Coverage](https://img.shields.io/badge/coverage-88%25-yellowgreen?logo=codecov)
 [![Journal article](https://img.shields.io/badge/DOI-10.1007/s44205--024--00079--w-blue)](https://rdcu.be/dVmim)
 
 Prototype of a predictive engineering model (PEM) of a Hall thruster. Integrates sub-models from multiple disciplines to simulate a Hall thruster operating in a vacuum chamber. Uses uncertainty quantification techniques to extrapolate model predictions to a space-like environment.
@@ -55,7 +55,7 @@ xs = np.zeros((Nx, num_samples, len(system.exo_vars)))
 for i in range(Nx):
     nominal = dict(PB=inputs[i, 0], Va=inputs[i, 1], mdot_a=inputs[i, 2])
     xs[i, :, :] = system.sample_inputs(num_samples, use_pdf=True, nominal=nominal)
-    
+
 ys = system.predict(xs, qoi_ind='T')*1000       # Predicted thrust [mN]
 y = data['y']*1000                              # Experimental thrust [mN]
 y_err = 2 * np.sqrt(data['var_y'])*1000         # Experimental noise [mN]

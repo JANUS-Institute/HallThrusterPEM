@@ -76,9 +76,6 @@ docs = "mkdocs serve"
 lint = "ruff check src tests {args}"
 
 [dependency-groups]
-editable = [
-    "-e file:///${PROJECT_ROOT}/../amisc#egg=amisc",
-]
 dev = [
     "copier>=9.3",
     "copier-templates-extensions>=0.3",

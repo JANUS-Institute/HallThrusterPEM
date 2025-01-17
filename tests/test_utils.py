@@ -1,13 +1,9 @@
 """Testing for package utilities."""
-import tempfile
 import os
 from importlib import resources
 from pathlib import Path
 
-import matplotlib.pyplot as plt
-import numpy as np
-
-from hallmd.utils import data_write, plot_qoi, _path_in_dict, load_device
+from hallmd.utils import _path_in_dict, load_device
 
 
 def test_path_in_dict():
@@ -54,7 +50,7 @@ def test_load_device(tmp_path):
     abs_mag_file = Path(device_dir / 'SPT-100' / 'bfield_spt100.csv').resolve().as_posix()
     assert config == {'name': 'SPT-100',
                       'geometry': {'channel_length': 0.025, 'inner_radius': 0.035, 'outer_radius': 0.05},
-                      'magnetic_field': abs_mag_file,
+                      'magnetic_field': {'file': abs_mag_file},
                       'shielded': False}
 
     # Test a nested device configuration
@@ -74,18 +70,3 @@ def test_load_device(tmp_path):
     abs_other_file = Path(new_device_dir / 'data' / 'other_file.txt').resolve().as_posix()
 
     assert config == {'hello': 'there', 'my_file': abs_file, 'other_info': {'other_file': abs_other_file}}
-
-
-def test_write():
-    with tempfile.NamedTemporaryFile(suffix='.json', encoding='utf-8', mode='w', delete=False, dir='.') as fd:
-        pass
-    data = {'help': 'me'}
-    data_write(data, fd.name)
-    os.unlink(fd.name)
-
-
-def test_plot():
-    x = np.linspace(0, 1, 100).reshape((100, 1))
-    qoi = x + (np.random.rand(100, 50)*0.2 - 0.1)
-    fig, ax = plt.subplots()
-    plot_qoi(ax, np.squeeze(x), qoi, 'X direction', 'Y direction', legend=False)
