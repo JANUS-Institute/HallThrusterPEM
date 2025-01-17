@@ -21,7 +21,7 @@ Citations:
 
 from dataclasses import dataclass, fields
 from pathlib import Path
-from typing import Any, Sequence, TypeAlias
+from typing import Any, Generic, Sequence, TypeAlias, TypeVar
 
 import numpy as np
 import numpy.typing as npt
@@ -37,8 +37,11 @@ class OperatingCondition:
     mdot_a: float
 
 
+T = TypeVar("T")
+
+
 @dataclass(frozen=True)
-class Measurement[T]:
+class Measurement(Generic[T]):
     mean: T
     std: T
 
