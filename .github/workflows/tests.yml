@@ -32,7 +32,12 @@ jobs:
         with:
           cache: true
           python-version: ${{ matrix.python-version }}
+      - name: Install juliaup
+        uses: julia-actions/install-juliaup@v2
+        with:
+          channel: '1.10'
       - name: Install dependencies
         run: pdm sync -G test
+      - run: pdm run python scripts/install_hallthruster.py -y --hallthruster-version 0.18.1
       - name: Run tests
         run: pdm run -v test

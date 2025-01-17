@@ -4,7 +4,7 @@
 2) Ensure the specified Julia version is installed using juliaup.
 3) Install HallThruster.jl with the specified version (or git ref).
 
-Usage: python install_hallthruster.py --julia-version 1.10 --hallthruster-version 0.18.1 --git-ref main
+Usage: python install_hallthruster.py --julia-version 1.10 --hallthruster-version 0.18.1 --git-ref main -y
 
 Note: If `git-ref` is specified, this will override the `hallthruster-version` and instead install from GitHub.
 """
@@ -13,11 +13,14 @@ import os
 import shlex
 import subprocess
 import platform
+from pathlib import Path
+
 from packaging.version import Version
 
 from hallmd.models.thruster import get_jl_env
 
 
+ENV = os.environ.copy()
 PLATFORM = platform.system().lower()
 JULIA_VERSION_DEFAULT = "1.10"
 HALLTHRUSTER_VERSION_DEFAULT = "0.18.1"
@@ -25,7 +28,7 @@ HALLTHRUSTER_URL = "https://github.com/UM-PEPL/HallThruster.jl"
 HALLTHRUSTER_NAME = "HallThruster"
 
 
-def run_command(command, capture_output=True, text=None, shell=False):
+def run_command(command, capture_output=True, text=None, shell=False, env=None):
     """Run a command using subprocess."""
     try:
         if PLATFORM == 'windows':
@@ -33,26 +36,32 @@ def run_command(command, capture_output=True, text=None, shell=False):
         else:
             if not shell:
                 command = shlex.split(command)
-        return subprocess.run(command, capture_output=capture_output, check=True, text=text, shell=shell)
+        return subprocess.run(command, capture_output=capture_output, check=True, text=text, shell=shell, env=env)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Command `{command}` failed with code {e.returncode}: {e}\nError message: {e.stderr}") from e
     except subprocess.SubprocessError as e:
         raise RuntimeError(f"Subprocess error: {e}") from e
 
 
-def install_juliaup():
+def install_juliaup(yes: bool = False):
     print("Installing juliaup...")
     if PLATFORM == "windows":
         run_command("winget install julia -s msstore --accept-package-agreements", capture_output=False, text=True)
     else:
-        run_command("curl -fsSL https://install.julialang.org | sh", capture_output=False, text=True, shell=True)
+        cmd = "curl -fsSL https://install.julialang.org | sh"
+
+        if yes:
+            cmd += " -s -- -y"
+
+        run_command(cmd, capture_output=False, text=True, shell=True)
+        ENV["PATH"] = str((Path(os.path.expanduser('~')) / ".juliaup" / "bin").resolve()) + os.pathsep + ENV.get("PATH", "")
 
 
 def ensure_julia_version(julia_version):
     print("Checking installed Julia versions using juliaup...")
 
     try:
-        proc_ret = run_command("juliaup status", text=True, capture_output=True)
+        proc_ret = run_command("juliaup status", text=True, capture_output=True, env=ENV)
         cmd_output = proc_ret.stdout
     except Exception:
         cmd_output = ""
@@ -78,11 +87,11 @@ def ensure_julia_version(julia_version):
 
     if found_installed:
         print(f"Found installed version {highest_version} >= {julia_version}. Using this version.")
-        run_command(f"juliaup default {highest_channel}")
+        run_command(f"juliaup default {highest_channel}", env=ENV)
     else:
         print(f"No suitable version found. Installing and setting Julia version {julia_version} as default.")
-        run_command(f"juliaup add {julia_version}", capture_output=False, text=True)
-        run_command(f"juliaup default {julia_version}")
+        run_command(f"juliaup add {julia_version}", capture_output=False, text=True, env=ENV)
+        run_command(f"juliaup default {julia_version}", env=ENV)
 
 
 def install_hallthruster_jl(hallthruster_version, git_ref):
@@ -101,7 +110,7 @@ def install_hallthruster_jl(hallthruster_version, git_ref):
             else:
                 update_cmd = rf"""julia -e 'using Pkg; Pkg.activate("{env_path.resolve()}"); Pkg.update("{HALLTHRUSTER_NAME}");'"""
 
-            run_command(update_cmd, text=True, capture_output=False)
+            run_command(update_cmd, text=True, capture_output=False, env=ENV)
 
         return
     else:
@@ -111,16 +120,18 @@ def install_hallthruster_jl(hallthruster_version, git_ref):
             # Powershell needs the double quotes to be escaped
             pkg_cmd = rf'Pkg.add(url=\"{HALLTHRUSTER_URL}\", rev=\"{git_ref}\")' if git_ref is not None else \
                 rf'Pkg.add(name=\"{HALLTHRUSTER_NAME}\", version=\"{hallthruster_version}\")'
+            pkg_cmd += r'; Pkg.add(\"JSON3\")'
             install_cmd = rf"julia -e 'using Pkg; Pkg.activate(raw\"{env_path.resolve()}\"); {pkg_cmd}'"
         else:
             pkg_cmd = rf'Pkg.add(url="{HALLTHRUSTER_URL}", rev="{git_ref}")' if git_ref is not None else \
                 rf'Pkg.add(name="{HALLTHRUSTER_NAME}", version="{hallthruster_version}")'
+            pkg_cmd += r'; Pkg.add("JSON3")'
             install_cmd = rf"""julia -e 'using Pkg; Pkg.activate("{env_path.resolve()}"); {pkg_cmd}'"""
 
-        run_command(install_cmd, text=True, capture_output=False)
+        run_command(install_cmd, text=True, capture_output=False, env=ENV)
 
 
-def main(julia_version, hallthruster_version, git_ref):
+def main(julia_version, hallthruster_version, git_ref, yes):
     juliaup_installed = False
     try:
         run_command("juliaup --version")
@@ -129,7 +140,7 @@ def main(julia_version, hallthruster_version, git_ref):
         pass
 
     if not juliaup_installed:
-        install_juliaup()
+        install_juliaup(yes)
 
     ensure_julia_version(julia_version)
 
@@ -146,6 +157,8 @@ if __name__ == "__main__":
     parser.add_argument("-r", "--git-ref", default=None,
                         help="Install from this git ref (branch, hash, etc.) from the HallThruster.jl "
                              "GitHub repository.")
+    parser.add_argument("-y", "--yes", action="store_true", default=False,
+                        help="Install non-interactively.")
     args = parser.parse_args()
 
-    main(args.julia_version, args.hallthruster_version, args.git_ref)
+    main(args.julia_version, args.hallthruster_version, args.git_ref, args.yes)

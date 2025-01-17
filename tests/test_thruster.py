@@ -36,7 +36,7 @@ def test_julia_conversion():
     assert pem_convert['new_output'] == 0.5
 
 
-def test_sim_hallthruster_jl(tmp_path, plots=SHOW_PLOTS):
+def test_sim_hallthruster_jl(tmp_path, plots=SHOW_PLOTS, git_ref='0.18.1'):
     """Simulate a fake HallThruster.jl model to test the Python wrapper function."""
     thruster_inputs = {'V_a': 250, 'V_cc': 25, 'mdot_a': 3.5e-6}
     config = {'anom_model': {'type': 'LogisticPressureShift', 'model': {
@@ -50,7 +50,7 @@ def test_sim_hallthruster_jl(tmp_path, plots=SHOW_PLOTS):
     # Run the simulation
     outputs = hallthruster_jl(thruster_inputs, config=config, simulation=simulation, postprocess=postprocess,
                               julia_script=(Path(__file__).parent / 'sim_hallthruster.jl').resolve(),
-                              output_path=tmp_path)
+                              output_path=tmp_path, version=git_ref)
 
     for key in ['T', 'I_B0', 'I_d', 'u_ion', 'u_ion_coords']:
         assert key in outputs

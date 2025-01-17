@@ -30,6 +30,11 @@ jobs:
           restore-keys: |
             mkdocs-material-
       # Build and push docs to gh-pages branch (triggers doc site publish action)
+      - name: Install juliaup
+        uses: julia-actions/install-juliaup@v2
+        with:
+          channel: '1.10'
       - run: pdm sync -G doc -G test
+      - run: pdm run python scripts/install_hallthruster.py -y --hallthruster-version 0.18.1
       - run: pdm run test  # to generate coverage report
       - run: pdm run mkdocs gh-deploy --force
