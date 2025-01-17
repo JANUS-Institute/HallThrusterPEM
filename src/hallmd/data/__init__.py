@@ -21,13 +21,13 @@ Citations:
 
 from dataclasses import dataclass, fields
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Sequence, TypeAlias
 
 import numpy as np
 import numpy.typing as npt
 
-type Array = npt.NDArray[np.floating[Any]]
-type PathLike = str | Path
+Array: TypeAlias = npt.NDArray[np.floating[Any]]
+PathLike: TypeAlias = str | Path
 
 
 @dataclass(frozen=True)
