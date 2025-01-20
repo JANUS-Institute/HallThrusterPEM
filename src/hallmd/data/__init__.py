@@ -37,8 +37,7 @@ class OperatingCondition:
     mdot_a: float
 
 
-T = TypeVar("T")
-T2 = TypeVar("T2")
+T = TypeVar("T", np.float64, Array)
 
 
 @dataclass(frozen=True)
@@ -50,16 +49,14 @@ class Measurement(Generic[T]):
         return f"(μ = {self.mean}, σ = {self.std})"
 
 
-def _gauss_logpdf[T: np.float64 | Array](mean: T, std: T, observation: T) -> np.float64:
+def _gauss_logpdf(mean: T, std: T, observation: T) -> np.float64:
     var = std**2
     term1 = np.mean(np.log(2 * np.pi * var)) / 2
     term2 = np.mean((mean - observation) ** 2 / (2 * var))
     return -term1 - term2
 
 
-def _measurement_gauss_logpdf[T: np.float64 | Array](
-    data: Measurement[T] | None, observation: Measurement[T] | None
-) -> np.float64:
+def _measurement_gauss_logpdf(data: Measurement[T] | None, observation: Measurement[T] | None) -> np.float64:
     if data is None or observation is None:
         return np.float64(0.0)
 
