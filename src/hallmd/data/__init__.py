@@ -110,6 +110,11 @@ def _load_dataset(file: PathLike) -> dict[OperatingCondition, ThrusterData]:
             flow_ratio = table[flow_ratio_key]
             anode_flow_fraction = flow_ratio / (flow_ratio + 1)
             mdot_a = table[mdot_t_key] * anode_flow_fraction
+        else:
+            raise KeyError(
+                f"{file}: No mass flow rate provided."
+                + " Need either `anode flow rate (mg/s)` or [`total flow rate (mg/s)` and `anode-cathode flow ratio`]"
+            )
 
     # Get background pressure and discharge voltage
     P_B = np.log10(table["background pressure (torr)"])
