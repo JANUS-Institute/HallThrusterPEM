@@ -38,6 +38,7 @@ class OperatingCondition:
 
 
 T = TypeVar("T")
+T2 = TypeVar("T2")
 
 
 @dataclass(frozen=True)
@@ -49,25 +50,77 @@ class Measurement(Generic[T]):
         return f"(μ = {self.mean}, σ = {self.std})"
 
 
+def _gauss_logpdf[T: np.float64 | Array](mean: T, std: T, observation: T) -> np.float64:
+    var = std**2
+    term1 = np.mean(np.log(2 * np.pi * var)) / 2
+    term2 = np.mean((mean - observation) ** 2 / (2 * var))
+    return -term1 - term2
+
+
+def _measurement_gauss_logpdf[T: np.float64 | Array](
+    data: Measurement[T] | None, observation: Measurement[T] | None
+) -> np.float64:
+    if data is None or observation is None:
+        return np.float64(0.0)
+
+    return _gauss_logpdf(data.mean, data.std, observation.mean)
+
+
+def _interp_gauss_logpdf(
+    coords: Array | None,
+    data: Measurement[Array] | None,
+    obs_coords: Array | None,
+    observation: Measurement[Array] | None,
+) -> np.float64:
+    if coords is None or data is None or obs_coords is None or observation is None:
+        return np.float64(0.0)
+
+    obs_interp_mean = np.interp(coords, obs_coords, observation.mean)
+    obs_interp = Measurement(obs_interp_mean, np.zeros(1))
+    return _measurement_gauss_logpdf(data, obs_interp)
+
+
 @dataclass
 class ThrusterData:
     # Cathode
-    V_cc: Measurement[float] | None = None
+    V_cc: Measurement[np.float64] | None = None
     # Thruster
-    T: Measurement[float] | None = None
-    I_D: Measurement[float] | None = None
-    I_B0: Measurement[float] | None = None
-    eta_c: Measurement[float] | None = None
-    eta_m: Measurement[float] | None = None
-    eta_v: Measurement[float] | None = None
-    eta_a: Measurement[float] | None = None
+    T: Measurement[np.float64] | None = None
+    I_D: Measurement[np.float64] | None = None
+    I_B0: Measurement[np.float64] | None = None
+    eta_c: Measurement[np.float64] | None = None
+    eta_m: Measurement[np.float64] | None = None
+    eta_v: Measurement[np.float64] | None = None
+    eta_a: Measurement[np.float64] | None = None
     uion_coords: Array | None = None
     uion: Measurement[Array] | None = None
     # Plume
-    div_angle: Measurement[float] | None = None
-    radius: float | None = None
+    div_angle: Measurement[np.float64] | None = None
+    jion_radius: float | None = None
     jion_coords: Array | None = None
     jion: Measurement[Array] | None = None
+
+    def log_likelihood_of(self, observation: "ThrusterData") -> np.float64:
+        # Add contributions from global performance metrics
+        log_likelihood = (
+            _measurement_gauss_logpdf(self.V_cc, observation.V_cc)
+            + _measurement_gauss_logpdf(self.T, observation.T)
+            + _measurement_gauss_logpdf(self.I_D, observation.I_D)
+            + _measurement_gauss_logpdf(self.I_B0, observation.I_B0)
+            + _measurement_gauss_logpdf(self.eta_c, observation.eta_c)
+            + _measurement_gauss_logpdf(self.eta_m, observation.eta_m)
+            + _measurement_gauss_logpdf(self.eta_v, observation.eta_v)
+            + _measurement_gauss_logpdf(self.eta_a, observation.eta_a)
+            + _measurement_gauss_logpdf(self.div_angle, observation.div_angle)
+            + _interp_gauss_logpdf(self.uion_coords, self.uion, observation.uion_coords, observation.uion)
+        )
+
+        if self.jion_radius is not None and self.jion_radius == observation.jion_radius:
+            log_likelihood += _interp_gauss_logpdf(
+                self.jion_coords, self.jion, observation.jion_coords, observation.jion
+            )
+
+        return log_likelihood
 
     def __str__(self) -> str:
         indent = "\t"
@@ -126,6 +179,7 @@ def _load_dataset(file: PathLike) -> dict[OperatingCondition, ThrusterData]:
     opcond = OperatingCondition(P_B[0], V_a[0], mdot_a[0])
 
     while True:
+        next_opcond = opcond
         if row_num < num_rows:
             next_opcond = OperatingCondition(P_B[row_num], V_a[row_num], mdot_a[row_num])
             if next_opcond == opcond:
@@ -173,7 +227,7 @@ def _load_dataset(file: PathLike) -> dict[OperatingCondition, ThrusterData]:
                 # Keep only measurements at angles less than 90 degrees
                 keep_inds = jion_coords < 90
                 data[opcond].jion_coords = jion_coords[keep_inds] * np.pi / 180
-                data[opcond].radius = r
+                data[opcond].jion_radius = r
                 data[opcond].jion = Measurement(mean=jion[keep_inds], std=jion_std[keep_inds])
 
         # Advance to next operating condition or break out of loop if we're at the end of the table
@@ -190,12 +244,16 @@ def _table_from_file(file: PathLike, delimiter=",", comments="#") -> dict[str, A
     # Read header of file to get column names
     # We skip comments (lines starting with the string in the `comments` arg)
     header_start = 0
+    header = ""
     with open(file, "r") as f:
         for i, line in enumerate(f):
             if not line.startswith(comments):
                 header = line.rstrip()
                 header_start = i
                 break
+
+    if header == "":
+        return {}
 
     column_names = header.split(delimiter)
     data = np.genfromtxt(file, delimiter=delimiter, comments=comments, skip_header=header_start + 1)

@@ -15,9 +15,25 @@ def test_spt100_macdonald2019():
         assert data.jion is None
         assert data.jion_coords is None
         assert data.V_cc is None
-        assert data.radius is None
+        assert data.jion_radius is None
         assert opcond.mdot_a == 5.16
         assert opcond.V_a == 300.0
+
+    data = [expdata[cond] for cond in expdata.keys()]
+
+    L = [[data_i.log_likelihood_of(data_j) for data_j in data] for data_i in data]
+
+    for i in range(len(data)):
+        for j in range(len(data)):
+            # Log likelihoods should always be <= 1 since variance is large for this dataset
+            assert L[i][j] <= 0
+
+            # Since the data have the same variance, the likelihoods should be symmetric
+            assert L[j][i] == L[i][j]
+
+            # Self-likelihood should be larger than other likelihoods
+            if i != j:
+                assert L[i][j] < L[i][i]
 
 
 def test_spt100_diamant2014():
@@ -38,11 +54,32 @@ def test_spt100_diamant2014():
         if opcond in expdata_L3.keys():
             assert data.jion is not None
             assert data.jion_coords is not None
-            assert data.radius is not None
+            assert data.jion_radius is not None
         else:
             assert data.jion is None
             assert data.jion_coords is None
-            assert data.radius is None
+            assert data.jion_radius is None
+
+    data = [expdata_all_explicit[cond] for cond in expdata_all_explicit.keys()]
+
+    L = [[data_i.log_likelihood_of(data_j) for data_j in data] for data_i in data]
+
+    for i in range(len(data)):
+        for j in range(len(data)):
+            # Self-likelihood should be larger than other likelihoods
+            if i != j:
+                assert L[i][j] < L[i][i]
+
+    # check that jion is being properly included in likelihood
+    data_l3 = expdata_L3[list(expdata_L3.keys())[0]]
+
+    L1 = data_l3.log_likelihood_of(data_l3)
+
+    data_l3.jion_radius = None
+
+    L3 = data_l3.log_likelihood_of(data_l3)
+
+    assert L1 != L3
 
 
 def test_spt100_sankovic1993():
@@ -58,4 +95,4 @@ def test_spt100_sankovic1993():
         assert data.uion_coords is None
         assert data.jion_coords is None
         assert data.jion is None
-        assert data.radius is None
+        assert data.jion_radius is None
