@@ -5,7 +5,7 @@ Small script to simulate `HallThruster.run_simulation`. Call as:
 
 where `infile.json` is the input file. The output is saved at the location `infile['postprocess']['output_file']`.
 =#
-using JSON3
+using HallThruster: JSON3 as JSON3
 
 function read_json(file_path::String)
     open(file_path, "r") do f
