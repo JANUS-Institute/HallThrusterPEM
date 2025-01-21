@@ -225,9 +225,11 @@ def _format_hallthruster_jl_input(
 
         match anom_model.get("type", "TwoZoneBohm"):
             case "TwoZoneBohm":
-                anom_model["c2"] = anom_model["c2"] * anom_model["c1"]
+                if thruster_inputs.get("a_2") is not None:  # Only when the PEM a_2 is used
+                    anom_model["c2"] = anom_model["c2"] * anom_model.get("c1", 0.00625)
             case "GaussianBohm":
-                anom_model["hall_max"] = anom_model["hall_max"] * anom_model["hall_min"]
+                if thruster_inputs.get("anom_max") is not None:  # Only when the PEM anom_max is used
+                    anom_model["hall_max"] = anom_model["hall_max"] * anom_model.get("hall_min", 0.00625)
 
     return json_config
 

@@ -1,5 +1,5 @@
 !System
-name: PEM v0 (SPT-100)
+name: PEM v1 (SPT-100)
 hallmd_version: 0.3.0
 components: !Component
   - name: Cathode
@@ -72,7 +72,6 @@ components: !Component
       cathode_Tev: 3                     # overwritten by T_e
       neutral_velocity: 300              # overwritten by u_n
       ncharge: 1                         # overwritten by model_fidelity[1]
-      transition_length: 0.003           # overwritten by l_t
       anom_model:
         type: LogisticPressureShift
         model:
@@ -109,7 +108,7 @@ components: !Component
     postprocess:
       average_start_time: 0.0005  # s
     model_fidelity: (2, 2)
-    data_fidelity: (2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2)
+    data_fidelity: (2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2)
     inputs: !Variable
       - name: P_b
       - name: V_a
@@ -130,23 +129,15 @@ components: !Component
         units: m/s
         nominal: 141.24234
         distribution: U(100, 500)
-      - name: l_t
-        description: Inner to outer transition length
-        category: calibration
-        tex: "$l_t$"
-        units: m
-        nominal: 1.87915e-3
-        distribution: U(1.0e-3, 20.0e-3)
-        norm: linear(1e3)
       - name: anom_min
-        description: minimum Hall parameter 
+        description: minimum Hall parameter
         category: calibration
         tex: "$\\alpha_1$"
         nominal: 0.00680237
-        distribution: Uniform(0.0001, 1.0)
+        distribution: LogUniform(0.0001, 1.0)
         norm: log10
       - name: anom_max
-        description: maximum Hall parameter 
+        description: maximum Hall parameter
         category: calibration
         tex: "$\\alpha_2$"
         nominal: 4.0
@@ -154,17 +145,19 @@ components: !Component
       - name: anom_center
         description: location of gaussian trough in anom profile
         category: calibration
+        units: m
         tex: "$z_{anom}$"
         nominal: 0.025
         distribution: Uniform(0.01, 0.035)
-        norm: log10
+        norm: linear(1e3)
       - name: anom_width
         description: width of gaussian trough in anom profile
         category: calibration
-        tex: $L_{anom}$
+        units: m
+        tex: "$L_{anom}$"
         nominal: 0.01
         distribution: Uniform(0.001, 0.05)
-        norm: log10
+        norm: linear(1e3)
       - name: dz
         description: Anomalous shift displacement
         category: calibration
@@ -196,7 +189,6 @@ components: !Component
         category: calibration
         tex: "$c_w$"
         nominal: 1.0
-        norm: log10
         distribution: U(0.1, 1.0)
       - name: V_cc
     outputs: !Variable
@@ -241,7 +233,7 @@ components: !Component
         norm: linear(1.0e-3)
         compression:
           method: svd
-          energy_tol: 0.95
+          reconstruction_tol: 0.01
   - name: Plume
     model: !!python/name:hallmd.models.plume.current_density
     vectorized: true
@@ -305,6 +297,7 @@ components: !Component
         nominal: 1
         domain: (0.5, 1.5)
       - name: I_B0
+      - name: T
     outputs: !Variable
       - name: j_ion
         description: Ion current density
@@ -313,8 +306,12 @@ components: !Component
         norm: log10
         compression:
           method: svd
-          energy_tol: 0.95
+          reconstruction_tol: 0.01
       - name: div_angle
         description: Divergence angle
         tex: "$\\theta_d$"
         units: rad
+      - name: T_c
+        description: Corrected thrust
+        tex: "$T_c$"
+        units: N

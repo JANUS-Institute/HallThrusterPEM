@@ -24,9 +24,11 @@ def current_density(inputs: Dataset):
 
     :param inputs: input arrays - `P_b`, `c0`, `c1`, `c2`, `c3`, `c4`, `c5`, `sigma_cex`, `r_p`, `I_B0` for background
                    pressure (Torr), plume fit coefficients, charge-exchange cross-section ($m^2$), radial distance
-                   from thruster exit plane (m), and total initial ion beam current (A).
+                   from thruster exit plane (m), and total initial ion beam current (A). If `T` is provided, then
+                   also compute corrected thrust using the divergence angle.
     :returns outputs: output arrays - `j_ion` for ion current density ($A/m^2$) at the `j_ion_coords` locations,
-                                       and `div_angle` in radians for the divergence angle of the plume.
+                                       and `div_angle` in radians for the divergence angle of the plume. Optionally,
+                                       `T_c` for corrected thrust (N) if `T` is provided in the inputs.
     """
     # Load plume inputs
     P_B = inputs['P_b'] * TORR_2_PA     # Background pressure (Torr)
@@ -39,6 +41,7 @@ def current_density(inputs: Dataset):
     sigma_cex = inputs['sigma_cex']     # Charge-exchange cross-section (m^2)
     r_m = inputs['r_p']                 # Axial distance from thruster exit plane (m)
     I_B0 = inputs['I_B0']               # Total initial ion beam current (A)
+    thrust = inputs.get('T', None)      # Thrust (N)
 
     # 90 deg angle sweep for ion current density
     alpha_rad = np.linspace(0, np.pi/2, 91)
@@ -92,6 +95,11 @@ def current_density(inputs: Dataset):
 
     div_angle = np.arccos(cos_div)  # Divergence angle (rad)
 
+    ret = {'j_ion': j_ion, 'div_angle': div_angle}
+
+    if thrust is not None:
+        ret['T_c'] = thrust * cos_div
+
     # Interpolate to requested angles
     # if j_ion_coords is not None:
     #     # Extend to range (-90, 90) deg
@@ -106,4 +114,6 @@ def current_density(inputs: Dataset):
     for index in np.ndindex(j_ion.shape[:-1]):
         j_ion_coords[index] = alpha_rad
 
-    return {'j_ion': j_ion, 'div_angle': div_angle, 'j_ion_coords': j_ion_coords}
+    ret['j_ion_coords'] = j_ion_coords
+
+    return ret
