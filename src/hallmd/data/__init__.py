@@ -97,39 +97,6 @@ class ThrusterData:
     ion_current_density_coords_m: Array | None = None
     ion_current_density_A_m2: Measurement[Array] | None = None
 
-    def log_likelihood_of(self, observation: "ThrusterData") -> np.float64:
-        # Add contributions from global performance metrics
-        log_likelihood = (
-            _measurement_gauss_logpdf(self.cathode_coupling_voltage_V, observation.cathode_coupling_voltage_V)
-            + _measurement_gauss_logpdf(self.thrust_N, observation.thrust_N)
-            + _measurement_gauss_logpdf(self.discharge_current_A, observation.discharge_current_A)
-            + _measurement_gauss_logpdf(self.ion_current_A, observation.ion_current_A)
-            + _measurement_gauss_logpdf(self.efficiency_current, observation.efficiency_current)
-            + _measurement_gauss_logpdf(self.efficiency_mass, observation.efficiency_mass)
-            + _measurement_gauss_logpdf(self.efficiency_voltage, observation.efficiency_voltage)
-            + _measurement_gauss_logpdf(self.efficiency_anode, observation.efficiency_anode)
-            + _measurement_gauss_logpdf(self.divergence_angle_rad, observation.divergence_angle_rad)
-            + _interp_gauss_logpdf(
-                self.ion_velocity_coords_m,
-                self.ion_velocity_m_s,
-                observation.ion_velocity_coords_m,
-                observation.ion_velocity_m_s,
-            )
-        )
-
-        if (
-            self.ion_current_density_radius_m is not None
-            and self.ion_current_density_radius_m == observation.ion_current_density_radius_m
-        ):
-            log_likelihood += _interp_gauss_logpdf(
-                self.ion_current_density_coords_m,
-                self.ion_current_density_A_m2,
-                observation.ion_current_density_coords_m,
-                observation.ion_current_density_A_m2,
-            )
-
-        return log_likelihood
-
     def __str__(self) -> str:
         indent = "\t"
         out: str = "ThrusterData(\n"
@@ -140,6 +107,63 @@ class ThrusterData:
 
         out += ")\n"
         return out
+
+
+def pem_to_thrusterdata(
+    operating_conditions: Sequence[OperatingCondition], outputs
+) -> dict[OperatingCondition, ThrusterData]:
+    # Assemble output dict from operating conditions -> results
+    # Note, we assume that the pem outputs are ordered based on the input operating conditions
+    NaN = np.float64(np.nan)
+    output_dict = {
+        opcond: ThrusterData(
+            cathode_coupling_voltage_V=Measurement(outputs["V_cc"][i], NaN),
+            thrust_N=Measurement(outputs["T"][i], NaN),
+            discharge_current_A=Measurement(outputs["I_d"][i], NaN),
+            ion_current_A=Measurement(outputs["I_B0"][i], NaN),
+            ion_velocity_coords_m=outputs["u_ion_coords"][i],
+            ion_velocity_m_s=Measurement(outputs["u_ion"][i], np.full_like(outputs["u_ion"][i], NaN)),
+            ion_current_density_coords_m=outputs["j_ion_coords"][i],
+            ion_current_density_A_m2=Measurement(outputs["j_ion"][i], np.full_like(outputs["j_ion"][i], NaN)),
+            ion_current_density_radius_m=1.0,
+            efficiency_mass=Measurement(outputs["eta_m"][i], NaN),
+            efficiency_current=Measurement(outputs["eta_c"][i], NaN),
+            efficiency_voltage=Measurement(outputs["eta_v"][i], NaN),
+            efficiency_anode=Measurement(outputs["eta_a"][i], NaN),
+        )
+        for (i, opcond) in enumerate(operating_conditions)
+    }
+
+    return output_dict
+
+
+def log_likelihood(data: ThrusterData, observation: ThrusterData) -> np.float64:
+    log_likelihood = (
+        # Add contributions from global performance metrics
+        _measurement_gauss_logpdf(data.cathode_coupling_voltage_V, observation.cathode_coupling_voltage_V)
+        + _measurement_gauss_logpdf(data.thrust_N, observation.thrust_N)
+        + _measurement_gauss_logpdf(data.discharge_current_A, observation.discharge_current_A)
+        + _measurement_gauss_logpdf(data.ion_current_A, observation.ion_current_A)
+        + _measurement_gauss_logpdf(data.efficiency_current, observation.efficiency_current)
+        + _measurement_gauss_logpdf(data.efficiency_mass, observation.efficiency_mass)
+        + _measurement_gauss_logpdf(data.efficiency_voltage, observation.efficiency_voltage)
+        + _measurement_gauss_logpdf(data.efficiency_anode, observation.efficiency_anode)
+        + _measurement_gauss_logpdf(data.divergence_angle_rad, observation.divergence_angle_rad)
+        # interpolated average pointwise error from ion velocity and ion current density
+        + _interp_gauss_logpdf(
+            data.ion_velocity_coords_m,
+            data.ion_velocity_m_s,
+            observation.ion_velocity_coords_m,
+            observation.ion_velocity_m_s,
+        )
+        + _interp_gauss_logpdf(
+            data.ion_current_density_coords_m,
+            data.ion_current_density_A_m2,
+            observation.ion_current_density_coords_m,
+            observation.ion_current_density_A_m2,
+        )
+    )
+    return log_likelihood
 
 
 def load(files: Sequence[PathLike] | PathLike) -> dict[OperatingCondition, ThrusterData]:

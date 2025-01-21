@@ -21,7 +21,7 @@ def test_spt100_macdonald2019():
 
     data = [expdata[cond] for cond in expdata.keys()]
 
-    L = [[data_i.log_likelihood_of(data_j) for data_j in data] for data_i in data]
+    L = [[hallmd.data.log_likelihood(data_i, data_j) for data_j in data] for data_i in data]
 
     for i in range(len(data)):
         for j in range(len(data)):
@@ -62,7 +62,7 @@ def test_spt100_diamant2014():
 
     data = [expdata_all_explicit[cond] for cond in expdata_all_explicit.keys()]
 
-    L = [[data_i.log_likelihood_of(data_j) for data_j in data] for data_i in data]
+    L = [[hallmd.data.log_likelihood(data_i, data_j) for data_j in data] for data_i in data]
 
     for i in range(len(data)):
         for j in range(len(data)):
@@ -73,11 +73,11 @@ def test_spt100_diamant2014():
     # check that jion is being properly included in likelihood
     data_l3 = expdata_L3[list(expdata_L3.keys())[0]]
 
-    L1 = data_l3.log_likelihood_of(data_l3)
+    L1 = hallmd.data.log_likelihood(data_l3, data_l3)
 
-    data_l3.ion_current_density_radius_m = None
+    data_l3.ion_current_density_A_m2 = None
 
-    L3 = data_l3.log_likelihood_of(data_l3)
+    L3 = hallmd.data.log_likelihood(data_l3, data_l3)
 
     assert L1 != L3
 
