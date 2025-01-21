@@ -32,9 +32,9 @@ PathLike: TypeAlias = str | Path
 
 @dataclass(frozen=True)
 class OperatingCondition:
-    P_B: float
-    V_a: float
-    mdot_a: float
+    background_pressure_Torr: float
+    discharge_voltage_V: float
+    anode_mass_flow_rate_kg_s: float
 
 
 T = TypeVar("T", np.float64, Array)
@@ -80,41 +80,52 @@ def _interp_gauss_logpdf(
 @dataclass
 class ThrusterData:
     # Cathode
-    V_cc: Measurement[np.float64] | None = None
+    cathode_coupling_voltage_V: Measurement[np.float64] | None = None
     # Thruster
-    T: Measurement[np.float64] | None = None
-    I_D: Measurement[np.float64] | None = None
-    I_B0: Measurement[np.float64] | None = None
-    eta_c: Measurement[np.float64] | None = None
-    eta_m: Measurement[np.float64] | None = None
-    eta_v: Measurement[np.float64] | None = None
-    eta_a: Measurement[np.float64] | None = None
-    uion_coords: Array | None = None
-    uion: Measurement[Array] | None = None
+    thrust_N: Measurement[np.float64] | None = None
+    discharge_current_A: Measurement[np.float64] | None = None
+    ion_current_A: Measurement[np.float64] | None = None
+    efficiency_current: Measurement[np.float64] | None = None
+    efficiency_mass: Measurement[np.float64] | None = None
+    efficiency_voltage: Measurement[np.float64] | None = None
+    efficiency_anode: Measurement[np.float64] | None = None
+    ion_velocity_coords_m: Array | None = None
+    ion_velocity_m_s: Measurement[Array] | None = None
     # Plume
-    div_angle: Measurement[np.float64] | None = None
-    jion_radius: float | None = None
-    jion_coords: Array | None = None
-    jion: Measurement[Array] | None = None
+    divergence_angle_rad: Measurement[np.float64] | None = None
+    ion_current_density_radius_m: float | None = None
+    ion_current_density_coords_m: Array | None = None
+    ion_current_density_A_m2: Measurement[Array] | None = None
 
     def log_likelihood_of(self, observation: "ThrusterData") -> np.float64:
         # Add contributions from global performance metrics
         log_likelihood = (
-            _measurement_gauss_logpdf(self.V_cc, observation.V_cc)
-            + _measurement_gauss_logpdf(self.T, observation.T)
-            + _measurement_gauss_logpdf(self.I_D, observation.I_D)
-            + _measurement_gauss_logpdf(self.I_B0, observation.I_B0)
-            + _measurement_gauss_logpdf(self.eta_c, observation.eta_c)
-            + _measurement_gauss_logpdf(self.eta_m, observation.eta_m)
-            + _measurement_gauss_logpdf(self.eta_v, observation.eta_v)
-            + _measurement_gauss_logpdf(self.eta_a, observation.eta_a)
-            + _measurement_gauss_logpdf(self.div_angle, observation.div_angle)
-            + _interp_gauss_logpdf(self.uion_coords, self.uion, observation.uion_coords, observation.uion)
+            _measurement_gauss_logpdf(self.cathode_coupling_voltage_V, observation.cathode_coupling_voltage_V)
+            + _measurement_gauss_logpdf(self.thrust_N, observation.thrust_N)
+            + _measurement_gauss_logpdf(self.discharge_current_A, observation.discharge_current_A)
+            + _measurement_gauss_logpdf(self.ion_current_A, observation.ion_current_A)
+            + _measurement_gauss_logpdf(self.efficiency_current, observation.efficiency_current)
+            + _measurement_gauss_logpdf(self.efficiency_mass, observation.efficiency_mass)
+            + _measurement_gauss_logpdf(self.efficiency_voltage, observation.efficiency_voltage)
+            + _measurement_gauss_logpdf(self.efficiency_anode, observation.efficiency_anode)
+            + _measurement_gauss_logpdf(self.divergence_angle_rad, observation.divergence_angle_rad)
+            + _interp_gauss_logpdf(
+                self.ion_velocity_coords_m,
+                self.ion_velocity_m_s,
+                observation.ion_velocity_coords_m,
+                observation.ion_velocity_m_s,
+            )
         )
 
-        if self.jion_radius is not None and self.jion_radius == observation.jion_radius:
+        if (
+            self.ion_current_density_radius_m is not None
+            and self.ion_current_density_radius_m == observation.ion_current_density_radius_m
+        ):
             log_likelihood += _interp_gauss_logpdf(
-                self.jion_coords, self.jion, observation.jion_coords, observation.jion
+                self.ion_current_density_coords_m,
+                self.ion_current_density_A_m2,
+                observation.ion_current_density_coords_m,
+                observation.ion_current_density_A_m2,
             )
 
         return log_likelihood
@@ -194,25 +205,25 @@ def _load_dataset(file: PathLike) -> dict[OperatingCondition, ThrusterData]:
                 # Load thrust data
                 T = val[opcond_start_row] * 1e-3  # convert to Newtons
                 T_std = table["thrust relative uncertainty"][opcond_start_row] * T / 2
-                data[opcond].T = Measurement(mean=T, std=T_std)
+                data[opcond].thrust_N = Measurement(mean=T, std=T_std)
 
             elif key == "anode current (a)":
                 # Load discharge current data
                 # assume a 0.1-A std deviation for discharge current
-                data[opcond].I_D = Measurement(mean=val[opcond_start_row], std=0.1)
+                data[opcond].discharge_current_A = Measurement(mean=val[opcond_start_row], std=np.float64(0.1))
 
             elif key == "cathode coupling voltage (v)":
                 # Load cathode coupling data
                 V_cc = val[opcond_start_row]
                 V_cc_std = table["cathode coupling voltage absolute uncertainty (v)"][opcond_start_row] / 2
-                data[opcond].V_cc = Measurement(mean=V_cc, std=V_cc_std)
+                data[opcond].cathode_coupling_voltage_V = Measurement(mean=V_cc, std=V_cc_std)
 
             elif key == "ion velocity (m/s)":
                 # Load ion velocity data
                 uion: Array = val[opcond_start_row:row_num]
                 uion_std: Array = table["ion velocity absolute uncertainty (m/s)"][opcond_start_row:row_num] / 2
-                data[opcond].uion = Measurement(mean=uion, std=uion_std)
-                data[opcond].uion_coords = table["axial position from anode (m)"][opcond_start_row:row_num]
+                data[opcond].ion_velocity_m_s = Measurement(mean=uion, std=uion_std)
+                data[opcond].ion_velocity_coords_m = table["axial position from anode (m)"][opcond_start_row:row_num]
 
             elif key == "ion current density (ma/cm^2)":
                 # Load ion current density data
@@ -223,9 +234,9 @@ def _load_dataset(file: PathLike) -> dict[OperatingCondition, ThrusterData]:
 
                 # Keep only measurements at angles less than 90 degrees
                 keep_inds = jion_coords < 90
-                data[opcond].jion_coords = jion_coords[keep_inds] * np.pi / 180
-                data[opcond].jion_radius = r
-                data[opcond].jion = Measurement(mean=jion[keep_inds], std=jion_std[keep_inds])
+                data[opcond].ion_current_density_coords_m = jion_coords[keep_inds] * np.pi / 180
+                data[opcond].ion_current_density_radius_m = r
+                data[opcond].ion_current_density_A_m2 = Measurement(mean=jion[keep_inds], std=jion_std[keep_inds])
 
         # Advance to next operating condition or break out of loop if we're at the end of the table
         if row_num == num_rows:

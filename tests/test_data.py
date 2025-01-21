@@ -8,16 +8,16 @@ def test_spt100_macdonald2019():
     expdata = hallmd.data.load(spt100.macdonald2019())
     assert len(expdata.keys()) == 3
     for opcond, data in expdata.items():
-        assert data.T is None
-        assert data.I_D is not None
-        assert data.uion is not None
-        assert data.uion_coords is not None
-        assert data.jion is None
-        assert data.jion_coords is None
-        assert data.V_cc is None
-        assert data.jion_radius is None
-        assert opcond.mdot_a == 5.16
-        assert opcond.V_a == 300.0
+        assert data.thrust_N is None
+        assert data.discharge_current_A is not None
+        assert data.ion_velocity_m_s is not None
+        assert data.ion_velocity_coords_m is not None
+        assert data.ion_current_density_A_m2 is None
+        assert data.ion_current_density_coords_m is None
+        assert data.cathode_coupling_voltage_V is None
+        assert data.ion_current_density_radius_m is None
+        assert opcond.anode_mass_flow_rate_kg_s == 5.16
+        assert opcond.discharge_voltage_V == 300.0
 
     data = [expdata[cond] for cond in expdata.keys()]
 
@@ -46,19 +46,19 @@ def test_spt100_diamant2014():
     assert len(expdata_L3.keys()) + len(expdata_aerospace.keys()) == len(expdata_all_explicit.keys())
 
     for opcond, data in expdata_all_implicit.items():
-        assert data.T is not None
-        assert data.V_cc is not None
-        assert data.I_D is not None
-        assert data.uion is None
-        assert data.uion_coords is None
+        assert data.thrust_N is not None
+        assert data.cathode_coupling_voltage_V is not None
+        assert data.discharge_current_A is not None
+        assert data.ion_velocity_m_s is None
+        assert data.ion_velocity_coords_m is None
         if opcond in expdata_L3.keys():
-            assert data.jion is not None
-            assert data.jion_coords is not None
-            assert data.jion_radius is not None
+            assert data.ion_current_density_A_m2 is not None
+            assert data.ion_current_density_coords_m is not None
+            assert data.ion_current_density_radius_m is not None
         else:
-            assert data.jion is None
-            assert data.jion_coords is None
-            assert data.jion_radius is None
+            assert data.ion_current_density_A_m2 is None
+            assert data.ion_current_density_coords_m is None
+            assert data.ion_current_density_radius_m is None
 
     data = [expdata_all_explicit[cond] for cond in expdata_all_explicit.keys()]
 
@@ -75,7 +75,7 @@ def test_spt100_diamant2014():
 
     L1 = data_l3.log_likelihood_of(data_l3)
 
-    data_l3.jion_radius = None
+    data_l3.ion_current_density_radius_m = None
 
     L3 = data_l3.log_likelihood_of(data_l3)
 
@@ -88,11 +88,11 @@ def test_spt100_sankovic1993():
     assert (len(expdata.keys())) > 100
 
     for opcond, data in expdata.items():
-        assert data.T is not None
-        assert data.I_D is not None
-        assert data.V_cc is None
-        assert data.uion is None
-        assert data.uion_coords is None
-        assert data.jion_coords is None
-        assert data.jion is None
-        assert data.jion_radius is None
+        assert data.thrust_N is not None
+        assert data.discharge_current_A is not None
+        assert data.cathode_coupling_voltage_V is None
+        assert data.ion_velocity_m_s is None
+        assert data.ion_velocity_coords_m is None
+        assert data.ion_current_density_coords_m is None
+        assert data.ion_current_density_A_m2 is None
+        assert data.ion_current_density_radius_m is None
