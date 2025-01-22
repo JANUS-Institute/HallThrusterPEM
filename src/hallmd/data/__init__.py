@@ -1,17 +1,17 @@
 """The `hallmd.data` package contains a folder for each unique thruster. The experimental data for each thruster
 is further divided by folders for each individual paper or reference. The raw experimental data is contained within
-these folders in any arbitrary format (h5, json, csv, etc.). Each set of raw experimental data should come with a
-`dataloader.py` file that reads from the raw data into standardized Python objects. Any additional documentation
+these folders in any supported format (currently only .csv). Any additional documentation
 for the datasets is encouraged (e.g. citations, descriptions, summaries, etc.) and can be included in the data folders.
+
 ## Thrusters
 
 ### SPT-100
 Currently the only thruster with available data. Data for the SPT-100 comes from four sources:
 
-1. [Diamant et al. 2014](https://arc.aiaa.org/doi/10.2514/6.2014-3710) - provides thrust, cathode coupling voltage, and ion current density data as a function of chamber background pressure.
+1. [Diamant et al. 2014](https://arc.aiaa.org/doi/10.2514/6.2014-3710) - provides thrust and ion current density data as a function of chamber background pressure.
 2. [Macdonald et al. 2019](https://arc.aiaa.org/doi/10.2514/1.B37133) - provides ion velocity profiles for varying chamber pressures.
 3. [Sankovic et al. 1993](https://www.semanticscholar.org/paper/Performance-evaluation-of-the-Russian-SPT-100-at-Sankovic-Hamley/81b7d985669b21aa1a8419277c52e7a879bf3b46) - provides thrust at varying operating conditions.
-4. [Jorns and Byrne. 2021](https://pepl.engin.umich.edu/pdf/2021_PSST_Jorns.pdf) - provides cathode coupling voltages at same conditions as Diamant et al. 2024.
+4. [Jorns and Byrne. 2021](https://pepl.engin.umich.edu/pdf/2021_PSST_Jorns.pdf) - provides cathode coupling voltages at same conditions as Diamant et al. 2014.
 
 Citations:
 ``` title="SPT-100.bib"
@@ -21,7 +21,7 @@ Citations:
 
 from dataclasses import dataclass, fields
 from pathlib import Path
-from typing import Any, Generic, Sequence, TypeAlias, TypeVar
+from typing import Any, Generic, Optional, TypeAlias, TypeVar
 
 import numpy as np
 import numpy.typing as npt
@@ -32,6 +32,9 @@ PathLike: TypeAlias = str | Path
 
 @dataclass(frozen=True)
 class OperatingCondition:
+    """Operating conditions for a Hall thruster. Currently includes background pressure (Torr),
+    discharge voltage (V), and anode mass flow rate (kg/s).
+    """
     background_pressure_Torr: float
     discharge_voltage_V: float
     anode_mass_flow_rate_kg_s: float
@@ -42,6 +45,10 @@ T = TypeVar("T", np.float64, Array)
 
 @dataclass(frozen=True)
 class Measurement(Generic[T]):
+    """A measurement object that includes a mean and standard deviation. The mean is the best estimate of the
+    quantity being measured, and the standard deviation is the uncertainty in the measurement. Can be used to specify
+    a scalar measurement quantity or a field quantity (e.g. a profile) in the form of a `numpy` array.
+    """
     mean: T
     std: T
 
@@ -79,38 +86,33 @@ def _interp_gauss_logpdf(
 
 @dataclass
 class ThrusterData:
+    """Class for Hall thruster data. Contains fields for all relevant performance metrics and quantities of interest."""
     # Cathode
-    cathode_coupling_voltage_V: Measurement[np.float64] | None = None
+    cathode_coupling_voltage_V: Optional[Measurement[np.float64]] = None
     # Thruster
-    thrust_N: Measurement[np.float64] | None = None
-    discharge_current_A: Measurement[np.float64] | None = None
-    ion_current_A: Measurement[np.float64] | None = None
-    efficiency_current: Measurement[np.float64] | None = None
-    efficiency_mass: Measurement[np.float64] | None = None
-    efficiency_voltage: Measurement[np.float64] | None = None
-    efficiency_anode: Measurement[np.float64] | None = None
-    ion_velocity_coords_m: Array | None = None
-    ion_velocity_m_s: Measurement[Array] | None = None
+    thrust_N: Optional[Measurement[np.float64]] = None
+    discharge_current_A: Optional[Measurement[np.float64]] = None
+    ion_current_A: Optional[Measurement[np.float64]] = None
+    efficiency_current: Optional[Measurement[np.float64]] = None
+    efficiency_mass: Optional[Measurement[np.float64]] = None
+    efficiency_voltage: Optional[Measurement[np.float64]] = None
+    efficiency_anode: Optional[Measurement[np.float64]] = None
+    ion_velocity_coords_m: Optional[Array] = None
+    ion_velocity_m_s: Optional[Measurement[Array]] = None
     # Plume
-    divergence_angle_rad: Measurement[np.float64] | None = None
-    ion_current_density_radius_m: float | None = None
-    ion_current_density_coords_m: Array | None = None
-    ion_current_density_A_m2: Measurement[Array] | None = None
+    divergence_angle_rad: Optional[Measurement[np.float64]] = None
+    ion_current_density_radius_m: Optional[float] = None
+    ion_current_density_coords_m: Optional[Array] = None
+    ion_current_density_A_m2: Optional[Measurement[Array]] = None
 
     def __str__(self) -> str:
-        indent = "\t"
-        out: str = "ThrusterData(\n"
-        for field in fields(ThrusterData):
-            val = getattr(self, field.name)
-            if val is not None:
-                out += f"{indent}{field.name} = {val},\n"
-
-        out += ")\n"
-        return out
+        fields_str = ",\n".join([f"\t{field.name} = {val}" for field in fields(ThrusterData)
+                                 if (val := getattr(self, field.name)) is not None])
+        return f"ThrusterData(\n{fields_str}\n)\n"
 
 
 def pem_to_thrusterdata(
-    operating_conditions: Sequence[OperatingCondition], outputs
+    operating_conditions: list[OperatingCondition], outputs
 ) -> dict[OperatingCondition, ThrusterData]:
     # Assemble output dict from operating conditions -> results
     # Note, we assume that the pem outputs are ordered based on the input operating conditions
@@ -166,19 +168,29 @@ def log_likelihood(data: ThrusterData, observation: ThrusterData) -> np.float64:
     return log_likelihood
 
 
-def load(files: Sequence[PathLike] | PathLike) -> dict[OperatingCondition, ThrusterData]:
+def load(files: list[PathLike] | PathLike) -> dict[OperatingCondition, ThrusterData]:
+    """Load all data from the given files into a dict map of `OperatingCondition` -> `ThrusterData`.
+    Each thruster operating condition corresponds to one set of thruster measurements or quantities of interest (QoIs).
+
+    :param files: A list of file paths or a single file path to load data from (only .csv supported).
+    :return: A dict map of `OperatingCondition` -> `ThrusterData` objects.
+    """
     data: dict[OperatingCondition, ThrusterData] = {}
-    if isinstance(files, Sequence):
+    if isinstance(files, list):
         # Recursively load resources in this list (possibly list of lists)
         for file in files:
             data.update(load(file))
     else:
-        data.update(_load_dataset(files))
+        data.update(_load_single(files))
 
     return data
 
 
-def _load_dataset(file: PathLike) -> dict[OperatingCondition, ThrusterData]:
+def _load_single(file: PathLike) -> dict[OperatingCondition, ThrusterData]:
+    """Load data from a single file into a dict map of `OperatingCondition` -> `ThrusterData`."""
+    if not Path(file).suffix == '.csv':
+        raise ValueError(f"Unsupported file format: {Path(file).suffix}. Only .csv files are supported.")
+
     table = _table_from_file(file, delimiter=",", comments="#")
     data: dict[OperatingCondition, ThrusterData] = {}
 
@@ -189,12 +201,12 @@ def _load_dataset(file: PathLike) -> dict[OperatingCondition, ThrusterData]:
     keys = list(table.keys())
 
     if mdot_a_key in keys:
-        mdot_a = table[mdot_a_key]
+        mdot_a = table[mdot_a_key] * 1e-6  # convert to kg/s
     else:
         if mdot_t_key in keys and flow_ratio_key in keys:
             flow_ratio = table[flow_ratio_key]
             anode_flow_fraction = flow_ratio / (flow_ratio + 1)
-            mdot_a = table[mdot_t_key] * anode_flow_fraction
+            mdot_a = table[mdot_t_key] * anode_flow_fraction * 1e-6  # convert to kg/s
         else:
             raise KeyError(
                 f"{file}: No mass flow rate provided."
@@ -202,7 +214,7 @@ def _load_dataset(file: PathLike) -> dict[OperatingCondition, ThrusterData]:
             )
 
     # Get background pressure and discharge voltage
-    P_B = np.log10(table["background pressure (torr)"])
+    P_B = table["background pressure (torr)"]
     V_a = table["anode voltage (v)"]
 
     num_rows = len(table[keys[0]])
@@ -273,6 +285,7 @@ def _load_dataset(file: PathLike) -> dict[OperatingCondition, ThrusterData]:
 
 
 def _table_from_file(file: PathLike, delimiter=",", comments="#") -> dict[str, Array]:
+    """Return a `dict` of `numpy` arrays from a CSV file. The keys of the dict are the column names in the CSV."""
     # Read header of file to get column names
     # We skip comments (lines starting with the string in the `comments` arg)
     header_start = 0
