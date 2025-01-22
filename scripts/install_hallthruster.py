@@ -8,20 +8,20 @@ Usage: python install_hallthruster.py --julia-version 1.10 --hallthruster-versio
 
 Note: If `git-ref` is specified, this will override the `hallthruster-version` and instead install from GitHub.
 """
+
 import argparse
 import os
+import platform
 import shlex
 import subprocess
-import platform
 from pathlib import Path
 
 from packaging.version import Version
 
-
 ENV = os.environ.copy()
 PLATFORM = platform.system().lower()
 JULIA_VERSION_DEFAULT = "1.10"
-HALLTHRUSTER_VERSION_DEFAULT = "0.18.1"
+HALLTHRUSTER_VERSION_DEFAULT = "0.18.2"
 HALLTHRUSTER_URL = "https://github.com/UM-PEPL/HallThruster.jl"
 HALLTHRUSTER_NAME = "HallThruster"
 
@@ -46,7 +46,9 @@ def run_command(command, capture_output=True, text=None, shell=False, env=None):
                 command = shlex.split(command)
         return subprocess.run(command, capture_output=capture_output, check=True, text=text, shell=shell, env=env)
     except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"Command `{command}` failed with code {e.returncode}: {e}\nError message: {e.stderr}") from e
+        raise RuntimeError(
+            f"Command `{command}` failed with code {e.returncode}: {e}\nError message: {e.stderr}"
+        ) from e
     except subprocess.SubprocessError as e:
         raise RuntimeError(f"Subprocess error: {e}") from e
 
@@ -62,7 +64,9 @@ def install_juliaup(yes: bool = False):
             cmd += " -s -- -y"
 
         run_command(cmd, capture_output=False, text=True, shell=True)
-        ENV["PATH"] = str((Path(os.path.expanduser('~')) / ".juliaup" / "bin").resolve()) + os.pathsep + ENV.get("PATH", "")
+        ENV["PATH"] = (
+            str((Path(os.path.expanduser('~')) / ".juliaup" / "bin").resolve()) + os.pathsep + ENV.get("PATH", "")
+        )
 
 
 def ensure_julia_version(julia_version):
@@ -126,13 +130,19 @@ def install_hallthruster_jl(hallthruster_version, git_ref):
         os.makedirs(env_path)
         if PLATFORM == 'windows':
             # Powershell needs the double quotes to be escaped
-            pkg_cmd = rf'Pkg.add(url=\"{HALLTHRUSTER_URL}\", rev=\"{git_ref}\")' if git_ref is not None else \
-                rf'Pkg.add(name=\"{HALLTHRUSTER_NAME}\", version=\"{hallthruster_version}\")'
+            pkg_cmd = (
+                rf'Pkg.add(url=\"{HALLTHRUSTER_URL}\", rev=\"{git_ref}\")'
+                if git_ref is not None
+                else rf'Pkg.add(name=\"{HALLTHRUSTER_NAME}\", version=\"{hallthruster_version}\")'
+            )
             pkg_cmd += r'; Pkg.add(\"JSON3\")'
             install_cmd = rf"julia -e 'using Pkg; Pkg.activate(raw\"{env_path.resolve()}\"); {pkg_cmd}'"
         else:
-            pkg_cmd = rf'Pkg.add(url="{HALLTHRUSTER_URL}", rev="{git_ref}")' if git_ref is not None else \
-                rf'Pkg.add(name="{HALLTHRUSTER_NAME}", version="{hallthruster_version}")'
+            pkg_cmd = (
+                rf'Pkg.add(url="{HALLTHRUSTER_URL}", rev="{git_ref}")'
+                if git_ref is not None
+                else rf'Pkg.add(name="{HALLTHRUSTER_NAME}", version="{hallthruster_version}")'
+            )
             pkg_cmd += r'; Pkg.add("JSON3")'
             install_cmd = rf"""julia -e 'using Pkg; Pkg.activate("{env_path.resolve()}"); {pkg_cmd}'"""
 
@@ -158,15 +168,22 @@ def main(julia_version, hallthruster_version, git_ref, yes):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Install specified Julia and HallThruster.jl versions.")
-    parser.add_argument("-j", "--julia-version", default=JULIA_VERSION_DEFAULT,
-                        help="The Julia version to install (default: 1.10)")
-    parser.add_argument("-t", "--hallthruster-version", default=HALLTHRUSTER_VERSION_DEFAULT,
-                        help="The HallThruster.jl version to install (default: 0.18.1)")
-    parser.add_argument("-r", "--git-ref", default=None,
-                        help="Install from this git ref (branch, hash, etc.) from the HallThruster.jl "
-                             "GitHub repository.")
-    parser.add_argument("-y", "--yes", action="store_true", default=False,
-                        help="Install non-interactively.")
+    parser.add_argument(
+        "-j", "--julia-version", default=JULIA_VERSION_DEFAULT, help="The Julia version to install (default: 1.10)"
+    )
+    parser.add_argument(
+        "-t",
+        "--hallthruster-version",
+        default=HALLTHRUSTER_VERSION_DEFAULT,
+        help="The HallThruster.jl version to install (default: 0.18.1)",
+    )
+    parser.add_argument(
+        "-r",
+        "--git-ref",
+        default=None,
+        help="Install from this git ref (branch, hash, etc.) from the HallThruster.jl GitHub repository.",
+    )
+    parser.add_argument("-y", "--yes", action="store_true", default=False, help="Install non-interactively.")
     args = parser.parse_args()
 
     main(args.julia_version, args.hallthruster_version, args.git_ref, args.yes)

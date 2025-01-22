@@ -32,7 +32,7 @@ from hallmd.utils import AVOGADRO_CONSTANT, FUNDAMENTAL_CHARGE, MOLECULAR_WEIGHT
 
 __all__ = ["run_hallthruster_jl", "hallthruster_jl", "get_jl_env", "PEM_TO_JULIA"]
 
-HALLTHRUSTER_VERSION_DEFAULT = "0.18.1"
+HALLTHRUSTER_VERSION_DEFAULT = "0.18.2"
 
 # Maps PEM variable names to a path in the HallThruster.jl input/output structure (default values here)
 with open(resources.files("hallmd.models") / "pem_to_julia.json", "r") as fd:
@@ -220,7 +220,7 @@ def _format_hallthruster_jl_input(
 
     # Handle special conversions for anomalous transport models
     if anom_model := json_config["config"].get("anom_model"):
-        if anom_model.get("type") == "LogisticPressureShift":
+        if anom_model.get("type") in ["LogisticPressureShift", "SimpleLogisticShift"]:
             anom_model = anom_model.get("model", {})
 
         match anom_model.get("type", "TwoZoneBohm"):
