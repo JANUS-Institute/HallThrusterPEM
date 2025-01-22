@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_aea740bc56595e62_utils_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.6.10">coverage.py v7.6.10</a>,
-            created at 2025-01-22 15:07 +0000
+            created at 2025-01-22 22:55 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -114,7 +114,7 @@
     <p class="pln"><span class="n"><a id="t32" href="#t32">32</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t33" href="#t33">33</a></span><span class="t"><span class="nam">__all__</span> <span class="op">=</span> <span class="op">[</span><span class="str">"run_hallthruster_jl"</span><span class="op">,</span> <span class="str">"hallthruster_jl"</span><span class="op">,</span> <span class="str">"get_jl_env"</span><span class="op">,</span> <span class="str">"PEM_TO_JULIA"</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t34" href="#t34">34</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t35" href="#t35">35</a></span><span class="t"><span class="nam">HALLTHRUSTER_VERSION_DEFAULT</span> <span class="op">=</span> <span class="str">"0.18.1"</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t35" href="#t35">35</a></span><span class="t"><span class="nam">HALLTHRUSTER_VERSION_DEFAULT</span> <span class="op">=</span> <span class="str">"0.18.2"</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t36" href="#t36">36</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t37" href="#t37">37</a></span><span class="t"><span class="com"># Maps PEM variable names to a path in the HallThruster.jl input/output structure (default values here)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t38" href="#t38">38</a></span><span class="t"><span class="key">with</span> <span class="nam">open</span><span class="op">(</span><span class="nam">resources</span><span class="op">.</span><span class="nam">files</span><span class="op">(</span><span class="str">"hallmd.models"</span><span class="op">)</span> <span class="op">/</span> <span class="str">"pem_to_julia.json"</span><span class="op">,</span> <span class="str">"r"</span><span class="op">)</span> <span class="key">as</span> <span class="nam">fd</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
@@ -302,7 +302,7 @@
     <p class="pln"><span class="n"><a id="t220" href="#t220">220</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t221" href="#t221">221</a></span><span class="t">    <span class="com"># Handle special conversions for anomalous transport models</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t222" href="#t222">222</a></span><span class="t">    <span class="key">if</span> <span class="nam">anom_model</span> <span class="op">:=</span> <span class="nam">json_config</span><span class="op">[</span><span class="str">"config"</span><span class="op">]</span><span class="op">.</span><span class="nam">get</span><span class="op">(</span><span class="str">"anom_model"</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t223" href="#t223">223</a></span><span class="t">        <span class="key">if</span> <span class="nam">anom_model</span><span class="op">.</span><span class="nam">get</span><span class="op">(</span><span class="str">"type"</span><span class="op">)</span> <span class="op">==</span> <span class="str">"LogisticPressureShift"</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t223" href="#t223">223</a></span><span class="t">        <span class="key">if</span> <span class="nam">anom_model</span><span class="op">.</span><span class="nam">get</span><span class="op">(</span><span class="str">"type"</span><span class="op">)</span> <span class="key">in</span> <span class="op">[</span><span class="str">"LogisticPressureShift"</span><span class="op">,</span> <span class="str">"SimpleLogisticShift"</span><span class="op">]</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t224" href="#t224">224</a></span><span class="t">            <span class="nam">anom_model</span> <span class="op">=</span> <span class="nam">anom_model</span><span class="op">.</span><span class="nam">get</span><span class="op">(</span><span class="str">"model"</span><span class="op">,</span> <span class="op">{</span><span class="op">}</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t225" href="#t225">225</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t226" href="#t226">226</a></span><span class="t">        <span class="key">match</span> <span class="nam">anom_model</span><span class="op">.</span><span class="nam">get</span><span class="op">(</span><span class="str">"type"</span><span class="op">,</span> <span class="str">"TwoZoneBohm"</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
@@ -455,7 +455,7 @@
     <p class="pln"><span class="n"><a id="t373" href="#t373">373</a></span><span class="t"><span class="str">                           via `ncells = model_fidelity[0] * 50 + 100` and `ncharge = model_fidelity[1] + 1`.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t374" href="#t374">374</a></span><span class="t"><span class="str">                           Will override `ncells` and `ncharge` in `simulation` and `config` if provided.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t375" href="#t375">375</a></span><span class="t"><span class="str">    :param output_path: base path to save output files, will write to current directory if not specified</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t376" href="#t376">376</a></span><span class="t"><span class="str">    :param version: version of HallThruster.jl to use (defaults to 0.18.1); will</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t376" href="#t376">376</a></span><span class="t"><span class="str">    :param version: version of HallThruster.jl to use; will</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t377" href="#t377">377</a></span><span class="t"><span class="str">                    search for a global `hallthruster_{version}` environment in the `~/.julia/environments/` directory.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t378" href="#t378">378</a></span><span class="t"><span class="str">                    Can also specify a specific git ref (i.e. branch, commit hash, etc.) to use from GitHub. If the</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t379" href="#t379">379</a></span><span class="t"><span class="str">                    `hallthruster_{version}` environment does not exist, an error will be raised -- you should create</span>&nbsp;</span><span class="r"></span></p>
@@ -536,7 +536,7 @@
             <a class="nav" href="z_aea740bc56595e62_utils_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.6.10">coverage.py v7.6.10</a>,
-            created at 2025-01-22 15:07 +0000
+            created at 2025-01-22 22:55 +0000
         </p>
     </div>
 </footer>

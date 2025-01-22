@@ -1640,7 +1640,7 @@ The mass flow rate and discharge voltage are specified in <code>thruster_inputs<
             </td>
             <td class="doc-param-details">
               <div class="doc-md-description">
-                <p>version of HallThruster.jl to use (defaults to 0.18.1); will search for a global <code>hallthruster_{version}</code> environment in the <code>~/.julia/environments/</code> directory. Can also specify a specific git ref (i.e. branch, commit hash, etc.) to use from GitHub. If the <code>hallthruster_{version}</code> environment does not exist, an error will be raised -- you should create this environment first before using it.</p>
+                <p>version of HallThruster.jl to use; will search for a global <code>hallthruster_{version}</code> environment in the <code>~/.julia/environments/</code> directory. Can also specify a specific git ref (i.e. branch, commit hash, etc.) to use from GitHub. If the <code>hallthruster_{version}</code> environment does not exist, an error will be raised -- you should create this environment first before using it.</p>
               </div>
               <p>
                   <span class="doc-param-annotation">
@@ -1930,7 +1930,7 @@ The mass flow rate and discharge voltage are specified in <code>thruster_inputs<
 </span><span id="__span-0-373"><a id="__codelineno-0-373" name="__codelineno-0-373"></a><span class="sd">                           via `ncells = model_fidelity[0] * 50 + 100` and `ncharge = model_fidelity[1] + 1`.</span>
 </span><span id="__span-0-374"><a id="__codelineno-0-374" name="__codelineno-0-374"></a><span class="sd">                           Will override `ncells` and `ncharge` in `simulation` and `config` if provided.</span>
 </span><span id="__span-0-375"><a id="__codelineno-0-375" name="__codelineno-0-375"></a><span class="sd">    :param output_path: base path to save output files, will write to current directory if not specified</span>
-</span><span id="__span-0-376"><a id="__codelineno-0-376" name="__codelineno-0-376"></a><span class="sd">    :param version: version of HallThruster.jl to use (defaults to 0.18.1); will</span>
+</span><span id="__span-0-376"><a id="__codelineno-0-376" name="__codelineno-0-376"></a><span class="sd">    :param version: version of HallThruster.jl to use; will</span>
 </span><span id="__span-0-377"><a id="__codelineno-0-377" name="__codelineno-0-377"></a><span class="sd">                    search for a global `hallthruster_{version}` environment in the `~/.julia/environments/` directory.</span>
 </span><span id="__span-0-378"><a id="__codelineno-0-378" name="__codelineno-0-378"></a><span class="sd">                    Can also specify a specific git ref (i.e. branch, commit hash, etc.) to use from GitHub. If the</span>
 </span><span id="__span-0-379"><a id="__codelineno-0-379" name="__codelineno-0-379"></a><span class="sd">                    `hallthruster_{version}` environment does not exist, an error will be raised -- you should create</span>
