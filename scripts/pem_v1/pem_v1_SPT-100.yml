@@ -64,7 +64,6 @@ components: !Component
     version: 0.18.2
     thruster: SPT-100
     config:
-#      thruster: SPT-100                 # moved to separate thruster kwarg
       discharge_voltage: 300             # overwritten by V_a
       anode_mass_flow_rate: 5.0e-6       # overwritten by mdot_a
       cathode_coupling_voltage: 30       # overwritten by V_cc

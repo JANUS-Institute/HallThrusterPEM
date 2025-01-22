@@ -373,7 +373,7 @@ def hallthruster_jl(
                            via `ncells = model_fidelity[0] * 50 + 100` and `ncharge = model_fidelity[1] + 1`.
                            Will override `ncells` and `ncharge` in `simulation` and `config` if provided.
     :param output_path: base path to save output files, will write to current directory if not specified
-    :param version: version of HallThruster.jl to use (defaults to 0.18.1); will
+    :param version: version of HallThruster.jl to use; will
                     search for a global `hallthruster_{version}` environment in the `~/.julia/environments/` directory.
                     Can also specify a specific git ref (i.e. branch, commit hash, etc.) to use from GitHub. If the
                     `hallthruster_{version}` environment does not exist, an error will be raised -- you should create
