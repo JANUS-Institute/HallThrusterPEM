@@ -2,90 +2,102 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://JANUS-Institute.github.io/HallThrusterPEM/changelog/</loc>
-         <lastmod>2025-01-21</lastmod>
+         <lastmod>2025-01-22</lastmod>
     </url>
     <url>
          <loc>https://JANUS-Institute.github.io/HallThrusterPEM/contributing/</loc>
-         <lastmod>2025-01-21</lastmod>
+         <lastmod>2025-01-22</lastmod>
     </url>
     <url>
          <loc>https://JANUS-Institute.github.io/HallThrusterPEM/coverage/</loc>
-         <lastmod>2025-01-21</lastmod>
+         <lastmod>2025-01-22</lastmod>
     </url>
     <url>
          <loc>https://JANUS-Institute.github.io/HallThrusterPEM/examples/</loc>
-         <lastmod>2025-01-21</lastmod>
+         <lastmod>2025-01-22</lastmod>
     </url>
     <url>
          <loc>https://JANUS-Institute.github.io/HallThrusterPEM/start/</loc>
-         <lastmod>2025-01-21</lastmod>
+         <lastmod>2025-01-22</lastmod>
     </url>
     <url>
          <loc>https://JANUS-Institute.github.io/HallThrusterPEM/tutorial/</loc>
-         <lastmod>2025-01-21</lastmod>
+         <lastmod>2025-01-22</lastmod>
     </url>
     <url>
          <loc>https://JANUS-Institute.github.io/HallThrusterPEM/guides/calibrate/</loc>
-         <lastmod>2025-01-21</lastmod>
+         <lastmod>2025-01-22</lastmod>
     </url>
     <url>
          <loc>https://JANUS-Institute.github.io/HallThrusterPEM/guides/data/</loc>
-         <lastmod>2025-01-21</lastmod>
+         <lastmod>2025-01-22</lastmod>
     </url>
     <url>
          <loc>https://JANUS-Institute.github.io/HallThrusterPEM/guides/model/</loc>
-         <lastmod>2025-01-21</lastmod>
+         <lastmod>2025-01-22</lastmod>
     </url>
     <url>
          <loc>https://JANUS-Institute.github.io/HallThrusterPEM/guides/surrogate/</loc>
-         <lastmod>2025-01-21</lastmod>
+         <lastmod>2025-01-22</lastmod>
     </url>
     <url>
          <loc>https://JANUS-Institute.github.io/HallThrusterPEM/guides/validate/</loc>
-         <lastmod>2025-01-21</lastmod>
+         <lastmod>2025-01-22</lastmod>
     </url>
     <url>
          <loc>https://JANUS-Institute.github.io/HallThrusterPEM/reference/</loc>
-         <lastmod>2025-01-21</lastmod>
+         <lastmod>2025-01-22</lastmod>
     </url>
     <url>
          <loc>https://JANUS-Institute.github.io/HallThrusterPEM/reference/SUMMARY/</loc>
-         <lastmod>2025-01-21</lastmod>
+         <lastmod>2025-01-22</lastmod>
     </url>
     <url>
          <loc>https://JANUS-Institute.github.io/HallThrusterPEM/reference/utils/</loc>
-         <lastmod>2025-01-21</lastmod>
+         <lastmod>2025-01-22</lastmod>
     </url>
     <url>
          <loc>https://JANUS-Institute.github.io/HallThrusterPEM/reference/data/</loc>
-         <lastmod>2025-01-21</lastmod>
+         <lastmod>2025-01-22</lastmod>
     </url>
     <url>
-         <loc>https://JANUS-Institute.github.io/HallThrusterPEM/reference/data/loader/</loc>
-         <lastmod>2025-01-21</lastmod>
+         <loc>https://JANUS-Institute.github.io/HallThrusterPEM/reference/data/spt100/</loc>
+         <lastmod>2025-01-22</lastmod>
+    </url>
+    <url>
+         <loc>https://JANUS-Institute.github.io/HallThrusterPEM/reference/data/spt100/diamant2014/</loc>
+         <lastmod>2025-01-22</lastmod>
+    </url>
+    <url>
+         <loc>https://JANUS-Institute.github.io/HallThrusterPEM/reference/data/spt100/macdonald2019/</loc>
+         <lastmod>2025-01-22</lastmod>
+    </url>
+    <url>
+         <loc>https://JANUS-Institute.github.io/HallThrusterPEM/reference/data/spt100/sankovic1993/</loc>
+         <lastmod>2025-01-22</lastmod>
     </url>
     <url>
          <loc>https://JANUS-Institute.github.io/HallThrusterPEM/reference/devices/</loc>
-         <lastmod>2025-01-21</lastmod>
+         <lastmod>2025-01-22</lastmod>
     </url>
     <url>
          <loc>https://JANUS-Institute.github.io/HallThrusterPEM/reference/models/</loc>
-         <lastmod>2025-01-21</lastmod>
+         <lastmod>2025-01-22</lastmod>
     </url>
     <url>
          <loc>https://JANUS-Institute.github.io/HallThrusterPEM/reference/models/cathode/</loc>
-         <lastmod>2025-01-21</lastmod>
+         <lastmod>2025-01-22</lastmod>
     </url>
     <url>
          <loc>https://JANUS-Institute.github.io/HallThrusterPEM/reference/models/plume/</loc>
-         <lastmod>2025-01-21</lastmod>
+         <lastmod>2025-01-22</lastmod>
     </url>
     <url>
          <loc>https://JANUS-Institute.github.io/HallThrusterPEM/reference/models/thruster/</loc>
-         <lastmod>2025-01-21</lastmod>
+         <lastmod>2025-01-22</lastmod>
     </url>
     <url>
          <loc>https://JANUS-Institute.github.io/HallThrusterPEM/theory/summary/</loc>
-         <lastmod>2025-01-21</lastmod>
+         <lastmod>2025-01-22</lastmod>
     </url>
 </urlset>
