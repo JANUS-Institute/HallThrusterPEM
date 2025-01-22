@@ -220,7 +220,7 @@ def _format_hallthruster_jl_input(
 
     # Handle special conversions for anomalous transport models
     if anom_model := json_config["config"].get("anom_model"):
-        if anom_model.get("type") == "LogisticPressureShift":
+        if anom_model.get("type") in ["LogisticPressureShift", "SimpleLogisticShift"]:
             anom_model = anom_model.get("model", {})
 
         match anom_model.get("type", "TwoZoneBohm"):

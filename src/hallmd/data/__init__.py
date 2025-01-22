@@ -21,7 +21,7 @@ Citations:
 
 from dataclasses import dataclass, fields
 from pathlib import Path
-from typing import Any, Generic, Optional, TypeAlias, TypeVar
+from typing import Any, Generic, Optional, Sequence, TypeAlias, TypeVar
 
 import numpy as np
 import numpy.typing as npt
@@ -30,13 +30,23 @@ Array: TypeAlias = npt.NDArray[np.floating[Any]]
 PathLike: TypeAlias = str | Path
 
 
+opcond_keys_forward: dict[str, str] = {
+    "p_b": "background_pressure_torr",
+    "v_a": "discharge_voltage_v",
+    "mdot_a": "anode_mass_flow_rate_kg_s",
+}
+
+opcond_keys_backward: dict[str, str] = {v: k for (k, v) in opcond_keys_forward.items()}
+
+
 @dataclass(frozen=True)
 class OperatingCondition:
     """Operating conditions for a Hall thruster. Currently includes background pressure (Torr),
     discharge voltage (V), and anode mass flow rate (kg/s).
     """
-    background_pressure_Torr: float
-    discharge_voltage_V: float
+
+    background_pressure_torr: float
+    discharge_voltage_v: float
     anode_mass_flow_rate_kg_s: float
 
 
@@ -49,6 +59,7 @@ class Measurement(Generic[T]):
     quantity being measured, and the standard deviation is the uncertainty in the measurement. Can be used to specify
     a scalar measurement quantity or a field quantity (e.g. a profile) in the form of a `numpy` array.
     """
+
     mean: T
     std: T
 
@@ -87,6 +98,7 @@ def _interp_gauss_logpdf(
 @dataclass
 class ThrusterData:
     """Class for Hall thruster data. Contains fields for all relevant performance metrics and quantities of interest."""
+
     # Cathode
     cathode_coupling_voltage_V: Optional[Measurement[np.float64]] = None
     # Thruster
@@ -106,8 +118,13 @@ class ThrusterData:
     ion_current_density_A_m2: Optional[Measurement[Array]] = None
 
     def __str__(self) -> str:
-        fields_str = ",\n".join([f"\t{field.name} = {val}" for field in fields(ThrusterData)
-                                 if (val := getattr(self, field.name)) is not None])
+        fields_str = ",\n".join(
+            [
+                f"\t{field.name} = {val}"
+                for field in fields(ThrusterData)
+                if (val := getattr(self, field.name)) is not None
+            ]
+        )
         return f"ThrusterData(\n{fields_str}\n)\n"
 
 
@@ -168,7 +185,7 @@ def log_likelihood(data: ThrusterData, observation: ThrusterData) -> np.float64:
     return log_likelihood
 
 
-def load(files: list[PathLike] | PathLike) -> dict[OperatingCondition, ThrusterData]:
+def load(files: Sequence[PathLike] | PathLike) -> dict[OperatingCondition, ThrusterData]:
     """Load all data from the given files into a dict map of `OperatingCondition` -> `ThrusterData`.
     Each thruster operating condition corresponds to one set of thruster measurements or quantities of interest (QoIs).
 

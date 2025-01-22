@@ -17,7 +17,7 @@ def test_spt100_macdonald2019():
         assert data.cathode_coupling_voltage_V is None
         assert data.ion_current_density_radius_m is None
         assert opcond.anode_mass_flow_rate_kg_s == 5.16e-6
-        assert opcond.discharge_voltage_V == 300.0
+        assert opcond.discharge_voltage_v == 300.0
 
     data = [expdata[cond] for cond in expdata.keys()]
 
