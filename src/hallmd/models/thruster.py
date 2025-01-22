@@ -32,7 +32,7 @@ from hallmd.utils import AVOGADRO_CONSTANT, FUNDAMENTAL_CHARGE, MOLECULAR_WEIGHT
 
 __all__ = ["run_hallthruster_jl", "hallthruster_jl", "get_jl_env", "PEM_TO_JULIA"]
 
-HALLTHRUSTER_VERSION_DEFAULT = "0.18.1"
+HALLTHRUSTER_VERSION_DEFAULT = "0.18.2"
 
 # Maps PEM variable names to a path in the HallThruster.jl input/output structure (default values here)
 with open(resources.files("hallmd.models") / "pem_to_julia.json", "r") as fd:
@@ -220,7 +220,7 @@ def _format_hallthruster_jl_input(
 
     # Handle special conversions for anomalous transport models
     if anom_model := json_config["config"].get("anom_model"):
-        if anom_model.get("type") == "LogisticPressureShift":
+        if anom_model.get("type") in ["LogisticPressureShift", "SimpleLogisticShift"]:
             anom_model = anom_model.get("model", {})
 
         match anom_model.get("type", "TwoZoneBohm"):
@@ -373,7 +373,7 @@ def hallthruster_jl(
                            via `ncells = model_fidelity[0] * 50 + 100` and `ncharge = model_fidelity[1] + 1`.
                            Will override `ncells` and `ncharge` in `simulation` and `config` if provided.
     :param output_path: base path to save output files, will write to current directory if not specified
-    :param version: version of HallThruster.jl to use (defaults to 0.18.1); will
+    :param version: version of HallThruster.jl to use; will
                     search for a global `hallthruster_{version}` environment in the `~/.julia/environments/` directory.
                     Can also specify a specific git ref (i.e. branch, commit hash, etc.) to use from GitHub. If the
                     `hallthruster_{version}` environment does not exist, an error will be raised -- you should create

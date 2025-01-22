@@ -61,10 +61,9 @@ components: !Component
         domain: (0, 60)
   - name: Thruster
     model: !!python/name:hallmd.models.thruster.hallthruster_jl
-    version: 0.18.1
+    version: 0.18.2
     thruster: SPT-100
     config:
-#      thruster: SPT-100                 # moved to separate thruster kwarg
       discharge_voltage: 300             # overwritten by V_a
       anode_mass_flow_rate: 5.0e-6       # overwritten by mdot_a
       cathode_coupling_voltage: 30       # overwritten by V_cc
@@ -73,17 +72,16 @@ components: !Component
       neutral_velocity: 300              # overwritten by u_n
       ncharge: 1                         # overwritten by model_fidelity[1]
       anom_model:
-        type: LogisticPressureShift
+        type: SimpleLogisticShift
         model:
           type: GaussianBohm
           hall_min: 0.00625  # overwritten by anom_min
           hall_max: 0.0625   # overwritten by anom_max * anom_min
           center: 0.025      # overwritten by anom_center
           width: 0.005       # overwritten by anom_width
-        dz: 0.2              # overwritten by dz
-        z0: -0.03            # overwritten by z0
-        pstar: 45.0e-6       # overwritten by p0
-        alpha: 15
+        shift_length: 0.3    # overwritten by anom_shift_length
+        midpoint_pressure: 25.0e-6
+        slope: 2.0
       wall_loss_model:
         type: WallSheath
         material: BNSiO2
@@ -108,7 +106,7 @@ components: !Component
     postprocess:
       average_start_time: 0.0005  # s
     model_fidelity: (2, 2)
-    data_fidelity: (2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2)
+    data_fidelity: (2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2)
     inputs: !Variable
       - name: P_b
       - name: V_a
@@ -133,14 +131,14 @@ components: !Component
         description: minimum Hall parameter
         category: calibration
         tex: "$\\alpha_1$"
-        nominal: 0.00680237
+        nominal: 0.00625
         distribution: LogUniform(0.0001, 1.0)
         norm: log10
       - name: anom_max
         description: maximum Hall parameter
         category: calibration
         tex: "$\\alpha_2$"
-        nominal: 4.0
+        nominal: 10
         distribution: Uniform(1, 100)
       - name: anom_center
         description: location of gaussian trough in anom profile
@@ -155,29 +153,15 @@ components: !Component
         category: calibration
         units: m
         tex: "$L_{anom}$"
-        nominal: 0.01
+        nominal: 0.005
         distribution: Uniform(0.001, 0.05)
         norm: linear(1e3)
-      - name: dz
+      - name: anom_shift_length
         description: Anomalous shift displacement
         category: calibration
         tex: "$\\Delta_z$"
-        nominal: 0.4
-        distribution: N(0.2, 0.07)
-      - name: z0
-        description: Upstream anomalous shift axial limit
-        category: calibration
-        tex: "$z_0$"
-        nominal: -0.03
-        distribution: N(-0.12, 0.04)
-      - name: p0
-        description: Upstream anomalous shift pressure limit
-        category: calibration
-        tex: "$p_0$"
-        units: Torr
-        nominal: 56.86006e-6
-        distribution: N(45.0e-6, 7.0e-6)
-        norm: linear(1e6)
+        nominal: 0.3
+        distribution: Uniform(0, 0.5)
       - name: f_n
         description: Neutral ingestion multiplier
         category: calibration

@@ -19,7 +19,7 @@ There are a few general scripts that can be used for any PEM configuration:
 ### Environment setup
 Installs `pdm` and the `hallmd` package. Also installs Julia and `HallThruster.jl`.
 ```shell
-source setup_env.sh --hallthruster-version=0.18.1 --julia-version=1.10
+source setup_env.sh --hallthruster-version=0.18.2 --julia-version=1.10
 ```
 
 ### Train a surrogate
