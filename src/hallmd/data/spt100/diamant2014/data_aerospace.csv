@@ -1,0 +1,8 @@
+Operating condition,Anode voltage (V),Total flow rate (mg/s),Anode-cathode flow ratio,Background pressure (Torr),Anode current (A),Thrust (mN),Thrust relative uncertainty,Cathode coupling voltage (V),Cathode coupling voltage absolute uncertainty (V)
+1,300,5.657,12,3.45E-06,4.5,80.051,0.007,31.12,0.3
+2,300,5.65,12,4.27E-06,4.5,80.128,0.007,31.29,0.3
+3,300,5.628,12,8.04E-06,4.5,81.506,0.007,31.89,0.3
+4,300,5.58,12,1.44E-05,4.5,82.548,0.007,32.3,0.3
+5,300,5.5,12,2.49E-05,4.5,82.643,0.007,33.11,0.3
+6,300,5.337,12,4.91E-05,4.5,83.113,0.007,32.46,0.3
+7,300,5.197,12,7.37E-05,4.5,83.041,0.007,32.13,0.3
