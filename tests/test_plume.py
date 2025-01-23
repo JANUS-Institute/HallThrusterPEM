@@ -1,4 +1,5 @@
 """Test the ion current density plume model."""
+
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.integrate import simpson
@@ -6,19 +7,27 @@ from scipy.integrate import simpson
 from hallmd.models.plume import current_density
 
 SHOW_PLOTS = False  # for debugging
-J_MIN = 1e-6        # Minimum expected ion current density
-J_MAX = 1e3         # Maximum expected ion current density
-N = 100             # Number of grid points
+J_MIN = 1e-6  # Minimum expected ion current density
+J_MAX = 1e3  # Maximum expected ion current density
+N = 100  # Number of grid points
 
 
 def test_random_samples(plots=SHOW_PLOTS):
     # Test vectorized usage on random samples
-    inputs_rand = {'P_b': 10 ** (np.random.rand(N) * 4 - 8), 'c0': np.random.rand(N) * 0.8 + 0.1,
-                   'c1': np.random.rand(N) * 0.8 + 0.1, 'c2': np.random.rand(N) * 30 - 15,
-                   'c3': np.random.rand(N) + 0.1, 'c4': 10 ** (np.random.rand(N) * 4 + 18),
-                   'c5': 10 ** (np.random.rand(N) * 4 + 14), 'sigma_cex': np.random.rand(N) * 7e-20 + 51e-20,
-                   'r_p': np.random.rand(N)*0.4 + 0.8, 'I_B0': np.random.rand(N) * 6 + 2}
-    outputs_rand = current_density(inputs_rand)
+    inputs_rand = {
+        'P_b': 10 ** (np.random.rand(N) * 4 - 8),
+        'c0': np.random.rand(N) * 0.8 + 0.1,
+        'c1': np.random.rand(N) * 0.8 + 0.1,
+        'c2': np.random.rand(N) * 30 - 15,
+        'c3': np.random.rand(N) + 0.1,
+        'c4': 10 ** (np.random.rand(N) * 4 + 18),
+        'c5': 10 ** (np.random.rand(N) * 4 + 14),
+        'sigma_cex': np.random.rand(N) * 7e-20 + 51e-20,
+        'I_B0': np.random.rand(N) * 6 + 2,
+    }
+
+    r_p = np.random.rand(N) * 0.4 + 0.8
+    outputs_rand = current_density(inputs_rand, sweep_radius=r_p)
 
     min_jion = np.min(outputs_rand['j_ion'])
     max_jion = np.max(outputs_rand['j_ion'])
@@ -50,9 +59,18 @@ def test_random_samples(plots=SHOW_PLOTS):
 def test_pressure_sweep(plots=SHOW_PLOTS):
     # Test single 1d sweep
     pressure_sweep = 10 ** (np.linspace(-6, -4, N))
-    inputs_sweep = {'P_b': pressure_sweep, 'c0': 0.1, 'c1': 0.7, 'c2': -8.0, 'c3': 0.2,
-                    'c4': 1e20, 'c5': 1e16, 'sigma_cex': 55e-20, 'r_p': 1, 'I_B0': 3}
-    outputs_sweep = current_density(inputs_sweep)
+    inputs_sweep = {
+        'P_b': pressure_sweep,
+        'c0': 0.1,
+        'c1': 0.7,
+        'c2': -8.0,
+        'c3': 0.2,
+        'c4': 1e20,
+        'c5': 1e16,
+        'sigma_cex': 55e-20,
+        'I_B0': 3,
+    }
+    outputs_sweep = current_density(inputs_sweep, sweep_radius=1)
 
     min_jion = np.min(outputs_sweep['j_ion'])
     max_jion = np.max(outputs_sweep['j_ion'])
@@ -70,7 +88,7 @@ def test_pressure_sweep(plots=SHOW_PLOTS):
     for i in range(outputs_sweep['j_ion'].shape[0]):
         current[i] = 2 * np.pi * R**2 * simpson(outputs_sweep['j_ion'][i, :] * np.sin(theta), x=theta)
 
-    err = np.sqrt(np.sum((current - np.mean(current)) ** 2) / np.sum(current ** 2))
+    err = np.sqrt(np.sum((current - np.mean(current)) ** 2) / np.sum(current**2))
     assert err < 1e-4
 
     if plots:
@@ -89,9 +107,12 @@ def test_pressure_sweep(plots=SHOW_PLOTS):
         skip = 10
         c = plt.get_cmap('viridis')(np.linspace(0, 1, jion.shape[0]))
         for i in range(0, jion.shape[0], skip):
-            ax.plot(np.concatenate((-np.flip(alpha_deg)[:-1], alpha_deg)),
-                    np.concatenate((np.flip(jion[i, :-1], axis=-1), jion[i, :]), axis=-1),
-                    label=f'P_b = {pressure_sweep[i]:.2e}', color=c[i])
+            ax.plot(
+                np.concatenate((-np.flip(alpha_deg)[:-1], alpha_deg)),
+                np.concatenate((np.flip(jion[i, :-1], axis=-1), jion[i, :]), axis=-1),
+                label=f'P_b = {pressure_sweep[i]:.2e}',
+                color=c[i],
+            )
         ax.set_yscale('log')
         ax.set_xlabel('Angle from centerline (deg)')
         ax.set_ylabel('Ion current density ($A/m^2$)')

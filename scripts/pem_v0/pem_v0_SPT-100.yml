@@ -215,6 +215,7 @@ components: !Component
   - name: Plume
     model: !!python/name:hallmd.models.plume.current_density
     vectorized: true
+    sweep_radius: 1.0
     inputs: !Variable
       - name: P_b
       - name: c0
@@ -267,13 +268,6 @@ components: !Component
         nominal: 55.0e-20
         distribution: Uniform(51.0e-20, 58.0e-20)
         norm: linear(1e20)
-      - name: r_p
-        description: Plume measurement radial distance from channel exit
-        category: operating
-        tex: "$r_p$"
-        units: m
-        nominal: 1
-        domain: (0.5, 1.5)
       - name: I_B0
     outputs: !Variable
       - name: j_ion
