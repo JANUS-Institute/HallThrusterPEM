@@ -174,7 +174,7 @@ if __name__ == "__main__":
     base = load_nominal_inputs(system)
 
     # Load data
-    data = hallmd.data.load(spt100.macdonald2019())
+    data = hallmd.data.load(spt100.macdonald2019() + spt100.diamant2014())
     operating_conditions = list(data.keys())
 
     # Load operating conditions into input dict

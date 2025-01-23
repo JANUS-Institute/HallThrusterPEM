@@ -23,7 +23,7 @@ import time
 import warnings
 from importlib import resources
 from pathlib import Path
-from typing import Callable, Literal
+from typing import Callable, Literal, Optional
 
 import numpy as np
 from amisc.typing import Dataset
@@ -143,13 +143,13 @@ def _default_model_fidelity(model_fidelity: tuple, json_config: dict, cfl: float
 def _format_hallthruster_jl_input(
     thruster_inputs: dict,
     thruster: dict | str = "SPT-100",
-    config: dict = None,
-    simulation: dict = None,
-    postprocess: dict = None,
+    config: Optional[dict] = None,
+    simulation: Optional[dict] = None,
+    postprocess: Optional[dict] = None,
     model_fidelity: tuple = (2, 2),
-    output_path: str | Path = None,
-    pem_to_julia: dict = "default",
-    fidelity_function: Callable = "default",
+    output_path: Optional[str | Path] = None,
+    pem_to_julia: dict | str = "default",
+    fidelity_function: Callable | str = "default",
 ) -> dict:
     """Helper function to format PEM inputs for `Hallthruster.jl` as a `dict` writeable to `json`. See the call
     signature of `hallthruster_jl` for more details on arguments.
@@ -235,7 +235,7 @@ def _format_hallthruster_jl_input(
 
 
 def run_hallthruster_jl(
-    json_input: dict | str | Path, jl_env: str | Path = None, jl_script: str | Path = None, **kwargs
+    json_input: dict | str | Path, jl_env: Optional[str | Path] = None, jl_script: Optional[str | Path] = None, **kwargs
 ) -> dict:
     """Python wrapper for `HallThruster.run_simulation(json_input)` in Julia.
 
@@ -253,7 +253,7 @@ def run_hallthruster_jl(
     # Read JSON input from file if path provided
     if isinstance(json_input, str | Path):
         with open(json_input, "r") as fp:
-            json_input = json.load(fp)
+            json_input: dict = json.load(fp)
 
     tempfile_args = dict(suffix=".json", prefix="hallthruster_jl_", mode="w", delete=False, encoding="utf-8")
 
@@ -328,15 +328,15 @@ def run_hallthruster_jl(
 def hallthruster_jl(
     thruster_inputs: Dataset = None,
     thruster: Literal["SPT-100"] | str | dict = "SPT-100",
-    config: dict = None,
-    simulation: dict = None,
-    postprocess: dict = None,
+    config: Optional[dict] = None,
+    simulation: Optional[dict] = None,
+    postprocess: Optional[dict] = None,
     model_fidelity: tuple = (2, 2),
-    output_path: str | Path = None,
+    output_path: Optional[str | Path] = None,
     version: str = HALLTHRUSTER_VERSION_DEFAULT,
-    pem_to_julia: dict = "default",
+    pem_to_julia: dict | str = "default",
     fidelity_function: Callable[[tuple[int, ...]], dict] = "default",
-    julia_script: str | Path = None,
+    julia_script: Optional[str | Path] = None,
     run_kwargs: dict = "default",
 ) -> Dataset:
     """Run a single `HallThruster.jl` simulation for a given set of inputs. This function will write a temporary
