@@ -1,5 +1,6 @@
 import argparse
 import os
+import pickle
 import shutil
 from argparse import Namespace
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
@@ -7,9 +8,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Type, TypeAlias
 
-import mcmc_plotting
 import numpy as np
 from amisc import System, YamlLoader
+from MCMCIterators import samplers
 
 import hallmd.data
 import hallmd.data.spt100 as spt100
@@ -46,8 +47,8 @@ parser.add_argument(
 class ExecutionOptions:
     executor: Type
     max_workers: int
+    directory: Path
     fidelity: str | tuple | dict = (0, 0)
-    directory: str | Path | None = None
 
 
 def load_system_and_opts(args: Namespace) -> tuple[System, ExecutionOptions]:
@@ -55,6 +56,8 @@ def load_system_and_opts(args: Namespace) -> tuple[System, ExecutionOptions]:
     system = YamlLoader.load(config)
     system.root_dir = Path(config).parent
     system.set_logger(stdout=True)
+
+    # Copy config file into output dir
     if Path(config).name not in os.listdir(system.root_dir):
         shutil.copy(config, system.root_dir)
 
@@ -66,7 +69,14 @@ def load_system_and_opts(args: Namespace) -> tuple[System, ExecutionOptions]:
         case _:
             raise ValueError(f"Unsupported executor type: {args.executor}")
 
-    opts = ExecutionOptions(executor, args.max_workers, (0, 0), system.root_dir)
+    opts = ExecutionOptions(
+        executor,
+        max_workers=args.max_workers,
+        directory=system.root_dir / "mcmc",
+        fidelity=(0, 0),
+    )
+
+    os.mkdir(opts.directory)
 
     return system, opts
 
@@ -78,17 +88,6 @@ def load_nominal_inputs(system: System) -> dict[str, Value]:
         inputs[input.name] = value
 
     return inputs
-
-
-def _get_operating_conditions(system: System, input_dict: dict[str, Value]) -> list[OperatingCondition]:
-    short_names = [short for short, _ in hallmd.data.opcond_keys_forward.items()]
-    inputs = system.inputs()
-
-    opcond_values = [inputs[short].denormalize(input_dict[short]) for short in short_names]
-
-    opconds = [OperatingCondition(*values) for values in zip(*opcond_values)]
-
-    return opconds
 
 
 def _run_model(
@@ -111,6 +110,10 @@ def _run_model(
             executor=exec,
             verbose=False,
         )
+
+    # Write amisc output to file
+    with open(opts.directory / "amisc_out.pkl", "wb") as fd:
+        pickle.dump({"input": sample_dict, "output": outputs}, fd)
 
     # Assemble output dict from operating conditions -> results
     output_thrusterdata = hallmd.data.pem_to_thrusterdata(operating_conditions, outputs)
@@ -168,6 +171,19 @@ def log_posterior(
     return prior + likelihood
 
 
+def update_opts(root_dir, sample_index):
+    id_str = f"{sample_index:06d}"
+    opts.directory = root_dir / id_str
+    os.mkdir(opts.directory)
+
+
+def write_row(logfile, sample_index, sample, logp, accepted_bool):
+    id_str = f"{sample_index:06d}"
+    with open(logfile, "a") as fd:
+        row = [id_str] + [f"{s}" for s in sample] + [f"{logp}", f"{accepted_bool}"]
+        print(delimiter.join(row), file=fd)
+
+
 if __name__ == "__main__":
     args, _ = parser.parse_known_args()
     system, opts = load_system_and_opts(args)
@@ -191,11 +207,57 @@ if __name__ == "__main__":
     print(f"Number of operating conditions: {len(operating_conditions)}")
 
     init_sample = np.array([base[p] for p in params_to_calibrate])
+    init_cov = np.diag(np.ones(len(params_to_calibrate)) * 1e-2)
 
-    logp = lambda x: log_posterior(dict(zip(params_to_calibrate, x)), data, system, base, opts)
+    logpdf = lambda x: log_posterior(dict(zip(params_to_calibrate, x)), data, system, base, opts)
+    root_dir = opts.directory
+    logfile = root_dir / "mcmc.csv"
 
-    init_outputs = _run_model(dict(zip(params_to_calibrate, init_sample)), system, operating_conditions, base, opts)
+    # Prepare output file
+    delimiter = ","
+    header = delimiter.join(["id"] + [p.name for p in params_to_calibrate] + ["log_posterior"] + ["accepted"])
+    with open(logfile, "w") as fd:
+        print(header, file=fd)
 
-    dev_spt100 = mcmc_plotting.Device(L_ch=0.025)
+    # Generate initial logpdf
+    update_opts(root_dir, 0)
+    init_logp = logpdf(init_sample)
+    write_row(logfile, 0, init_sample, init_logp, True)
 
-    mcmc_plotting.plot_u_ion(init_outputs, data, dev_spt100, "init")
+    sampler = samplers.DelayedRejectionAdaptiveMetropolis(
+        logpdf,
+        init_sample,
+        init_cov,
+        adapt_start=10,
+        eps=1e-6,
+        sd=None,
+        interval=1,
+        level_scale=1e-1,
+    )
+
+    max_samples: int = 100
+    best_sample = init_sample
+    best_logp = init_logp
+    num_accept = 1
+
+    start_index = 1
+    update_opts(root_dir, start_index)
+
+    for i, (sample, logp, accepted_bool) in enumerate(sampler):
+        write_row(logfile, i + start_index, sample, logp, accepted_bool)
+
+        if logp > best_logp:
+            best_sample = sample
+            best_logp = logp
+
+        if accepted_bool:
+            num_accept += 1
+
+        print(
+            f"sample: {i + start_index}, logp: {logp}, best logp: {best_logp}, accepted: {accepted_bool}, p_accept: {num_accept / (i + start_index + 1)}"
+        )
+
+        if i >= max_samples:
+            break
+
+        update_opts(root_dir, i + start_index + 1)
