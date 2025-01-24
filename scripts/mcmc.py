@@ -43,6 +43,13 @@ parser.add_argument(
     help="the maximum number of workers to use for parallel processing. Defaults to using maxnumber of available CPUs.",
 )
 
+parser.add_argument(
+    "--max_samples",
+    type=int,
+    default=1,
+    help="The maximum number of samples to generate using MCMC",
+)
+
 
 @dataclass
 class ExecutionOptions:
@@ -236,7 +243,7 @@ if __name__ == "__main__":
         level_scale=1e-1,
     )
 
-    max_samples: int = 250
+    max_samples: int = args.max_samples
     best_sample = init_sample
     best_logp = init_logp
     num_accept = 1
@@ -245,6 +252,7 @@ if __name__ == "__main__":
     start_index = 1
     update_opts(root_dir, start_index)
 
+    # MCMC main loop
     for i, (sample, logp, accepted_bool) in enumerate(sampler):
         write_row(logfile, i + start_index, sample, logp, accepted_bool)
 
