@@ -114,7 +114,7 @@ class ThrusterData:
     # Plume
     divergence_angle_rad: Optional[Measurement[np.float64]] = None
     ion_current_density_radius_m: Optional[float] = None
-    ion_current_density_coords_m: Optional[Array] = None
+    ion_current_density_coords_rad: Optional[Array] = None
     ion_current_density_A_m2: Optional[Measurement[Array]] = None
 
     def __str__(self) -> str:
@@ -142,7 +142,7 @@ def pem_to_thrusterdata(
             ion_current_A=Measurement(outputs["I_B0"][i], NaN),
             ion_velocity_coords_m=outputs["u_ion_coords"][i],
             ion_velocity_m_s=Measurement(outputs["u_ion"][i], np.full_like(outputs["u_ion"][i], NaN)),
-            ion_current_density_coords_m=outputs["j_ion_coords"][i],
+            ion_current_density_coords_rad=outputs["j_ion_coords"][i],
             ion_current_density_A_m2=Measurement(outputs["j_ion"][i], np.full_like(outputs["j_ion"][i], NaN)),
             ion_current_density_radius_m=1.0,
             efficiency_mass=Measurement(outputs["eta_m"][i], NaN),
@@ -176,9 +176,9 @@ def log_likelihood(data: ThrusterData, observation: ThrusterData) -> np.float64:
             observation.ion_velocity_m_s,
         )
         + _interp_gauss_logpdf(
-            data.ion_current_density_coords_m,
+            data.ion_current_density_coords_rad,
             data.ion_current_density_A_m2,
-            observation.ion_current_density_coords_m,
+            observation.ion_current_density_coords_rad,
             observation.ion_current_density_A_m2,
         )
     )
@@ -287,7 +287,7 @@ def _load_single(file: PathLike) -> dict[OperatingCondition, ThrusterData]:
 
                 # Keep only measurements at angles less than 90 degrees
                 keep_inds = jion_coords < 90
-                data[opcond].ion_current_density_coords_m = jion_coords[keep_inds] * np.pi / 180
+                data[opcond].ion_current_density_coords_rad = jion_coords[keep_inds] * np.pi / 180
                 data[opcond].ion_current_density_radius_m = r
                 data[opcond].ion_current_density_A_m2 = Measurement(mean=jion[keep_inds], std=jion_std[keep_inds])
 

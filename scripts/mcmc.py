@@ -111,12 +111,12 @@ def _run_model(
             verbose=False,
         )
 
-    # Write amisc output to file
-    with open(opts.directory / "amisc_out.pkl", "wb") as fd:
-        pickle.dump({"input": sample_dict, "output": outputs}, fd)
-
     # Assemble output dict from operating conditions -> results
     output_thrusterdata = hallmd.data.pem_to_thrusterdata(operating_conditions, outputs)
+
+    # Write outputs to file
+    with open(opts.directory / "pemv1.pkl", "wb") as fd:
+        pickle.dump({"input": sample_dict, "output": output_thrusterdata}, fd)
 
     return output_thrusterdata
 
@@ -207,7 +207,7 @@ if __name__ == "__main__":
     print(f"Number of operating conditions: {len(operating_conditions)}")
 
     init_sample = np.array([base[p] for p in params_to_calibrate])
-    init_cov = np.diag(np.ones(len(params_to_calibrate)) * 1e-2)
+    init_cov = np.diag(np.ones(len(params_to_calibrate)) * 1e-1)
 
     logpdf = lambda x: log_posterior(dict(zip(params_to_calibrate, x)), data, system, base, opts)
     root_dir = opts.directory
@@ -254,7 +254,8 @@ if __name__ == "__main__":
             num_accept += 1
 
         print(
-            f"sample: {i + start_index}, logp: {logp}, best logp: {best_logp}, accepted: {accepted_bool}, p_accept: {num_accept / (i + start_index + 1)}"
+            f"sample: {i + start_index}/{max_samples}, logp: {logp:.3f}, best logp: {best_logp:.3f},",
+            f"accepted: {accepted_bool}, p_accept: {num_accept / (i + start_index + 1) * 100:.1f}%",
         )
 
         if i >= max_samples:

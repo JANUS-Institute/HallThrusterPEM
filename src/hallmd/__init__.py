@@ -12,9 +12,7 @@ The `hallmd` package contains three sub-packages:
 - `devices` - Contains information about specific devices (thrusters and other equipment).
 - `data` - Contains experimental data for validating the models.
 """
+
 import numpy as _np
 
 __version__ = '0.2.0'
-
-# Custom types that are used frequently
-ExpData = dict[str: _np.ndarray]
