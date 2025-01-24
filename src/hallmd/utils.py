@@ -23,7 +23,7 @@ MOLECULAR_WEIGHTS = {
     'Krypton': 83.798,
     'Bismuth': 208.98,
     'Hydrogen': 1.008,
-    'Mecury': 200.59
+    'Mercury': 200.59
 }
 
 

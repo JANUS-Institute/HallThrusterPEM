@@ -289,19 +289,16 @@ def process_compression(system: System, data: dict, discard_outliers: bool = Fal
 
 
 def plot_outliers(outputs: dict, outlier_idx: dict, iqr_factor: float = 1.5, subplot_size: float = 3,
-                  fields_1d: list[str] = None, fields_log: dict = None):
+                  fields_log: dict = None):
     """Plot histograms of outliers detected in the output data at the given indices.
 
     :param outputs: dictionary of output arrays, where each array has shape `(num_samples, ...)`.
     :param outlier_idx: dictionary with boolean arrays of shape `(num_samples,)` indicating outliers for each output
     :param iqr_factor: the factor to multiply the IQR by to determine outliers. Defaults to 1.5.
     :param subplot_size: the size of each subplot in inches. Defaults to 2.5.
-    :param fields_1d: a list of field quantities to plot as 1D line plots. Defaults to `['u_ion', 'j_ion']`. Otherwise,
-           all field quantities will be plotted as histograms of the mean value.
     :param fields_log: a dictionary of field qtys to set the y-axis to log scale. Defaults to {'j_ion': True}.
     :returns: the `fig, ax` for the plot
     """
-    fields_1d = fields_1d or ['u_ion', 'j_ion']
     fields_log = fields_log or {'j_ion': True}
     num_plots = len(outlier_idx.keys())
     num_col = int(np.floor(np.sqrt(num_plots)))
@@ -325,8 +322,10 @@ def plot_outliers(outputs: dict, outlier_idx: dict, iqr_factor: float = 1.5, sub
         lb_iqr = p25 - iqr_factor * iqr
         ub_iqr = p75 + iqr_factor * iqr
 
+        is_1d_field = len(np.atleast_1d(p50).shape) == 1 and np.atleast_1d(p50).shape[0] > 1
+
         # Line plots for 1d field quantities
-        if var in fields_1d:
+        if is_1d_field:
             coords = np.linspace(0, 1, len(p50))
             ax.plot(coords, p50, '-k', label='Median')
             ax.fill_between(coords, lb_iqr, ub_iqr, alpha=0.5, edgecolor=(0.5, 0.5, 0.5), facecolor='gray',

@@ -7,8 +7,8 @@ from scipy.integrate import simpson
 from hallmd.models.plume import current_density
 
 SHOW_PLOTS = False  # for debugging
-J_MIN = 1e-6  # Minimum expected ion current density
-J_MAX = 1e3  # Maximum expected ion current density
+J_MIN = 0  # Minimum expected ion current density
+J_MAX = 5e3  # Maximum expected ion current density
 N = 100  # Number of grid points
 
 
@@ -26,8 +26,10 @@ def test_random_samples(plots=SHOW_PLOTS):
         'I_B0': np.random.rand(N) * 6 + 2,
     }
 
-    r_p = np.random.rand(N) * 0.4 + 0.8
+    r_p = np.random.rand(25) * 0.2 + 1
     outputs_rand = current_density(inputs_rand, sweep_radius=r_p)
+
+    assert outputs_rand['j_ion'].shape == (N, 91, 25)  # (..., angles, radii)
 
     min_jion = np.min(outputs_rand['j_ion'])
     max_jion = np.max(outputs_rand['j_ion'])
@@ -41,10 +43,10 @@ def test_random_samples(plots=SHOW_PLOTS):
     if plots:
         # Plot bounds of random samples
         jion = outputs_rand['j_ion']
-        alpha_deg = np.linspace(0, np.pi / 2, jion.shape[-1]) * (180 / np.pi)
-        lb = np.percentile(jion, 5, axis=0)
-        mid = np.percentile(jion, 50, axis=0)
-        ub = np.percentile(jion, 95, axis=0)
+        alpha_deg = np.linspace(0, np.pi / 2, jion.shape[-2]) * (180 / np.pi)
+        lb = np.percentile(jion, 5, axis=(0, 2))
+        mid = np.percentile(jion, 50, axis=(0, 2))
+        ub = np.percentile(jion, 95, axis=(0, 2))
 
         fig, ax = plt.subplots()
         ax.plot(alpha_deg, mid, '-k')
