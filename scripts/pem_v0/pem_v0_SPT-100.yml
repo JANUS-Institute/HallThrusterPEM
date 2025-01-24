@@ -215,7 +215,7 @@ components: !Component
   - name: Plume
     model: !!python/name:hallmd.models.plume.current_density
     vectorized: true
-    sweep_radius: 1.0
+    sweep_radius: 1.0  # must be scalar for j_ion compression
     inputs: !Variable
       - name: P_b
       - name: c0
