@@ -175,7 +175,7 @@ if __name__ == "__main__":
         "-t",
         "--hallthruster-version",
         default=HALLTHRUSTER_VERSION_DEFAULT,
-        help="The HallThruster.jl version to install (default: 0.18.1)",
+        help=f"The HallThruster.jl version to install (default: {HALLTHRUSTER_VERSION_DEFAULT})",
     )
     parser.add_argument(
         "-r",

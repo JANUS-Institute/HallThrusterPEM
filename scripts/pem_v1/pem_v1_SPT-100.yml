@@ -282,9 +282,6 @@ components: !Component
         tex: "$j_{ion}$"
         units: "$A/m^2$"
         norm: log10
-        compression:
-          method: svd
-          reconstruction_tol: 0.01
       - name: div_angle
         description: Divergence angle
         tex: "$\\theta_d$"
