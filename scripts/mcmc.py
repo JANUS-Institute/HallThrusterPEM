@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Type, TypeAlias
 
+import mcmc_analysis as analysis
 import numpy as np
 from amisc import System, YamlLoader
 from MCMCIterators import samplers
@@ -207,7 +208,7 @@ if __name__ == "__main__":
     print(f"Number of operating conditions: {len(operating_conditions)}")
 
     init_sample = np.array([base[p] for p in params_to_calibrate])
-    init_cov = np.diag(np.ones(len(params_to_calibrate)) * 1e-1)
+    init_cov = np.diag(np.ones(len(params_to_calibrate)) * 0.5)
 
     logpdf = lambda x: log_posterior(dict(zip(params_to_calibrate, x)), data, system, base, opts)
     root_dir = opts.directory
@@ -235,10 +236,11 @@ if __name__ == "__main__":
         level_scale=1e-1,
     )
 
-    max_samples: int = 100
+    max_samples: int = 250
     best_sample = init_sample
     best_logp = init_logp
     num_accept = 1
+    output_interval = 10
 
     start_index = 1
     update_opts(root_dir, start_index)
@@ -257,6 +259,9 @@ if __name__ == "__main__":
             f"sample: {i + start_index}/{max_samples}, logp: {logp:.3f}, best logp: {best_logp:.3f},",
             f"accepted: {accepted_bool}, p_accept: {num_accept / (i + start_index + 1) * 100:.1f}%",
         )
+
+        if (i == max_samples) or (i % output_interval == 0):
+            analysis.analyze_mcmc(root_dir.parent, os.path.basename(args.config_file))
 
         if i >= max_samples:
             break

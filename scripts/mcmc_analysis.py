@@ -74,13 +74,14 @@ def analyze_mcmc(path, config):
     map = samples[map_ind]
     empirical_cov = np.cov(samples.T)
 
-    print(f"{p_accept=}")
+    # print(f"{p_accept=}")
     # print(f"{map=}")
     # print(f"empirical_cov = {repr(empirical_cov)}")
 
     ids_int = [int(i) for i in ids]
 
     plot_path = mcmc_path / "plots"
+    print("Generating plots in", plot_path)
     os.makedirs(plot_path, exist_ok=True)
 
     plot_traces(system, ids_int, variables, samples, total_samples, plot_path)
@@ -117,7 +118,7 @@ def plot_global_quantities(data: Dataset, output: Dataset, plot_name: str, plot_
     global_quantities_to_plot = ['discharge_current_A', 'thrust_N', 'cathode_coupling_voltage_V']
     full_names = ["Discharge current [A]", "Thrust [mN]", "Cathode coupling voltage [V]"]
     scales = [1, 1000, 1]
-    limits = [(3, 7), (70, 110), (25, 35)]
+    limits = [(3, 7), (70, 110), (30, 35)]
 
     for quantity, name, scale, limit in zip(global_quantities_to_plot, full_names, scales, limits):
         sim_qty = np.array(
@@ -298,6 +299,6 @@ def plot_traces(system, ids, names, samples, max_samples, dir: Path = Path("."))
 
 
 if __name__ == "__main__":
-    dir = "scripts/pem_v1/amisc_1000"
+    dir = "scripts/pem_v1/amisc_100_2"
     config = "pem_v1_SPT-100.yml"
     data, results = analyze_mcmc(dir, config)
