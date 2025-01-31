@@ -61,7 +61,7 @@ components: !Component
         domain: (0, 60)
   - name: Thruster
     model: !!python/name:hallmd.models.thruster.hallthruster_jl
-    version: 0.18.2
+    version: 0.18.3
     thruster: SPT-100
     config:
       discharge_voltage: 300             # overwritten by V_a
@@ -132,7 +132,7 @@ components: !Component
         category: calibration
         tex: "$\\alpha_1$"
         nominal: 0.00625
-        distribution: LogUniform(0.0001, 1.0)
+        distribution: LogUniform(0.001, 0.1)
         norm: log10
       - name: anom_max
         description: maximum Hall parameter
@@ -173,7 +173,7 @@ components: !Component
         category: calibration
         tex: "$c_w$"
         nominal: 1.0
-        distribution: U(0.1, 1.0)
+        distribution: U(0.5, 1.5)
       - name: V_cc
     outputs: !Variable
       - name: I_B0
