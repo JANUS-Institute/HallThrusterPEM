@@ -68,10 +68,7 @@ class Measurement(Generic[T]):
 
 
 def _gauss_logpdf(mean: T, std: T, observation: T) -> np.float64:
-    var = std**2
-    term1 = np.mean(np.log(2 * np.pi * var)) / 2
-    term2 = np.mean((mean - observation) ** 2 / (2 * var))
-    return -term1 - term2
+    return -0.5 * np.sum(2 * np.log(std) + (mean - observation) ** 2 / (std**2))
 
 
 def _measurement_gauss_logpdf(data: Measurement[T] | None, observation: Measurement[T] | None) -> np.float64:
@@ -262,8 +259,8 @@ def _load_single(file: PathLike) -> dict[OperatingCondition, ThrusterData]:
 
             elif key == "anode current (a)":
                 # Load discharge current data
-                # assume a 0.1-A std deviation for discharge current
-                data[opcond].discharge_current_A = Measurement(mean=val[opcond_start_row], std=np.float64(0.1))
+                # assume a 0.05-A std deviation for discharge current
+                data[opcond].discharge_current_A = Measurement(mean=val[opcond_start_row], std=np.float64(0.05))
 
             elif key == "cathode coupling voltage (v)":
                 # Load cathode coupling data

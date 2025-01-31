@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Type, TypeAlias
 
+import amisc.distribution as distributions
 import mcmc_analysis as analysis
 import numpy as np
 from amisc import System, YamlLoader
@@ -50,6 +51,27 @@ parser.add_argument(
     help="The maximum number of samples to generate using MCMC",
 )
 
+parser.add_argument(
+    "--datasets",
+    type=str,
+    nargs="+",
+    default=["diamant2014", "macdonald2019"],
+    help="A list of datasets to use, pick from [diamant2014, macdonald2019, sankovic1993]",
+)
+
+parser.add_argument(
+    "--output_interval",
+    type=int,
+    default=10,
+    help="How frequently plots are generated",
+)
+
+parser.add_argument("--output_dir", type=str, default=None, help="Directory into which output files are written")
+
+parser.add_argument("--init_sample", type=str, default=None, help="CSV file containing initial sample")
+
+parser.add_argument("--init_cov", type=str, default=None, help="CSV file containing initial covariance matrix")
+
 
 @dataclass
 class ExecutionOptions:
@@ -62,7 +84,14 @@ class ExecutionOptions:
 def load_system_and_opts(args: Namespace) -> tuple[System, ExecutionOptions]:
     config = args.config_file
     system = YamlLoader.load(config)
-    system.root_dir = Path(config).parent
+    if args.output_dir is None:
+        system.root_dir = Path(config).parent
+    else:
+        os.makedirs(args.output_dir, exist_ok=True)
+        system.root_dir = Path(args.output_dir)
+
+    print(system.root_dir)
+
     system.set_logger(stdout=True)
 
     # Copy config file into output dir
@@ -192,13 +221,24 @@ def write_row(logfile, sample_index, sample, logp, accepted_bool):
         print(delimiter.join(row), file=fd)
 
 
+def read_csv(file):
+    with open(file, 'r') as fd:
+        header = fd.readline().rstrip()
+        if header.startswith("#"):
+            header = header[1:].lstrip()
+
+    col_names = header.split(',')
+    table_data = np.genfromtxt(file, skip_header=1).T
+    return {col_name: column for (col_name, column) in zip(col_names, table_data)}
+
+
 if __name__ == "__main__":
     args, _ = parser.parse_known_args()
     system, opts = load_system_and_opts(args)
     base = load_nominal_inputs(system)
 
     # Load data
-    data = hallmd.data.load(spt100.macdonald2019() + spt100.diamant2014())
+    data = hallmd.data.load(spt100.datasets_from_names(args.datasets))
     operating_conditions = list(data.keys())
 
     # Load operating conditions into input dict
@@ -209,13 +249,67 @@ if __name__ == "__main__":
         base[param] = system.inputs()[param].normalize(inputs_unnorm)
 
     # Choose calibration params
-    names = (p.name for p in system.inputs())
-    params_to_calibrate = [p for _, p in sorted(zip(names, system.inputs())) if p.category == "calibration"]
+    if "diamant2014" in args.datasets:
+        names = (p.name for p in system.inputs())
+        params_to_calibrate = [p for _, p in sorted(zip(names, system.inputs())) if p.category == "calibration"]
+    else:
+        params_to_calibrate = [
+            system.inputs()[p]
+            for p in [
+                "anom_min",
+                "anom_max",
+                "anom_width",
+                "anom_center",
+                "anom_shift_length",
+                "c_w",
+                "u_n",
+            ]
+        ]
 
     print(f"Number of operating conditions: {len(operating_conditions)}")
 
+    # Create initial sample
+    index_map = {p.name: i for (i, p) in enumerate(params_to_calibrate)}
     init_sample = np.array([base[p] for p in params_to_calibrate])
-    init_cov = np.diag(np.ones(len(params_to_calibrate)) * 0.5)
+    if args.init_sample is not None:
+        var_dict = read_csv(args.init_sample)
+        for k, v in var_dict.items():
+            i = index_map[k]
+            init_sample[i] = v
+
+        print(params_to_calibrate)
+        print(var_dict)
+        print(init_sample)
+
+    # Create initial covariance
+    if args.init_cov is None:
+        variances = np.ones(len(params_to_calibrate))
+
+        for i, p in enumerate(params_to_calibrate):
+            dist = system.inputs()[p].distribution
+            if isinstance(dist, distributions.Uniform) or isinstance(dist, distributions.LogUniform):
+                lb, ub = dist.dist_args
+                std = (ub - lb) / 10
+            elif isinstance(dist, distributions.Normal):
+                std = dist.dist_args[1]
+            elif isinstance(dist, distributions.LogNormal):
+                std = dist.base ** dist.dist_args[1]
+            else:
+                raise ValueError(f"Invalid distribution {dist}")
+
+            variances[i] = system.inputs()[p].normalize(std) ** 2
+
+        init_cov = np.diag(variances)
+    else:
+        cov_dict = read_csv(args.init_cov)
+        N = len(params_to_calibrate)
+        init_cov = np.zeros((N, N))
+
+        for i, (key1, column) in enumerate(cov_dict.items()):
+            i1 = index_map[key1]
+            for j, (var, key2) in enumerate(zip(column, cov_dict.keys())):
+                i2 = index_map[key2]
+                init_cov[i1, i2] = var
 
     logpdf = lambda x: log_posterior(dict(zip(params_to_calibrate, x)), data, system, base, opts)
     root_dir = opts.directory
@@ -230,6 +324,12 @@ if __name__ == "__main__":
     # Generate initial logpdf
     update_opts(root_dir, 0)
     init_logp = logpdf(init_sample)
+
+    # Normalize logpdf by initial value
+    norm_const = abs(init_logp)
+    logpdf = lambda x: log_posterior(dict(zip(params_to_calibrate, x)), data, system, base, opts) / norm_const
+    init_logp = init_logp / norm_const
+
     write_row(logfile, 0, init_sample, init_logp, True)
 
     sampler = samplers.DelayedRejectionAdaptiveMetropolis(
@@ -247,7 +347,6 @@ if __name__ == "__main__":
     best_sample = init_sample
     best_logp = init_logp
     num_accept = 1
-    output_interval = 10
 
     start_index = 1
     update_opts(root_dir, start_index)
@@ -268,8 +367,12 @@ if __name__ == "__main__":
             f"accepted: {accepted_bool}, p_accept: {num_accept / (i + start_index + 1) * 100:.1f}%",
         )
 
-        if (i == max_samples) or (i % output_interval == 0):
-            analysis.analyze_mcmc(root_dir.parent, os.path.basename(args.config_file))
+        if (i == max_samples) or (i % args.output_interval == 0):
+            if i % 1000 == 0:
+                corner = True
+            else:
+                corner = False
+            analysis.analyze_mcmc(root_dir.parent, os.path.basename(args.config_file), args.datasets, corner=corner)
 
         if i >= max_samples:
             break

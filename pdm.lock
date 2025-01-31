@@ -5,7 +5,7 @@
 groups = ["default", "dev", "doc", "mpi", "scripts", "test"]
 strategy = ["inherit_metadata"]
 lock_version = "4.5.0"
-content_hash = "sha256:c3aaeefb04e07690cdb0bc3be75f48a6927cc5082f24bcd83f2d77b72c5de440"
+content_hash = "sha256:e11d67c541508f616a4eeff78e4271e53628cf8a2c3ba2b83ce2548bc37e3f61"
 
 [[metadata.targets]]
 requires_python = ">=3.11"
@@ -53,6 +53,17 @@ groups = ["dev"]
 files = [
     {file = "argcomplete-3.5.3-py3-none-any.whl", hash = "sha256:2ab2c4a215c59fd6caaff41a869480a23e8f6a5f910b266c1808037f4e375b61"},
     {file = "argcomplete-3.5.3.tar.gz", hash = "sha256:c12bf50eded8aebb298c7b7da7a5ff3ee24dffd9f5281867dfe1424b58c55392"},
+]
+
+[[package]]
+name = "ash"
+version = "0.1"
+git = "https://github.com/ajdittmann/ash"
+revision = "bf752a5920110831cfe37b08cb8d05cb6ac23d00"
+summary = "1D and 2D average shifted histograms"
+groups = ["default"]
+dependencies = [
+    "numpy",
 ]
 
 [[package]]
@@ -926,6 +937,14 @@ files = [
     {file = "matplotlib-3.10.0-cp313-cp313t-win_amd64.whl", hash = "sha256:5fd41b0ec7ee45cd960a8e71aea7c946a28a0b8a4dcee47d2856b2af051f334c"},
     {file = "matplotlib-3.10.0.tar.gz", hash = "sha256:b886d02a581b96704c9d1ffe55709e49b4d2d52709ccebc4be42db856e511278"},
 ]
+
+[[package]]
+name = "mcmciterators"
+version = "0.0.0"
+git = "https://github.com/goroda/MCMCIterators.git"
+revision = "030e01c1a082913113e1d853ec0bd6d80088082f"
+summary = "Markov Chain Monte Carlo Iterators"
+groups = ["default"]
 
 [[package]]
 name = "mergedeep"

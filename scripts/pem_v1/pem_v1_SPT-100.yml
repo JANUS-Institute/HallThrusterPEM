@@ -159,7 +159,7 @@ components: !Component
       - name: anom_shift_length
         description: Anomalous shift displacement
         category: calibration
-        tex: "$\\Delta_z$"
+        tex: "$\\Delta z_{anom}$"
         nominal: 0.3
         distribution: Uniform(0, 0.5)
       - name: f_n
@@ -173,7 +173,7 @@ components: !Component
         category: calibration
         tex: "$c_w$"
         nominal: 1.0
-        distribution: U(0.1, 1.0)
+        distribution: U(0.1, 2.0)
       - name: V_cc
     outputs: !Variable
       - name: I_B0
