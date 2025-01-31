@@ -176,8 +176,8 @@ def test_run_hallthruster_jl(tmp_path, plots=SHOW_PLOTS, git_ref="0.18.1"):
     if plots:
         fig, ax = plt.subplots(1, 3, figsize=(12, 4), layout="tight")
         grid = outputs["u_ion_coords"]
-        ax[0].plot(grid, outputs["u_ion"], "-k", label="$z_0 = 3\%$")
-        ax[0].plot(grid, outputs_shift["u_ion"], "--r", label="$z_0 = 15\%$")
+        ax[0].plot(grid, outputs["u_ion"], "-k", label="$z_0 = 0.03$")
+        ax[0].plot(grid, outputs_shift["u_ion"], "--r", label="$z_0 = 0.15$")
         ax[0].set_xlabel("Axial distance from anode (m)")
         ax[0].set_ylabel("Ion velocity (m/s)")
         ax[0].legend()
@@ -187,8 +187,8 @@ def test_run_hallthruster_jl(tmp_path, plots=SHOW_PLOTS, git_ref="0.18.1"):
             data = json.load(fd)
             anom_shift = data["output"]["average"]["nu_anom"]
 
-        ax[1].plot(grid, nu_anom, "-k", label="$z_0 = 3\%$")
-        ax[1].plot(grid, anom_shift, "--r", label="$z_0 = 15\%$")
+        ax[1].plot(grid, nu_anom, "-k", label="$z_0 = 0.03$")
+        ax[1].plot(grid, anom_shift, "--r", label="$z_0 = 0.15$")
         ax[1].set_xlabel("Axial distance from anode (m)")
         ax[1].set_ylabel("Anomalous collision frequency (Hz)")
         ax[1].set_yscale("log")

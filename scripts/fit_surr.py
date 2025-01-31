@@ -261,7 +261,7 @@ if __name__ == '__main__':
                     discard_idx |= idx
 
             test_set = ({k: v[~discard_idx, ...] for k, v in data['test_set'][0].items()},
-                        {k: v[~discard_idx, ...] for k, v in data['test_set'][1].items()})
+                        {k: v[~discard_idx, ...] for k, v in data['test_set'][1].items() if k != 'errors'})
 
     with pool_executor(max_workers=args.fit_cpus) as executor:
         fit_kwargs = {'runtime_hr': args.runtime_hr, 'max_iter': args.max_iter, 'targets': args.targets,

@@ -5,14 +5,14 @@
 groups = ["default", "dev", "doc", "mpi", "scripts", "test"]
 strategy = ["inherit_metadata"]
 lock_version = "4.5.0"
-content_hash = "sha256:c3aaeefb04e07690cdb0bc3be75f48a6927cc5082f24bcd83f2d77b72c5de440"
+content_hash = "sha256:17840875f917cc11362ab3d3b98ef9020392cfc834a9734845c6efe4d7bf3d11"
 
 [[metadata.targets]]
 requires_python = ">=3.11"
 
 [[package]]
 name = "amisc"
-version = "0.7.1"
+version = "0.7.3"
 requires_python = ">=3.11"
 summary = "Efficient framework for building surrogates of multidisciplinary systems using the adaptive multi-index stochastic collocation (AMISC) technique."
 groups = ["default"]
@@ -26,8 +26,8 @@ dependencies = [
     "scipy>=1.14",
 ]
 files = [
-    {file = "amisc-0.7.1-py3-none-any.whl", hash = "sha256:a52d6bc6d920c4ba204a820bbd2d925ad0cd0c02e9a38c4339f89dd3662021c1"},
-    {file = "amisc-0.7.1.tar.gz", hash = "sha256:63f373bf2c139ff0c3e01199105ce31266a91622e24868165191676077b7ed19"},
+    {file = "amisc-0.7.3-py3-none-any.whl", hash = "sha256:1c4d42a967009d25bb5a913a401878db224a172dc459304a0be9ced0e684aa80"},
+    {file = "amisc-0.7.3.tar.gz", hash = "sha256:94a8746a570852db57a36b3300ee7c28d9674585795f8d67ac901764c1c42e2f"},
 ]
 
 [[package]]
