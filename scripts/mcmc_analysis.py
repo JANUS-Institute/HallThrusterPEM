@@ -67,6 +67,7 @@ def analyze_mcmc(path, config, datasets, corner=False, bands=False):
     logfile = mcmc_path / "mcmc.csv"
     plot_path = Path(path) / "mcmc_analysis"
     os.makedirs(plot_path, exist_ok=True)
+    print("Generating plots in", plot_path)
 
     analysis_start = time.time()
 
@@ -126,7 +127,6 @@ def analyze_mcmc(path, config, datasets, corner=False, bands=False):
     map_ind = np.argmax(logposts)
     accepted = np.array(accepted)[num_burn:]
 
-    print("Generating plots in", plot_path)
     num_accept = len(samples)
     tex_names = [system.inputs()[name].tex for name in variables]
 
@@ -186,6 +186,37 @@ def analyze_mcmc(path, config, datasets, corner=False, bands=False):
         )
         stop_timer(start)
 
+        start = start_timer("Plotting ion velocity")
+        plot_field_quantity(
+            data,
+            outputs,
+            plot_path,
+            map=map,
+            xquantity="ion_velocity_coords_m",
+            yquantity="ion_velocity_m_s",
+            xlabel="Axial coordinate [channel lengths]",
+            ylabel="Ion velocity [km/s]",
+            xscalefactor=1 / 0.025,
+            yscalefactor=1 / 1000,
+        )
+        stop_timer(start)
+
+        start = start_timer("Plotting ion current density")
+        plot_field_quantity(
+            data,
+            outputs,
+            plot_path,
+            map=map,
+            xquantity="ion_current_density_coords_rad",
+            yquantity="ion_current_density_A_m2",
+            xlabel="Angle [degrees]",
+            ylabel="Ion current density [A/m$^2$]",
+            xscalefactor=180 / np.pi,
+            yscalefactor=1,
+            yscale='log',
+        )
+        stop_timer(start)
+
     plt.close('all')
 
     print(f"Analysis finished in {time.time() - analysis_start:.2f} s.")
@@ -201,6 +232,105 @@ def _extract_quantity(data: Dataset, quantity: str, sorted=False):
         return pressure[perm], qty[perm]
     else:
         return pressure, qty
+
+
+def plot_field_quantity(
+    data: Dataset,
+    sim: list[Dataset],
+    plot_path: Path,
+    xquantity: str,
+    yquantity: str,
+    xlabel: str,
+    ylabel: str,
+    xscalefactor: float,
+    yscalefactor: float,
+    map: Dataset | None = None,
+    yscale: str = 'linear',
+):
+    out_path = plot_path / yquantity
+    os.makedirs(out_path, exist_ok=True)
+
+    mask = np.array([getattr(x, yquantity) is not None for x in data.values()])
+    opconds = [opcond for (i, opcond) in enumerate(data.keys()) if mask[i]]
+
+    if len(opconds) == 0:
+        return
+
+    colors = plt.get_cmap('turbo')
+
+    # Extract simulation coords and data
+    medians = {}
+
+    # Individual plots for each pressure
+    for i, opcond in enumerate(opconds):
+        _data = data[opcond]
+        pressure_uTorr = opcond.background_pressure_torr * 1e6
+
+        fig, (ax, ax_legend) = plt.subplots(1, 2, dpi=200, figsize=(10, 6), width_ratios=[3, 1])
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+        ax.set_yscale(yscale)
+        ax.autoscale(enable=True, tight=True)
+        ax.set_title(ylabel + f" ($p_B = {pressure_uTorr:.0f}$ $\\mu$Torr)")
+
+        x_data = getattr(_data, xquantity) * xscalefactor
+        y_data = getattr(_data, yquantity)
+        y_data_mean = y_data.mean * yscalefactor
+        y_data_std = y_data.std * yscalefactor
+
+        ax.errorbar(x_data, y_data_mean, yerr=2 * y_data_std, color="black", capsize=5, linestyle="")
+        ax.scatter(x_data, y_data_mean, s=40, color='black', label="Data", zorder=10)
+
+        x_sim = getattr(sim[0][opcond], xquantity) * xscalefactor
+        y_sim = np.array([getattr(_sim[opcond], yquantity).mean * yscalefactor for _sim in sim])
+
+        qt = _plot_quantiles(ax, x_sim, y_sim)
+        medians[opcond] = qt[2]
+
+        if map is not None:
+            x_map = getattr(map[opcond], xquantity) * xscalefactor
+            y_map = getattr(map[opcond], yquantity).mean * yscalefactor
+            ax.plot(x_map, y_map, label="Best sample", color='red')
+
+        handles, labels = ax.get_legend_handles_labels()
+        ax_legend.legend(handles, labels, borderaxespad=0)
+        ax_legend.axis("off")
+        fig.tight_layout()
+
+        plot_name = f"{yquantity}_p={pressure_uTorr}uTorr.png"
+        fig.savefig(out_path / plot_name)
+        plt.close(fig)
+
+    # Median predictions and best sample vs data on one plot
+    fig, (ax, ax_legend) = plt.subplots(1, 2, dpi=200, figsize=(10, 6), width_ratios=[3, 1])
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_yscale(yscale)
+    ax.autoscale(enable=True, tight=True)
+
+    for i, opcond in enumerate(opconds):
+        _data = data[opcond]
+        pressure_uTorr = opcond.background_pressure_torr * 1e6
+        color = colors(1 - (i + 0.5) / len(opconds))
+        x_data = getattr(_data, xquantity) * xscalefactor
+        y_data = getattr(_data, yquantity)
+        y_data_mean = y_data.mean * yscalefactor
+        y_data_std = y_data.std * yscalefactor
+        ax.errorbar(x_data, y_data_mean, yerr=2 * y_data_std, color=color, capsize=3, linestyle="")
+        ax.plot(
+            x_data, y_data_mean, '--o', color=color, label=f"Data ($p_B = {pressure_uTorr:.0f}$ $\\mu$Torr)", zorder=10
+        )
+
+        x_sim = getattr(sim[0][opcond], xquantity) * xscalefactor
+        ax.plot(x_sim, medians[opcond], color=color, label="Median prediction")
+
+    handles, labels = ax.get_legend_handles_labels()
+    ax_legend.legend(handles, labels, borderaxespad=0)
+    ax_legend.axis("off")
+    fig.tight_layout()
+    plot_name = f"{yquantity}_allpressures.png"
+    fig.savefig(out_path / plot_name)
+    plt.close(fig)
 
 
 def plot_global_quantity(
@@ -232,9 +362,6 @@ def plot_global_quantity(
     pressure_sim = pressure_sim[sortperm_sim]
     qty_sim = qty_sim[:, sortperm_sim]
 
-    quantiles = [0.05, 0.25, 0.5, 0.75, 0.95]
-    qt = np.quantile(qty_sim, q=quantiles, axis=0)
-
     fig, (ax, ax_legend) = plt.subplots(1, 2, dpi=200, figsize=(10, 6), width_ratios=[3, 1])
     if lims is not None:
         ax.set_ylim(lims)
@@ -242,20 +369,10 @@ def plot_global_quantity(
     ax.set_ylabel(full_name)
     ax.set_xlim(0, np.max(pressure_sim) * 1.05)
 
-    lc = (0.3, 0.3, 0.3)
-    outer_args = {'linestyle': ':', 'color': lc, 'zorder': 2}
-    inner_args = {'linestyle': '-.', 'color': lc, 'zorder': 2}
-
     ax.errorbar(pressure_data, qty_data_mean, yerr=2 * qty_data_std, color="black", capsize=5, linestyle="")
     ax.scatter(pressure_data, qty_data_mean, s=40, color='black', label="Data", zorder=10)
 
-    ax.plot(pressure_sim, qt[2], color=lc, linestyle='--', linewidth=2, label="Median prediction", zorder=2)
-    ax.fill_between(pressure_sim, qt[1, :], qt[-2, :], facecolor=(0.7, 0.7, 0.7), label='50% CI', zorder=1)
-    ax.fill_between(pressure_sim, qt[0, :], qt[-1, :], facecolor=(0.9, 0.9, 0.9), label='90% CI', zorder=0)
-    ax.plot(pressure_sim, qt[0], **outer_args)
-    ax.plot(pressure_sim, qt[-1], **outer_args)
-    ax.plot(pressure_sim, qt[1], **inner_args)
-    ax.plot(pressure_sim, qt[-2], **inner_args)
+    _plot_quantiles(ax, pressure_sim, qty_sim)
 
     if map is not None:
         pressure_map, qty_map = _extract_quantity(map, quantity)
@@ -281,12 +398,28 @@ def load_sim_results(ids, mcmc_path: Path) -> list[dict]:
     return data
 
 
+def _plot_quantiles(ax, x, y, quantiles=[0.05, 0.25, 0.5, 0.75, 0.95]):
+    qt = np.quantile(y, q=quantiles, axis=0)
+    lc = (0.3, 0.3, 0.3)
+    outer_args = {'linestyle': ':', 'color': lc, 'zorder': 2}
+    inner_args = {'linestyle': '-.', 'color': lc, 'zorder': 2}
+    ax.plot(x, qt[2], color=lc, linestyle='--', linewidth=2, label="Median prediction", zorder=2)
+    ax.fill_between(x, qt[1, :], qt[-2, :], facecolor=(0.7, 0.7, 0.7), label='50% CI', zorder=1)
+    ax.fill_between(x, qt[0, :], qt[-1, :], facecolor=(0.9, 0.9, 0.9), label='90% CI', zorder=0)
+    ax.plot(x, qt[0], **outer_args)
+    ax.plot(x, qt[-1], **outer_args)
+    ax.plot(x, qt[1], **inner_args)
+    ax.plot(x, qt[-2], **inner_args)
+
+    return qt
+
+
 def plot_result(data, result, id, plot_path):
     input = result['input']
     output = result['output']
     plot_u_ion(data, output, 0.025, id, plot_path)
     plot_j_ion(data, output, id, plot_path)
-    plot_global_quantities(data, output, id, plot_path)
+    # plot_global_quantities(data, output, id, plot_path)
     return
 
 

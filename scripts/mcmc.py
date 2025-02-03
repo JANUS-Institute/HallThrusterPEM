@@ -368,11 +368,9 @@ if __name__ == "__main__":
         )
 
         if (i == max_samples) or (i % args.output_interval == 0):
-            if i % 1000 == 0:
-                corner = True
-            else:
-                corner = False
-            analysis.analyze_mcmc(root_dir.parent, os.path.basename(args.config_file), args.datasets, corner=corner)
+            analysis.analyze_mcmc(
+                root_dir.parent, os.path.basename(args.config_file), args.datasets, corner=True, bands=True
+            )
 
         if i >= max_samples:
             break
