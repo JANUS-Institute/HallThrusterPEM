@@ -32,7 +32,7 @@ from hallmd.utils import AVOGADRO_CONSTANT, FUNDAMENTAL_CHARGE, MOLECULAR_WEIGHT
 
 __all__ = ["run_hallthruster_jl", "hallthruster_jl", "get_jl_env", "PEM_TO_JULIA"]
 
-HALLTHRUSTER_VERSION_DEFAULT = "0.18.2"
+HALLTHRUSTER_VERSION_DEFAULT = "0.18.3"
 
 # Maps PEM variable names to a path in the HallThruster.jl input/output structure (default values here)
 with open(resources.files("hallmd.models") / "pem_to_julia.json", "r") as fd:
