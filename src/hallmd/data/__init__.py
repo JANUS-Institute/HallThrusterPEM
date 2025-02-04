@@ -17,6 +17,100 @@ Citations:
 ``` title="SPT-100.bib"
 --8<-- "hallmd/data/spt100/spt100.bib:citations"
 ```
+
+## Data conventions
+The data used in the PEM is expected to be in a standard format.
+This format may evolve over time to account for more data, but at present, when we read a CSV file, here is what we look for in the columns.
+Note that we treat columns case-insensitvely, so `Anode current (A)` is treated the same as `anode current (a)`
+
+### Operating conditions
+
+Data is imported into a dictionary that maps operating conditions to data.
+An Operating Condition (made concrete in the `OperatingCondition` class) consists of a unique set of an anode mass flow rate, a background pressure, and a discharge / anode voltage .
+These quantities are **mandatory** for each data file, but can be provided in a few ways.
+In cases where multiple options are allowed, the first matching column is chosen.
+
+#### Background pressure
+We expect a column named 'background pressure (torr)' (not case sensitive).
+We assume the pressure is in units of Torr.
+
+#### Anode mass flow rate
+We look for the following column names in order:
+
+1. A column named 'anode flow rate (mg/s)',
+2. A column named 'total flow rate (mg/s)' and a column named 'anode-cathode flow ratio',
+3. A column named 'total flow rate (mg/s)' and a column named 'cathode flow fraction'.
+
+In all cases, the unit of the flow rate is expected to be mg/s.
+For option 2, the cathode flow fraction is expected as a fraction between zero and one.
+For option 3, the anode-cathode flow ratio is unitless and is expected to be greater than one.
+
+#### Discharge voltage
+We look for the following column names in order:
+
+1. 'discharge voltage (v)',
+2. 'anode voltage (v)'
+
+In both cases, the unit of the voltage is expected to be Volts.
+
+### Data
+
+The following data-fields are all **optional**.
+The `ThrusterData` struct will be populated only with what is provided.
+For each of these quantities, an uncertainty can be provided, either relative or absolute.
+The formats for uncertainties for a quantity of the form '{quantity} ({unit})' are
+1. '{quantity} absolute uncertainty ({unit})'
+2. '{quantity} relative uncertainty'
+
+Relative uncertainties are fractions (so 0.2 == 20%) and absolute uncertainties are in the same units as the main quantity.
+
+As an example, thrust of 100 mN and a relative uncertainty of 0.05 represents 100 +/- 5 mN.
+We assume the errors are normally distributed about the nominal value with the uncertainty representing two standard deviations.
+In this case, the distribution of the experimentally-measured thrust would be T ~ N(100, 2.5).
+If both relative and absolute uncertainties are provided, we use the absolute uncertainty.
+If an uncertainty is not provided, a relative uncertainty of 2% is assumed.
+
+#### Thrust
+We look for a column called 'thrust (mn)'.
+
+#### Discharge current
+We look for one of the following column names in order:
+
+1. 'discharge current (a)'
+2. 'anode current (a)'
+
+#### Cathode coupling voltage
+We look for a column called 'cathode coupling voltage (v)'
+
+#### Ion current density
+We look for three columns
+
+1. The radial distance from the thruster exit plane.
+Allowed keys: 'radial position from thruster exit (m)'
+
+2. The angle relative to thruster centerline
+Allowed keys: 'angular position from thruster centerline (deg)'
+
+3. The current density.
+Allowed keys: 'ion current density (ma/cm^2)'
+
+We do not look for uncertainties for the radius and angle.
+The current density is assumed to have units of mA / cm^2.
+If one or two of these quantities is provided, we throw an error.
+
+#### Ion velocity
+We look for two columns
+
+1. Axial position from anode
+Allowed keys: 'axial position from anode (m)'
+
+2. Ion velocity
+Allowed keys: 'ion velocity (m/s)'
+
+We do not look for uncertainties for the axial position.
+The ion velocity is assumed to have units of m/s.
+If only one of these quantities is provided, we throw an error.
+
 """  # noqa: E501
 
 from dataclasses import dataclass, fields
@@ -28,7 +122,6 @@ import numpy.typing as npt
 
 Array: TypeAlias = npt.NDArray[np.floating[Any]]
 PathLike: TypeAlias = str | Path
-
 
 opcond_keys_forward: dict[str, str] = {
     "p_b": "background_pressure_torr",
@@ -93,6 +186,23 @@ def _interp_gauss_logpdf(
 
 
 @dataclass
+class CurrentDensitySweep:
+    """Contains data for a single current density sweep"""
+
+    radius_m: np.float64
+    angles_rad: Array
+    current_density_A_m2: Measurement[Array]
+
+
+@dataclass
+class IonVelocityData:
+    """Contains measurements of axial ion velocity along with coordinates"""
+
+    axial_distance_m: Array
+    velocity_m_s: Measurement[Array]
+
+
+@dataclass
 class ThrusterData:
     """Class for Hall thruster data. Contains fields for all relevant performance metrics and quantities of interest."""
 
@@ -106,13 +216,10 @@ class ThrusterData:
     efficiency_mass: Optional[Measurement[np.float64]] = None
     efficiency_voltage: Optional[Measurement[np.float64]] = None
     efficiency_anode: Optional[Measurement[np.float64]] = None
-    ion_velocity_coords_m: Optional[Array] = None
-    ion_velocity_m_s: Optional[Measurement[Array]] = None
+    ion_velocity: Optional[IonVelocityData] = None
+
     # Plume
-    divergence_angle_rad: Optional[Measurement[np.float64]] = None
-    ion_current_density_radius_m: Optional[float] = None
-    ion_current_density_coords_rad: Optional[Array] = None
-    ion_current_density_A_m2: Optional[Measurement[Array]] = None
+    ion_current_sweeps: Optional[list[CurrentDensitySweep]] = None
 
     def __str__(self) -> str:
         fields_str = ",\n".join(
@@ -123,6 +230,24 @@ class ThrusterData:
             ]
         )
         return f"ThrusterData(\n{fields_str}\n)\n"
+
+    @staticmethod
+    def merge_field(field, data1, data2):
+        val1 = getattr(data1, field)
+        val2 = getattr(data2, field)
+        if val2 is None and val1 is None:
+            return None
+        elif val2 is None:
+            return val1
+        else:
+            return val2
+
+    @staticmethod
+    def update(data1, data2):
+        merged = {}
+        for field in fields(ThrusterData):
+            merged[field.name] = ThrusterData.merge_field(field.name, data1, data2)
+        return ThrusterData(**merged)
 
 
 def pem_to_thrusterdata(
@@ -137,11 +262,17 @@ def pem_to_thrusterdata(
             thrust_N=Measurement(outputs["T"][i], NaN),
             discharge_current_A=Measurement(outputs["I_d"][i], NaN),
             ion_current_A=Measurement(outputs["I_B0"][i], NaN),
-            ion_velocity_coords_m=outputs["u_ion_coords"][i],
-            ion_velocity_m_s=Measurement(outputs["u_ion"][i], np.full_like(outputs["u_ion"][i], NaN)),
-            ion_current_density_coords_rad=outputs["j_ion_coords"][i],
-            ion_current_density_A_m2=Measurement(outputs["j_ion"][i], np.full_like(outputs["j_ion"][i], NaN)),
-            ion_current_density_radius_m=1.0,
+            ion_velocity=IonVelocityData(
+                axial_distance_m=outputs["u_ion_coords"][i],
+                velocity_m_s=Measurement(outputs["u_ion"][i], np.full_like(outputs["u_ion"][i], NaN)),
+            ),
+            ion_current_sweeps=[
+                CurrentDensitySweep(
+                    radius_m=np.float64(1.0),
+                    angles_rad=outputs["j_ion_coords"][i],
+                    current_density_A_m2=Measurement(outputs["j_ion"][i], np.full_like(outputs["j_ion"][i], NaN)),
+                )
+            ],
             efficiency_mass=Measurement(outputs["eta_m"][i], NaN),
             efficiency_current=Measurement(outputs["eta_c"][i], NaN),
             efficiency_voltage=Measurement(outputs["eta_v"][i], NaN),
@@ -164,22 +295,199 @@ def log_likelihood(data: ThrusterData, observation: ThrusterData) -> np.float64:
         + _measurement_gauss_logpdf(data.efficiency_mass, observation.efficiency_mass)
         + _measurement_gauss_logpdf(data.efficiency_voltage, observation.efficiency_voltage)
         + _measurement_gauss_logpdf(data.efficiency_anode, observation.efficiency_anode)
-        + _measurement_gauss_logpdf(data.divergence_angle_rad, observation.divergence_angle_rad)
-        # interpolated average pointwise error from ion velocity and ion current density
-        + _interp_gauss_logpdf(
-            data.ion_velocity_coords_m,
-            data.ion_velocity_m_s,
-            observation.ion_velocity_coords_m,
-            observation.ion_velocity_m_s,
-        )
-        + _interp_gauss_logpdf(
-            data.ion_current_density_coords_rad,
-            data.ion_current_density_A_m2,
-            observation.ion_current_density_coords_rad,
-            observation.ion_current_density_A_m2,
-        )
     )
+
+    # Contribution to likelihood from ion velocity
+    if data.ion_velocity is not None and observation.ion_velocity is not None:
+        log_likelihood += _interp_gauss_logpdf(
+            data.ion_velocity.axial_distance_m,
+            data.ion_velocity.velocity_m_s,
+            observation.ion_velocity.axial_distance_m,
+            observation.ion_velocity.velocity_m_s,
+        )
+
+    # Contribution to likelihood from ion current density
+    if data.ion_current_sweeps is not None and observation.ion_current_sweeps is not None:
+        for data_sweep in data.ion_current_sweeps:
+            # find sweep in observation with the same radius, if present
+            observation_sweep = None
+            for sweep in observation.ion_current_sweeps:
+                if data_sweep.radius_m == sweep.radius_m:
+                    observation_sweep = sweep
+                    break
+            # if no sweep in observation with same radius, do nothing
+            if observation_sweep is None:
+                continue
+
+            log_likelihood += _interp_gauss_logpdf(
+                data_sweep.angles_rad,
+                data_sweep.current_density_A_m2,
+                observation_sweep.angles_rad,
+                observation_sweep.current_density_A_m2,
+            )
+
     return log_likelihood
+
+
+def rel_uncertainty_key(qty: str) -> str:
+    body, _ = qty.split('(', 1) if '(' in qty else (qty, '')
+    return body.rstrip().casefold() + ' relative uncertainty'
+
+
+def abs_uncertainty_key(qty: str) -> str:
+    body, unit = qty.split('(', 1) if '(' in qty else (qty, '')
+    return body.rstrip().casefold() + ' absolute uncertainty (' + unit
+
+
+def read_measurement(
+    table: dict[str, Array],
+    key: str,
+    val: Array,
+    start: int = 0,
+    end: int | None = None,
+    scale: float = 1.0,
+    scalar: bool = False,
+) -> Measurement:
+    default_rel_err = 0.02
+    mean = val * scale
+    std = default_rel_err * mean / 2
+
+    if (abs_err := table.get(abs_uncertainty_key(key))) is not None:
+        std = abs_err * scale / 2
+    elif (rel_err := table.get(rel_uncertainty_key(key))) is not None:
+        std = rel_err * mean / 2
+
+    if end is None:
+        end = val.size
+
+    if scalar:
+        return Measurement(mean[start], std[start])
+    else:
+        return Measurement(mean[start:end], std[start:end])
+
+
+def load_single_file(file: PathLike) -> dict[OperatingCondition, ThrusterData]:
+    """Load data from a single file into a dict map of `OperatingCondition` -> `ThrusterData`."""
+
+    # Read table from file
+    table = _table_from_file(file, delimiter=",", comments="#")
+    keys = list(table.keys())
+    data: dict[OperatingCondition, ThrusterData] = {}
+
+    # Get anode mass flow rate (or compute it from total flow rate and cathode flow fraction or anode flow ratio)
+    mdot_a = table.get("anode flow rate (mg/s)")
+    if mdot_a is None:
+        mdot_t = table.get("total flow rate (mg/s)")
+        if mdot_t is not None and (cathode_flow_fraction := table.get("cathode flow fraction")) is not None:
+            anode_flow_fraction = 1 - cathode_flow_fraction
+            mdot_a = mdot_t * anode_flow_fraction
+        elif mdot_t is not None and (anode_flow_ratio := table.get("anode-cathode flow ratio")) is not None:
+            anode_flow_fraction = anode_flow_ratio / (anode_flow_ratio + 1)
+            mdot_a = mdot_t * anode_flow_fraction
+        else:
+            raise KeyError(
+                f"{file}: No mass flow rate provided."
+                + " Expected a key called `anode flow rate (mg/s)` or a key called [`total flow rate (mg/s)`"
+                + "and one of (`anode-cathode flow ratio`, `cathode flow fraction`)]"
+            )
+    mdot_a *= 1e-6  # convert flow rate from mg/s to kg/s
+
+    # Get background pressure
+    P_B = table.get("background pressure (torr)")
+    if P_B is None:
+        raise KeyError(f"{file}: No background pressure provided. Expected a key called `background pressure (torr)`.")
+
+    # Get discharge voltage
+    V_a = table.get("discharge voltage (v)", table.get("anode voltage (v)", None))
+    if V_a is None:
+        raise KeyError(
+            f"{file}: No discharge voltage provided."
+            + " Expected a key called `discharge voltage (v)` or `anode voltage (v)`."
+        )
+
+    num_rows = len(table[keys[0]])
+    row = 0
+    opcond_start = 0
+    opcond = OperatingCondition(P_B[0], V_a[0], mdot_a[0])
+
+    while True:
+        next_opcond = opcond
+        if row < num_rows:
+            next_opcond = OperatingCondition(P_B[row], V_a[row], mdot_a[row])
+            if next_opcond == opcond:
+                row += 1
+                continue
+
+        # either at end of operating condition or end of table
+        # fill up thruster data object for this row
+        data[opcond] = ThrusterData()
+
+        # Fill up data
+        # We assume all errors (expressed as value +/- error) correspond to two standard deviations
+        # We also assume a default relative error of 2%
+        for key, val in table.items():
+            if key == "thrust (mn)":
+                data[opcond].thrust_N = read_measurement(table, key, val, opcond_start, scale=1e-3, scalar=True)
+
+            elif key in {"anode current (a)", "discharge current (a)"}:
+                data[opcond].discharge_current_A = read_measurement(table, key, val, opcond_start, scalar=True)
+
+            elif key == "cathode coupling voltage (v)":
+                data[opcond].cathode_coupling_voltage_V = read_measurement(table, key, val, opcond_start, scalar=True)
+
+            elif key == "ion velocity (m/s)":
+                data[opcond].ion_velocity = IonVelocityData(
+                    axial_distance_m=table["axial position from anode (m)"][opcond_start:row],
+                    velocity_m_s=read_measurement(table, key, val, start=opcond_start, end=row, scalar=False),
+                )
+
+            elif key == "ion current density (ma/cm^2)":
+                # Load ion current density data
+                jion = read_measurement(table, key, val, start=opcond_start, end=row, scale=10, scalar=False)
+                radii_m = table["radial position from thruster exit (m)"][opcond_start:row]
+                jion_coords: Array = table["angular position from thruster centerline (deg)"][opcond_start:row]
+                unique_radii = np.unique(radii_m)
+                sweeps: list[CurrentDensitySweep] = []
+                # Keep only angles between 0 and 90 degrees
+                keep_inds = np.logical_and(jion_coords < 90, jion_coords >= 0)
+
+                for r in unique_radii:
+                    inds = np.logical_and(radii_m == r, keep_inds)
+                    sweeps.append(
+                        CurrentDensitySweep(
+                            radius_m=r,
+                            angles_rad=jion_coords[inds] * np.pi / 180,
+                            current_density_A_m2=Measurement(mean=jion.mean[inds], std=jion.std[inds]),
+                        )
+                    )
+
+                current_sweeps = data[opcond].ion_current_sweeps
+                if current_sweeps is None:
+                    data[opcond].ion_current_sweeps = sweeps
+                else:
+                    data[opcond].ion_current_sweeps = current_sweeps + sweeps
+
+        # Advance to next operating condition or break out of loop if we're at the end of the table
+        if row == num_rows:
+            break
+
+        opcond = next_opcond
+        opcond_start = row
+
+    return data
+
+
+def update_data(
+    old_data: dict[OperatingCondition, ThrusterData], new_data: dict[OperatingCondition, ThrusterData]
+) -> dict[OperatingCondition, ThrusterData]:
+    data = old_data.copy()
+    for opcond in new_data.keys():
+        if opcond in old_data.keys():
+            data[opcond] = ThrusterData.update(old_data[opcond], new_data[opcond])
+        else:
+            data[opcond] = new_data[opcond]
+
+    return data
 
 
 def load(files: Sequence[PathLike] | PathLike) -> dict[OperatingCondition, ThrusterData]:
@@ -193,107 +501,11 @@ def load(files: Sequence[PathLike] | PathLike) -> dict[OperatingCondition, Thrus
     if isinstance(files, list):
         # Recursively load resources in this list (possibly list of lists)
         for file in files:
-            data.update(load(file))
+            new_data = load(file)
+            data = update_data(data, new_data)
     else:
-        data.update(_load_single(files))
-
-    return data
-
-
-def _load_single(file: PathLike) -> dict[OperatingCondition, ThrusterData]:
-    """Load data from a single file into a dict map of `OperatingCondition` -> `ThrusterData`."""
-    if not Path(file).suffix == '.csv':
-        raise ValueError(f"Unsupported file format: {Path(file).suffix}. Only .csv files are supported.")
-
-    table = _table_from_file(file, delimiter=",", comments="#")
-    data: dict[OperatingCondition, ThrusterData] = {}
-
-    # Compute anode mass flow rate, if not present
-    mdot_a_key = "anode flow rate (mg/s)"
-    mdot_t_key = "total flow rate (mg/s)"
-    flow_ratio_key = "anode-cathode flow ratio"
-    keys = list(table.keys())
-
-    if mdot_a_key in keys:
-        mdot_a = table[mdot_a_key] * 1e-6  # convert to kg/s
-    else:
-        if mdot_t_key in keys and flow_ratio_key in keys:
-            flow_ratio = table[flow_ratio_key]
-            anode_flow_fraction = flow_ratio / (flow_ratio + 1)
-            mdot_a = table[mdot_t_key] * anode_flow_fraction * 1e-6  # convert to kg/s
-        else:
-            raise KeyError(
-                f"{file}: No mass flow rate provided."
-                + " Need either `anode flow rate (mg/s)` or [`total flow rate (mg/s)` and `anode-cathode flow ratio`]"
-            )
-
-    # Get background pressure and discharge voltage
-    P_B = table["background pressure (torr)"]
-    V_a = table["anode voltage (v)"]
-
-    num_rows = len(table[keys[0]])
-    row_num = 0
-    opcond_start_row = 0
-    opcond = OperatingCondition(P_B[0], V_a[0], mdot_a[0])
-
-    while True:
-        next_opcond = opcond
-        if row_num < num_rows:
-            next_opcond = OperatingCondition(P_B[row_num], V_a[row_num], mdot_a[row_num])
-            if next_opcond == opcond:
-                row_num += 1
-                continue
-
-        # either at end of operating condition or end of table
-        # fill up thruster data object for this row
-        data[opcond] = ThrusterData()
-
-        # Fill up data
-        # We assume all errors (expressed as value +/- error) correspond to two standard deviations
-        for key, val in table.items():
-            if key == "thrust (mn)":
-                # Load thrust data
-                T = val[opcond_start_row] * 1e-3  # convert to Newtons
-                T_std = table["thrust relative uncertainty"][opcond_start_row] * T / 2
-                data[opcond].thrust_N = Measurement(mean=T, std=T_std)
-
-            elif key == "anode current (a)":
-                # Load discharge current data
-                # assume a 0.05-A std deviation for discharge current
-                data[opcond].discharge_current_A = Measurement(mean=val[opcond_start_row], std=np.float64(0.05))
-
-            elif key == "cathode coupling voltage (v)":
-                # Load cathode coupling data
-                V_cc = val[opcond_start_row]
-                V_cc_std = table["cathode coupling voltage absolute uncertainty (v)"][opcond_start_row] / 2
-                data[opcond].cathode_coupling_voltage_V = Measurement(mean=V_cc, std=V_cc_std)
-
-            elif key == "ion velocity (m/s)":
-                # Load ion velocity data
-                uion: Array = val[opcond_start_row:row_num]
-                uion_std: Array = table["ion velocity absolute uncertainty (m/s)"][opcond_start_row:row_num] / 2
-                data[opcond].ion_velocity_m_s = Measurement(mean=uion, std=uion_std)
-                data[opcond].ion_velocity_coords_m = table["axial position from anode (m)"][opcond_start_row:row_num]
-
-            elif key == "ion current density (ma/cm^2)":
-                # Load ion current density data
-                jion: Array = val[opcond_start_row:row_num] * 10  # Convert to A / m^2
-                jion_std: Array = table["ion current density relative uncertainty"][opcond_start_row:row_num] * jion / 2
-                r = table["radial position from thruster exit (m)"][0]
-                jion_coords: Array = table["angular position from thruster centerline (deg)"][opcond_start_row:row_num]
-
-                # Keep only measurements at angles less than 90 degrees
-                keep_inds = jion_coords < 90
-                data[opcond].ion_current_density_coords_rad = jion_coords[keep_inds] * np.pi / 180
-                data[opcond].ion_current_density_radius_m = r
-                data[opcond].ion_current_density_A_m2 = Measurement(mean=jion[keep_inds], std=jion_std[keep_inds])
-
-        # Advance to next operating condition or break out of loop if we're at the end of the table
-        if row_num == num_rows:
-            break
-
-        opcond = next_opcond
-        opcond_start_row = row_num
+        new_data = load_single_file(files)
+        data = update_data(data, new_data)
 
     return data
 
@@ -304,7 +516,7 @@ def _table_from_file(file: PathLike, delimiter=",", comments="#") -> dict[str, A
     # We skip comments (lines starting with the string in the `comments` arg)
     header_start = 0
     header = ""
-    with open(file, "r") as f:
+    with open(file, "r", encoding="utf-8-sig") as f:
         for i, line in enumerate(f):
             if not line.startswith(comments):
                 header = line.rstrip()

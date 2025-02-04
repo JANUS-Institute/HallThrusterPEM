@@ -7,7 +7,13 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-from hallmd.models.thruster import PEM_TO_JULIA, _convert_to_julia, _convert_to_pem, hallthruster_jl
+from hallmd.models.thruster import (
+    HALLTHRUSTER_VERSION_DEFAULT,
+    PEM_TO_JULIA,
+    _convert_to_julia,
+    _convert_to_pem,
+    hallthruster_jl,
+)
 
 SHOW_PLOTS = False
 
@@ -37,7 +43,7 @@ def test_julia_conversion():
     assert pem_convert["new_output"] == 0.5
 
 
-def test_sim_hallthruster_jl(tmp_path, plots=SHOW_PLOTS, git_ref="0.18.1"):
+def test_sim_hallthruster_jl(tmp_path, plots=SHOW_PLOTS, git_ref=HALLTHRUSTER_VERSION_DEFAULT):
     """Simulate a fake HallThruster.jl model to test the Python wrapper function."""
     thruster_inputs = {"V_a": 250, "V_cc": 25, "mdot_a": 3.5e-6}
     config = {
@@ -73,7 +79,7 @@ def test_sim_hallthruster_jl(tmp_path, plots=SHOW_PLOTS, git_ref="0.18.1"):
             z = np.atleast_1d(data["output"]["average"]["z"])
             u_ion = np.atleast_1d(outputs["u_ion"])
 
-        fig, ax = plt.subplots()
+        _, ax = plt.subplots()
         ax.plot(z, u_ion, "-k")
         ax.set_xlabel("Axial distance from anode (m)")
         ax.set_ylabel("Ion velocity (m/s)")
@@ -82,7 +88,7 @@ def test_sim_hallthruster_jl(tmp_path, plots=SHOW_PLOTS, git_ref="0.18.1"):
         plt.show()
 
 
-def test_run_hallthruster_jl(tmp_path, plots=SHOW_PLOTS, git_ref="0.18.1"):
+def test_run_hallthruster_jl(tmp_path, plots=SHOW_PLOTS, git_ref=HALLTHRUSTER_VERSION_DEFAULT):
     """Test actually calling HallThruster.jl using the Python wrapper function (with PEMv0 settings)."""
     num_cells = 200
     pem_inputs = {
@@ -174,10 +180,10 @@ def test_run_hallthruster_jl(tmp_path, plots=SHOW_PLOTS, git_ref="0.18.1"):
             assert key in data["output"]["average"]
 
     if plots:
-        fig, ax = plt.subplots(1, 3, figsize=(12, 4), layout="tight")
+        _, ax = plt.subplots(1, 3, figsize=(12, 4), layout="tight")
         grid = outputs["u_ion_coords"]
-        ax[0].plot(grid, outputs["u_ion"], "-k", label="$z_0 = 3\%$")
-        ax[0].plot(grid, outputs_shift["u_ion"], "--r", label="$z_0 = 15\%$")
+        ax[0].plot(grid, outputs["u_ion"], "-k", label="$z_0 = 3\\%$")
+        ax[0].plot(grid, outputs_shift["u_ion"], "--r", label="$z_0 = 15\\%$")
         ax[0].set_xlabel("Axial distance from anode (m)")
         ax[0].set_ylabel("Ion velocity (m/s)")
         ax[0].legend()
@@ -187,8 +193,8 @@ def test_run_hallthruster_jl(tmp_path, plots=SHOW_PLOTS, git_ref="0.18.1"):
             data = json.load(fd)
             anom_shift = data["output"]["average"]["nu_anom"]
 
-        ax[1].plot(grid, nu_anom, "-k", label="$z_0 = 3\%$")
-        ax[1].plot(grid, anom_shift, "--r", label="$z_0 = 15\%$")
+        ax[1].plot(grid, nu_anom, "-k", label="$z_0 = 3\\%$")
+        ax[1].plot(grid, anom_shift, "--r", label="$z_0 = 15\\%$")
         ax[1].set_xlabel("Axial distance from anode (m)")
         ax[1].set_ylabel("Anomalous collision frequency (Hz)")
         ax[1].set_yscale("log")
