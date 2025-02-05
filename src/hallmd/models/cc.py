@@ -8,6 +8,8 @@ Includes
 - `cc_feedback()` - same model but modified to include feedback from the plume
 """
 import numpy as np
+import matplotlib.pyplot as plt
+from scipy.optimize import curve_fit
 
 Q_E = 1.602176634e-19   # Fundamental charge (C)
 kB = 1.380649e-23       # Boltzmann constant (J/K)
@@ -26,10 +28,12 @@ def cc_feedforward(x: np.ndarray):
     Va = x[..., 1, np.newaxis]                          # Anode voltage
     # Te = x[..., 2, np.newaxis]                          # Electron temperature (eV)
     Te = np.ones(Va.shape)*3
-    V_vac = x[..., 2, np.newaxis]                       # Vacuum coupling voltage (V) 3
-    Pstar = x[..., 3, np.newaxis] * 1e-6 * TORR_2_PA    # Model parameter P* 4
-    PT = x[..., 4, np.newaxis] * 1e-6 * TORR_2_PA       # Model parameter P_T 5
-
+    # V_vac = x[..., 2, np.newaxis]                       # Vacuum coupling voltage (V) 3
+    # Pstar = x[..., 3, np.newaxis] * 1e-6 * TORR_2_PA    # Model parameter P* 4
+    # PT = x[..., 4, np.newaxis] * 1e-6 * TORR_2_PA       # Model parameter P_T 5
+    V_vac = np.ones(Va.shape)*30.93303
+    Pstar = np.ones(Va.shape)*29.90806*1e-6*TORR_2_PA
+    PT = np.ones(Va.shape)*10.60412*1e-6*TORR_2_PA
 
     # Compute cathode coupling voltage
     y = V_vac + Te * np.log(1 + PB / PT) - (Te / (PT + Pstar)) * PB

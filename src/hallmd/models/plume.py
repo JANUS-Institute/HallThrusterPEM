@@ -38,16 +38,22 @@ def plume_feedforward(x: np.ndarray, compress: bool = False,
     """
     # Load plume inputs
     P_B = 10 ** (x[..., 0, np.newaxis]) * TORR_2_PA     # Background pressure (Torr log10)
-    c0 = x[..., 1, np.newaxis]                          # Fit coefficients
-    c1 = x[..., 2, np.newaxis]
-    c2 = x[..., 3, np.newaxis]
-    c3 = x[..., 4, np.newaxis]
-    c4 = 10 ** (x[..., 5, np.newaxis])
-    c5 = 10 ** (x[..., 6, np.newaxis])
-    sigma_cex = x[..., 7, np.newaxis] * 1e-20           # Charge-exchange cross-section (m^2)
-    r_m = x[..., 8, np.newaxis]                         # Axial distance from thruster exit plane (m)
-    I_B0 = x[..., 9, np.newaxis]                        # Total initial ion beam current (A)
-    T = x[..., 10]                                      # Uncorrected thrust
+    #c0 = x[..., 1, np.newaxis]                          # Fit coefficients
+    #c1 = x[..., 2, np.newaxis]
+    #c2 = x[..., 3, np.newaxis]
+    #c3 = x[..., 4, np.newaxis]
+    #c4 = 10 ** (x[..., 5, np.newaxis])
+    #c5 = 10 ** (x[..., 6, np.newaxis])
+    c0 = np.ones(P_B.shape)*0.40159
+    c1 = np.ones(P_B.shape)*0.35365
+    c2 = np.ones(P_B.shape)*0.058398
+    c3 = np.ones(P_B.shape)*0.36468
+    c4 = np.ones(P_B.shape)*19.31920
+    c5 = np.ones(P_B.shape)*16.09474
+    sigma_cex = x[..., 1, np.newaxis] * 1e-20           # Charge-exchange cross-section (m^2)
+    r_m = x[..., 2, np.newaxis]                         # Axial distance from thruster exit plane (m)
+    I_B0 = x[..., 3, np.newaxis]                        # Total initial ion beam current (A)
+    T = x[..., 4]                                      # Uncorrected thrust
 
     # Load svd params for dimension reduction
     if compress:

@@ -18,17 +18,22 @@ from hallmd.models.thruster import uion_reconstruct
 from hallmd.models.plume import jion_reconstruct
 from hallmd.models.pem import pem_v0
 from hallmd.utils import model_config_dir
+from amisc.utils import load_variables
 
 OPTIMIZER_ITER = 1
 START_TIME = 0
 PROJECT_ROOT = Path('../..')
 TRAINING = False
-surr_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-06-26T18.04.11' / 'multi-fidelity').glob('amisc_*'))[0]
-SURR = pem_v0(from_file=surr_dir / 'sys' / f'sys_final{"_train" if TRAINING else "_test"}.pkl')
+surr_dir = list((PROJECT_ROOT / 'results' / 'mf_2024-11-07T00.02.37' / 'multi-fidelity').glob('amisc_*'))[0]
+#SURR = pem_v0(from_file=surr_dir / 'sys' / f'sys_final{"_train" if TRAINING else ""}.pkl')
+SURR = pem_v0(var_file=model_config_dir() / 'variables_v2.json')
 DATA = spt100_data()
 # DATA = h9_data(['V_cc', 'jion', 'uion'])
 COMP = 'System'
-THETA_VARS = [v for v in SURR[COMP].x_vars if v.param_type == 'calibration']
+#THETA_VARS = [v for v in SURR[COMP].x_vars if v.param_type == 'calibration']
+THETA_VARS = load_variables(['PB', 'Va', 'mdot_a', 'u_n', 'f_n', 'vAN1', 'vAN2', 'vAN3', 'vAN4', 'delta_z', 'z0', 'sigma_cex', 'r_m'], model_config_dir() / 'variables_v2.json')
+THETA_VARS = [v for v in THETA_VARS if v.param_type == 'calibration']
+print(THETA_VARS)
 QOI_MAP = {'Cathode': ['V_cc'], 'Thruster': ['uion'], 'Plume': ['T', 'jion'], 'System': ['V_cc', 'uion', 'T', 'jion']}
 QOIS = QOI_MAP.get(COMP)
 
@@ -65,12 +70,8 @@ def spt100_log_likelihood(theta, M=100, ppool=None):
     sample_shape = theta.shape[:-1] + (M, XE_ARRAY.shape[0])
     NOMINAL.update({str(v): theta[..., i, np.newaxis, np.newaxis] for i, v in enumerate(THETA_VARS)})
     xs = SURR.sample_inputs(sample_shape, use_pdf=True, nominal=NOMINAL, constants=CONSTANTS).astype(theta.dtype)
-    ys = SURR.predict(xs, qoi_ind=qoi_ind, training=TRAINING, ppool=ppool)
+    ys = SURR.predict(xs, qoi_ind=qoi_ind, training=TRAINING, ppool=ppool, use_model='best') #CHANGE FROM BEST TO NONE
 
-    # Initialize/ignore the constant part of the likelihood
-    # const = -np.sum(Ny) * np.log(M) - (1/2) * np.sum(Ny) * np.log(2*np.pi) - np.sum(np.log(sigma_y))
-    # const = -np.log(M) - (1/2) * np.sum(Ny) * np.log(2*np.pi) - np.sum(np.log(sigma_y))
-    # log_likelihood = np.ones((*theta.shape[:-1], len(qois)), dtype=theta.dtype) * const
     log_likelihood = np.empty((*theta.shape[:-1], M, len(QOIS)), dtype=theta.dtype)
 
     xe_idx = 0
@@ -291,14 +292,14 @@ def run_mcmc(file='dram-system.h5', clean=False, n_jobs=1, M=100):
             if group is not None:
                 del fd['mcmc']
 
-    nwalk, niter = 1, 50000
+    nwalk, niter = 1, 20
 
     cov_pct = {
         'V_vac': 0.005,
         'P*': 0.06,
         'PT': 0.08,
         'u_n': 0.025,
-        'f_n': 0.08,
+        'f_n': 0.07,
         'vAN1': 0.02,
         'vAN2': 0.01,
         'vAN3': 0.02,
@@ -313,35 +314,34 @@ def run_mcmc(file='dram-system.h5', clean=False, n_jobs=1, M=100):
         'c5': 0.09
     } # *= 0.05
     nominal = {
-        'V_vac': 6.808,
-        'P_star': 1505.0,
-        'PT': 8.00,
-        'u_n': 480.0,
-        'f_n': 5.95,
-        'vAN1': -2.3,
-        'vAN2': 12.9,
-        'vAN3': 0.036,
-        'vAN4': 0.0099,
-        'delta_z': 0.296,
-        'z0': -0.00564,
-        'c0': 0.7,
-        'c1': 0.340,
-        'c2': 0.05,
-        'c3': 1.3,
-        'c4': 21.40,
-        'c5': 14.20
+        'V_vac': 30.93303,
+        'P_star': 29.90806,
+        'PT': 10.60412,
+        'u_n': 278.1331,
+        'f_n': 6.23341,
+        'vAN1': -2.15392,
+        'vAN2': 10.01271,
+        'vAN3': 0.02506,
+        'vAN4': 0.00650,
+        'delta_z': 0.35940,
+        'z0': -0.17682,
+        'c0': 0.40159,
+        'c1': 0.35365,
+        'c2': 0.058398,
+        'c3': 0.36468,
+        'c4': 19.31920,
+        'c5': 16.09474
     }
 
     # p0 = np.array([(v.bounds()[0] + v.bounds()[1])/2 for v in THETA_VARS]).astype(np.float32)
     p0 = np.array([nominal.get(str(v), v.nominal) for v in THETA_VARS]).astype(np.float32)
     p0[np.isclose(p0, 0)] = 1
     cov0 = np.eye(p0.shape[0]) * np.array([(cov_pct.get(str(v), 0.08) * np.abs(p0[i]) / 2)**2 for i, v in enumerate(THETA_VARS)])
-    cov0 *= 0.000005 # MF *= 0.005, SF *= 0.0061
+    cov0 *= 0.000001 # MF *= 0.005, SF *= 0.0061
     # p0 = uq.normal_sample(p0, cov0, nwalk).astype(np.float32)
-
     with Parallel(n_jobs=n_jobs, verbose=0) as ppool:
         fun = lambda theta: spt100_log_posterior(theta, M=M, ppool=ppool)
-        uq.dram(fun, p0, niter, cov0=cov0, filename=file, adapt_after=5000, adapt_interval=1000, eps=1e-6, gamma=0.1)
+        uq.dram(fun, p0, niter, cov0=cov0, filename=file, adapt_after=0, adapt_interval=4, eps=1e-8, gamma=0.1)
 
 
 def show_mcmc(file='dram-system.h5', burnin=0.1):
@@ -463,4 +463,4 @@ if __name__ == '__main__':
     # show_laplace()
     run_mcmc(M=M, file=file, clean=False)
     show_mcmc(file=file)
-    journal_plots(file)
+    # journal_plots(file)

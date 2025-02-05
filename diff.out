@@ -1,0 +1,268 @@
+""" `loader.py`						      |	"""Helper functions for loading UM datasets for the H9."""
+							      >	from importlib import resources
+
+Module for loading experimental data for specific thrusters.  |	import numpy as np
+
+Includes						      <
+--------						      <
+- `spt100_data()` - loads data for the SPT-100		      <
+							      <
+!!! Info "Loading raw data"				      <
+    Raw data is loaded as best as possible into a standard fo <
+    The raw data files are included where possible along with <
+    the standard format. When adding new data to the reposito <
+    include corresponding `dataloader.py` files. You can then <
+    here.						      <
+							      <
+!!! Note "The standard data format"			      <
+    Data from a single experiment is loaded as best as possib <
+    `[x, y, loc, var_y]` as explained in the example below. T <
+    in the same units and format as any of your models would  <
+    directly comparable to the predictions of your models. `l <
+    spatial or temporal dependence (use `loc` in these cases  <
+    where the measurements were taken). `var_y` summarizes ex <
+    with this variance.					      <
+    ```python						      <
+    data = dict(x=x,  # `(N, x_dim)` `np.ndarray` with `x_dim <
+                y=y,  # `(N, y_dim)` `np.ndarray` with measur <
+                loc=loc,      # `(N, loc_dim)`, array with th <
+                var_y=var_y,  # `(N, y_dim)`, array with the  <
+                )					      <
+    ```							      <
+"""							      <
+from hallmd import ExpData					from hallmd import ExpData
+							      >	# from hallmd.data.spt100 import diamant2014 as base_package
+
+							      >	# BASE_DIR = resources.files(base_package)
+							      >	BASE_DIR = '/home/morag/h9-data'
+
+def spt100_data(qois: list[str] = None) -> dict[str: list[Exp |	def load_thrust() -> ExpData: # no UM thrust data
+    """Return a dict with experimental data for each specifie |	    """Load aerospace and L-3 thrust data."""
+							      >	    x = np.zeros((0, 3))
+							      >	    y = np.zeros((0,))
+							      >	    var_y = np.zeros((0,))
+							      >	    thrust_data = np.loadtxt(BASE_DIR + '/GT/thrust_GT.csv', 
+							      >	    pb = np.log10(thrust_data[:, 3, np.newaxis])        # Bac
+							      >	    Va = thrust_data[:, 0, np.newaxis]                  # Ano
+							      >	    mdot = thrust_data[:, 1, np.newaxis]                # Tot
+							      >	    ma2mc = thrust_data[:, 2, np.newaxis]               # Ano
+							      >	    mdot_a = ma2mc / (1 + ma2mc) * mdot                 # Ano
+							      >	    x_new = np.concatenate((pb, Va, mdot_a), axis=1)
+							      >	    thrust = thrust_data[:, 4]*1e-3                     # Thr
+							      >	    thrust_var = (thrust_data[:, 5]*thrust / 2) ** 2    # N^2
+							      >
+							      >	    x = np.concatenate((x, x_new), axis=0)  # (PB, Va, mdot_a
+							      >	    y = np.concatenate((y, thrust), axis=0)
+							      >	    var_y = np.concatenate((var_y, thrust_var), axis=0)
+							      >
+							      >	    return dict(x=x, y=y, var_y=var_y)
+							      >
+							      >
+							      >	def load_vcc() -> ExpData:
+							      >	    """Load cathode coupling voltage data from Jorns 2021."""
+							      >	    data = np.loadtxt(BASE_DIR + '/UM/vcc_UMH9.csv', delimite
+							      >	    pb = np.log10(data[:, 3, np.newaxis])
+							      >	    Va = data[:, 0, np.newaxis]
+							      >	    mdot = data[:, 1, np.newaxis]           # Total flow rate
+							      >	    ma2mc = data[:, 2, np.newaxis]          # Anode to cathod
+							      >	    mdot_a = ma2mc / (1 + ma2mc) * mdot     # Anode mass flow
+							      >	    x = np.concatenate((pb, Va, mdot_a), axis=1)
+							      >	    y = data[:, 4]                          # Coupling voltag
+							      >	    var_y = (data[:, 5] / 2)**2
+							      >
+							      >	    return dict(x=x, y=y, var_y=var_y)
+							      >
+							      >
+							      >	def load_jion() -> ExpData:
+							      >	    """Load ion current density profile from L-3."""
+							      >	    data = np.loadtxt(BASE_DIR + '/UM/jion_UMH9.csv', delimit
+							      >	    N = 12   # 8 unique operating conditions for L-3 dataset
+							      >	    data = np.reshape(data, (N, -1, 8))
+							      >
+							      >	    # Load operating conditions
+							      >	    pb = np.log10(data[:, 0, 3, np.newaxis])
+							      >	    Va = data[:, 0, 0, np.newaxis]
+							      >	    mdot = data[:, 0, 1, np.newaxis]        # Total flow rate
+							      >	    ma2mc = data[:, 0, 2, np.newaxis]       # Anode to cathod
+							      >	    mdot_a = ma2mc / (1 + ma2mc) * mdot     # Anode mass flow
+							      >	    x = np.concatenate((pb, Va, mdot_a), axis=1)
+							      >
+							      >	    # Load coordinates of data (assume they are the same for 
+							      >	    loc = np.zeros((data.shape[1], 2))
+							      >	    loc[:, 0] = data[0, :, 4]                # Axial location
+							      >	    loc[:, 1] = (data[0, :, 5]-90)*np.pi/180 # Radial locatio
+							      >
+							      >	    y = data[..., 6]*10                     # Ion current den
+							      >	    var_y = (data[..., 7] * y / 2) ** 2
+							      >
+							      >	    # Only keep less than 90 deg data
+							      >	    keep_idx = loc[:, 1] < np.pi / 2
+							      >	    y = y[:, keep_idx].reshape((N, -1))
+							      >	    var_y = var_y[:, keep_idx].reshape((N, -1))
+							      >	    loc = loc[keep_idx, :].reshape((-1, 2))
+							      >	    return dict(x=x, loc=loc, y=y, var_y=var_y)
+							      >
+							      >
+							      >	def load_uion() -> ExpData:
+							      >	    """Load peak ion velocity profiles along channel centerli
+							      >	    data = np.loadtxt(BASE_DIR + '/UM/uion_UMH9.csv', delimit
+							      >	    N = 5   # unique operating conditions
+							      >	    data = np.reshape(data, (N, -1, 7))
+							      >
+							      >	    # Load operating conditions
+							      >	    pb = np.log10(data[:, 0, 3, np.newaxis])
+							      >	    Va = data[:, 0, 0, np.newaxis]
+							      >	    mdot = data[:, 0, 1, np.newaxis]        # Total flow rate
+							      >	    ma2mc = data[:, 0, 2, np.newaxis]       # Anode to cathod
+							      >	    mdot_a = ma2mc / (1 + ma2mc) * mdot     # Anode mass flow
+							      >	    x = np.concatenate((pb, Va, mdot_a), axis=1)
+							      >
+							      >	    # Load coordinates of data
+							      >	    loc = np.zeros((data.shape[1], ))
+							      >	    loc[:] = data[0, :, 4] * 1e-3             # Axial locatio
+							      >
+							      >	    y = data[..., 5]                    # Time-avg peak Xe+ v
+							      >	    #var_y = ((y * data[..., 6]) / 2) ** 2
+							      >	    var_y = (500 * np.ones(data[..., 6].shape) / 2) ** 2
+							      >
+							      >	    return dict(x=x, loc=loc, y=y, var_y=var_y)
+							      >
+							      >
+							      >	def load_gt_thrust() -> ExpData: # no UM thrust data
+							      >	    """Load aerospace and L-3 thrust data."""
+							      >	    data = np.loadtxt(BASE_DIR + '/GT/thrust_GT.csv', delimit
+							      >	    pb = np.log10(data[:, 4, np.newaxis])        # Background
+							      >	    Va = data[:, 0, np.newaxis]                  # Anode volt
+							      >	    mdot = data[:, 1, np.newaxis]                # Total flow
+							      >	    ma2mc = data[:, 2, np.newaxis]               # Anode to c
+							      >	    mdot_a = ma2mc / (1 + ma2mc) * mdot                 # Ano
+							      >	    x = np.concatenate((pb, Va, mdot_a), axis=1)
+							      >	    y = data[:, 5]                          # Thrust (N)
+							      >	    var_y = (0.009*y / 2) ** 2    # N^2
+							      >
+							      >	    return dict(x=x, y=y, var_y=var_y)
+							      >
+							      >
+							      >	def load_gt_jion() -> ExpData:
+							      >	    """Load ion current density profile from L-3."""
+							      >	    data = np.loadtxt(BASE_DIR + '/GT/jion_GT.csv', delimiter
+							      >	    N = 3   # 11 operating conditions for L-3 dataset
+							      >	    data = np.reshape(data, (N, -1, 11))
+							      >
+							      >	    # Load operating conditions
+							      >	    pb = np.log10(data[:, 0, 4, np.newaxis])
+							      >	    Va = data[:, 0, 0, np.newaxis]
+							      >	    mdot = data[:, 0, 1, np.newaxis]        # Total flow rate
+							      >	    ma2mc = data[:, 0, 2, np.newaxis]       # Anode to cathod
+							      >	    mdot_a = ma2mc / (1 + ma2mc) * mdot     # Anode mass flow
+							      >	    x = np.concatenate((pb, Va, mdot_a), axis=1)
+							      >
+							      >	    # Load coordinates of data (assume they are the same for 
+							      >	    loc = np.zeros((data.shape[1], 2))
+							      >	    loc[:, 0] = data[0, :, 5]               # Axial location 
+							      >	    loc[:, 1] = data[0, :, 6]*np.pi/180     # Radial location
+							      >
+							      >	    y = data[..., 8]                     # Ion current densit
+							      >	    var_y = (0.2 * y / 2) ** 2
+							      >
+							      >	    # Only keep less than 90 deg data
+							      >	    keep_idx = loc[:, 1] < np.pi / 2
+							      >	    y = y[:, keep_idx].reshape((N, -1))
+							      >	    var_y = var_y[:, keep_idx].reshape((N, -1))
+							      >	    loc = loc[keep_idx, :].reshape((-1, 2))
+
+    :param qois: a list specifying the experimental data to r |	    return dict(x=x, loc=loc, y=y, var_y=var_y)
+    :returns: map of `qoi->data`, where `data` is a list of e <
+    """							      <
+    if qois is None:					      <
+        qois = ['V_cc', 'T', 'uion', 'jion', 'I_D']	      <
+    exp_data = dict()					      <
+							      <
+    # Load Vcc data					      <
+    if 'V_cc' in qois:					      <
+        from .spt100.diamant2014.dataloader import load_vcc   <
+        exp_data['V_cc'] = [load_vcc()]			      <
+							      <
+    # Load thrust data					      <
+    if 'T' in qois:					      <
+        from .spt100.diamant2014.dataloader import load_thrus <
+        from .spt100.sankovic1993.dataloader import load_thru <
+        exp_data['T'] = [thrust1(), thrust2()]		      <
+							      <
+    # Load discharge current data			      <
+    if 'I_D' in qois:					      <
+        from .spt100.sankovic1993.dataloader import load_disc <
+        exp_data['I_D'] = [load_discharge_current()]	      <
+							      <
+    # Load ion velocity data				      <
+    if 'uion' in qois:					      <
+        from .spt100.macdonald2019.dataloader import load_uio <
+        exp_data['uion'] = [load_uion()]		      <
+							      <
+    # Load ion velocity data				      <
+    if 'jion' in qois:					      <
+        from .spt100.diamant2014.dataloader import load_jion  <
+        exp_data['jion'] = [load_jion()]		      <
+							      <
+    return exp_data					      <
+							      <
+def h9_data(qois: list[str] = None) -> dict[str: list[ExpData <
+    """Return a dict with experimental data for each specifie <
+							      <
+    :param qois: a list specifying the experimental data to r <
+    :returns: map of `qoi->data`, where `data` is a list of e <
+    """							      <
+    import sys						      <
+    import os						      <
+    secure_path = '/home/morag/h9-data'			      <
+    if os.path.exists(secure_path):			      <
+        sys.path.insert(0, secure_path)			      <
+    else:						      <
+        raise ImportError(f"The specified secure path does no <
+    try:						      <
+        import h9dataloader				      <
+    except ImportError:					      <
+        raise ImportError('Could not import ITAR data loader. <
+							      <
+    if qois is None:					      <
+        qois = ['V_cc', 'uion', 'jion']			      <
+    exp_data = dict()					      <
+							      <
+    # Load Vcc data					      <
+    if 'V_cc' in qois:					      <
+        from h9dataloader import load_vcc		      <
+        exp_data['V_cc'] = [load_vcc()]			      <
+							      <
+    # Load thrust data					      <
+    if 'T' in qois:					      <
+        print("No Thrust Data")				      <
+        # from h9dataloader import load_thrust		      <
+        # exp_data['T'] = [load_thrust()]		      <
+							      <
+    # Load discharge current data			      <
+    if 'I_D' in qois:					      <
+        print("No I_D data")				      <
+        # from h9dataloader import load_discharge_current     <
+        # exp_data['I_D'] = [load_discharge_current()]	      <
+							      <
+    # Load ion velocity data				      <
+    if 'uion' in qois:					      <
+        from h9dataloader import load_uion		      <
+        exp_data['uion'] = [load_uion()]		      <
+							      <
+    # Load ion velocity data				      <
+    if 'jion' in qois:					      <
+        from h9dataloader import load_jion		      <
+        exp_data['jion'] = [load_jion()]		      <
+							      <
+    if 'GT' in qois:					      <
+        from h9dataloader import load_gt_thurst		      <
+        from h9dataloader import load_gt_jion		      <
+        exp_data['gt_jion'] = [load_gt_jion()]		      <
+        exp_data['gt_thrust'] = [load_gt_thurst()]	      <
+							      <
+    return exp_data					      <
+							      <
+if __name__ == '__main__':				      <
+    data = spt100_data()				      <
+    print(data)						      <

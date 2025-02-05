@@ -23,6 +23,7 @@ import tempfile
 import os
 import random
 import string
+import sys
 
 import juliacall
 import numpy as np
@@ -119,7 +120,6 @@ def hallthruster_jl_model(thruster_input: dict, jl=None) -> dict:
 
     # Format inputs for Hallthruster.jl
     json_data = hallthruster_jl_input(thruster_input)
-
     # Run simulation
     try:
         fd = tempfile.NamedTemporaryFile(suffix='.json', encoding='utf-8', mode='w', delete=False)
@@ -127,7 +127,6 @@ def hallthruster_jl_model(thruster_input: dict, jl=None) -> dict:
         fd.close()
         t1 = time.time()
         sol = jl.seval(f'sol = HallThruster.run_simulation("{repr(fd.name)[1:-1]}", verbose=false)')
-        # sol = jl.seval(f'sol = HallThruster.run_simulation("{repr(fd.name)[1:-1]}", verbose=true)')
         os.unlink(fd.name)   # delete the tempfile
     except juliacall.JuliaError as e:
         raise ModelRunException(f"Julicall error in Hallthruster.jl: {e}")
@@ -224,7 +223,6 @@ def hallthruster_jl_wrapper(x: np.ndarray, alpha: tuple = (2, 2), *, compress: b
         input_list = config_data['required_inputs']  # Needs to match xdim and correspond with str input ids to hallthruster.jl
         output_list = config_data['outputs']
     base_input.update({'num_cells': Ncells, 'dt_s': dt_s, 'max_charge': Ncharge})  # Update model fidelity params
-
     # Load svd params for dimension reduction of ion velocity profile
     if compress:
         if not isinstance(svd_data, dict):
@@ -326,7 +324,6 @@ def hallthruster_jl_wrapper(x: np.ndarray, alpha: tuple = (2, 2), *, compress: b
                 files.append(fname)
                 data_write(save_dict, fname, output_dir)
             # print(f"Job {job_num} : Progression, Files: {files}, Costs: {costs}, Time: {t1}")
-        # print(f"Job {job_num} : Completed Job, Files: {files}, Costs: {costs}, Time: {t1}")
         return files, costs
 
     # Evenly distribute input indices across batches

@@ -40,8 +40,9 @@ def pem_v0(save_dir: str | Path = None, executor: Executor = None, init: bool = 
     :param from_file: the `.pkl` save file to load the surrogate from, (instead of building from scratch)
     :returns: the `SystemSurrogate` object
     """
-    exo_vars = load_variables(['PB', 'Va', 'mdot_a', 'V_vac', 'P*', 'PT', 'u_n', 'f_n', 'vAN1', 'vAN2', 'vAN3',
-                               'vAN4', 'delta_z', 'z0', 'c0', 'c1', 'c2', 'c3', 'c4', 'c5', 'sigma_cex', 'r_m'], var_file)
+    #exo_vars = load_variables(['PB', 'Va', 'mdot_a', 'V_vac', 'sigma_cex', 'r_m'], var_file)
+    print("LOADING VARS")
+    exo_vars = load_variables(['PB', 'Va', 'mdot_a', 'u_n', 'f_n', 'vAN1', 'vAN2', 'vAN3', 'vAN4', 'delta_z', 'z0', 'sigma_cex', 'r_m'], var_file)
     coupling_vars = load_variables(['V_cc', 'I_B0', 'I_D', 'T', 'eta_v', 'eta_c', 'eta_m', 'ui_avg', 'theta_d', 'Tc'], var_file)
 
     if from_file is not None:
@@ -63,7 +64,7 @@ def pem_v0(save_dir: str | Path = None, executor: Executor = None, init: bool = 
             surr.coupling_vars[j].nominal = v.nominal
 
         return surr
-
+    print("GETTING RECONSTRUCTION COEFFICIENTS")
     # Get number of reconstruction coefficients for ion velocity and ion current density profiles
     try:
         with open(CONFIG_DIR / 'thruster_svd.pkl', 'rb') as fd, open(CONFIG_DIR / 'plume_svd.pkl', 'rb') as fd2:
@@ -81,13 +82,15 @@ def pem_v0(save_dir: str | Path = None, executor: Executor = None, init: bool = 
     coupling_vars.extend([UniformRV(-20, 20, id=f'jion{i}', tex=f"$\\tilde{{j}}_{{ion,{i}}}$",
                                     description=f'Current density latent coefficient {i}',
                                     param_type='coupling') for i in range(r2)])
-
+    print("SETTING COMPONENT INPUTS")
     # Component inputs
-    cathode_exo = ['PB', 'Va', 'V_vac', 'P*', 'PT']
+    cathode_exo = ['PB', 'Va']
+    # thruster_exo = ['PB', 'Va', 'mdot_a']
     thruster_exo = ['PB', 'Va', 'mdot_a', 'u_n', 'f_n', 'vAN1', 'vAN2', 'vAN3', 'vAN4', 'delta_z', 'z0']
-    plume_exo = ['PB', 'c0', 'c1', 'c2', 'c3', 'c4', 'c5', 'sigma_cex', 'r_m']
+    plume_exo = ['PB', 'sigma_cex', 'r_m']
 
     # Models should be specified at the global scope for pickling
+    print("SETTING COMPONENTS")
     cathode = ComponentSpec(cc_feedforward, name='Cathode', exo_in=cathode_exo, coupling_out='V_cc',
                             surrogate='analytical')
     thruster = ComponentSpec(hallthruster_jl_wrapper, name='Thruster', exo_in=thruster_exo, truth_alpha=(2, 2),
@@ -118,3 +121,4 @@ def make_surr_test(root: str = '.'):
 
 if __name__ == '__main__':
     make_surr_test()
+    
