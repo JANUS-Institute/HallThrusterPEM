@@ -113,15 +113,19 @@ If only one of these quantities is provided, we throw an error.
 
 """  # noqa: E501
 
-from dataclasses import dataclass, fields
-from pathlib import Path
-from typing import Any, Generic, Optional, Sequence, TypeAlias, TypeVar
+from dataclasses import dataclass
+from typing import Sequence
 
 import numpy as np
-import numpy.typing as npt
 
-Array: TypeAlias = npt.NDArray[np.floating[Any]]
-PathLike: TypeAlias = str | Path
+from .h9 import h9
+from .measurement import Measurement
+from .spt100 import spt100
+from .thrusterdata import CurrentDensitySweep, IonVelocityData, ThrusterData, ThrusterDataset
+from .types import Array, PathLike
+
+# List of available thrusters
+thrusters: dict[str, type[ThrusterDataset]] = {'H9': h9, 'SPT-100': spt100}
 
 opcond_keys_forward: dict[str, str] = {
     "p_b": "background_pressure_torr",
@@ -143,115 +147,20 @@ class OperatingCondition:
     anode_mass_flow_rate_kg_s: float
 
 
-T = TypeVar("T", np.float64, Array)
+def pem_thrust(i, outputs, use_corrected_thrust):
+    NaN = np.float64(np.nan)
+    if use_corrected_thrust:
+        thrust = outputs['T_c'][i]
+        if not np.isscalar(thrust):
+            thrust = thrust[-1]
+    else:
+        thrust = outputs['T'][i]
 
-
-@dataclass(frozen=True)
-class Measurement(Generic[T]):
-    """A measurement object that includes a mean and standard deviation. The mean is the best estimate of the
-    quantity being measured, and the standard deviation is the uncertainty in the measurement. Can be used to specify
-    a scalar measurement quantity or a field quantity (e.g. a profile) in the form of a `numpy` array.
-    """
-
-    mean: T
-    std: T
-
-    def __str__(self):
-        return f"(μ = {self.mean}, σ = {self.std})"
-
-
-def _gauss_logpdf(mean: T, std: T, observation: T) -> np.float64:
-    return -0.5 * np.sum(2 * np.log(std) + (mean - observation) ** 2 / (std**2))
-
-
-def _measurement_gauss_logpdf(data: Measurement[T] | None, observation: Measurement[T] | None) -> np.float64:
-    if data is None or observation is None:
-        return np.float64(0.0)
-
-    return _gauss_logpdf(data.mean, data.std, observation.mean)
-
-
-def _interp_gauss_logpdf(
-    coords: Array | None,
-    data: Measurement[Array] | None,
-    obs_coords: Array | None,
-    observation: Measurement[Array] | None,
-) -> np.float64:
-    if coords is None or data is None or obs_coords is None or observation is None:
-        return np.float64(0.0)
-
-    obs_interp_mean = np.interp(coords, obs_coords, observation.mean)
-    obs_interp = Measurement(obs_interp_mean, np.zeros(1))
-    return _measurement_gauss_logpdf(data, obs_interp)
-
-
-@dataclass
-class CurrentDensitySweep:
-    """Contains data for a single current density sweep"""
-
-    radius_m: np.float64
-    angles_rad: Array
-    current_density_A_m2: Measurement[Array]
-
-
-@dataclass
-class IonVelocityData:
-    """Contains measurements of axial ion velocity along with coordinates"""
-
-    axial_distance_m: Array
-    velocity_m_s: Measurement[Array]
-
-
-@dataclass
-class ThrusterData:
-    """Class for Hall thruster data. Contains fields for all relevant performance metrics and quantities of interest."""
-
-    # Cathode
-    cathode_coupling_voltage_V: Optional[Measurement[np.float64]] = None
-    # Thruster
-    thrust_N: Optional[Measurement[np.float64]] = None
-    discharge_current_A: Optional[Measurement[np.float64]] = None
-    ion_current_A: Optional[Measurement[np.float64]] = None
-    efficiency_current: Optional[Measurement[np.float64]] = None
-    efficiency_mass: Optional[Measurement[np.float64]] = None
-    efficiency_voltage: Optional[Measurement[np.float64]] = None
-    efficiency_anode: Optional[Measurement[np.float64]] = None
-    ion_velocity: Optional[IonVelocityData] = None
-
-    # Plume
-    ion_current_sweeps: Optional[list[CurrentDensitySweep]] = None
-
-    def __str__(self) -> str:
-        fields_str = ",\n".join(
-            [
-                f"\t{field.name} = {val}"
-                for field in fields(ThrusterData)
-                if (val := getattr(self, field.name)) is not None
-            ]
-        )
-        return f"ThrusterData(\n{fields_str}\n)\n"
-
-    @staticmethod
-    def merge_field(field, data1, data2):
-        val1 = getattr(data1, field)
-        val2 = getattr(data2, field)
-        if val2 is None and val1 is None:
-            return None
-        elif val2 is None:
-            return val1
-        else:
-            return val2
-
-    @staticmethod
-    def update(data1, data2):
-        merged = {}
-        for field in fields(ThrusterData):
-            merged[field.name] = ThrusterData.merge_field(field.name, data1, data2)
-        return ThrusterData(**merged)
+    return Measurement(thrust, NaN)
 
 
 def pem_to_thrusterdata(
-    operating_conditions: list[OperatingCondition], outputs
+    operating_conditions: list[OperatingCondition], outputs, sweep_radii: Array, use_corrected_thrust: bool = True
 ) -> dict[OperatingCondition, ThrusterData]:
     # Assemble output dict from operating conditions -> results
     # Note, we assume that the pem outputs are ordered based on the input operating conditions
@@ -259,19 +168,20 @@ def pem_to_thrusterdata(
     output_dict = {
         opcond: ThrusterData(
             cathode_coupling_voltage_V=Measurement(outputs["V_cc"][i], NaN),
-            thrust_N=Measurement(outputs["T"][i], NaN),
+            thrust_N=pem_thrust(i, outputs, use_corrected_thrust),
             discharge_current_A=Measurement(outputs["I_d"][i], NaN),
             ion_current_A=Measurement(outputs["I_B0"][i], NaN),
             ion_velocity=IonVelocityData(
                 axial_distance_m=outputs["u_ion_coords"][i],
-                velocity_m_s=Measurement(outputs["u_ion"][i], np.full_like(outputs["u_ion"][i], NaN)),
+                velocity_m_s=Measurement(u_ion := outputs["u_ion"][i], np.full_like(u_ion, NaN)),
             ),
             ion_current_sweeps=[
                 CurrentDensitySweep(
-                    radius_m=np.float64(1.0),
+                    radius_m=radius,
                     angles_rad=outputs["j_ion_coords"][i],
-                    current_density_A_m2=Measurement(outputs["j_ion"][i], np.full_like(outputs["j_ion"][i], NaN)),
+                    current_density_A_m2=Measurement(j_ion := outputs["j_ion"][i, :, j], np.full_like(j_ion, NaN)),
                 )
+                for (j, radius) in enumerate(sweep_radii)
             ],
             efficiency_mass=Measurement(outputs["eta_m"][i], NaN),
             efficiency_current=Measurement(outputs["eta_c"][i], NaN),
@@ -282,51 +192,6 @@ def pem_to_thrusterdata(
     }
 
     return output_dict
-
-
-def log_likelihood(data: ThrusterData, observation: ThrusterData) -> np.float64:
-    log_likelihood = (
-        # Add contributions from global performance metrics
-        _measurement_gauss_logpdf(data.cathode_coupling_voltage_V, observation.cathode_coupling_voltage_V)
-        + _measurement_gauss_logpdf(data.thrust_N, observation.thrust_N)
-        + _measurement_gauss_logpdf(data.discharge_current_A, observation.discharge_current_A)
-        + _measurement_gauss_logpdf(data.ion_current_A, observation.ion_current_A)
-        + _measurement_gauss_logpdf(data.efficiency_current, observation.efficiency_current)
-        + _measurement_gauss_logpdf(data.efficiency_mass, observation.efficiency_mass)
-        + _measurement_gauss_logpdf(data.efficiency_voltage, observation.efficiency_voltage)
-        + _measurement_gauss_logpdf(data.efficiency_anode, observation.efficiency_anode)
-    )
-
-    # Contribution to likelihood from ion velocity
-    if data.ion_velocity is not None and observation.ion_velocity is not None:
-        log_likelihood += _interp_gauss_logpdf(
-            data.ion_velocity.axial_distance_m,
-            data.ion_velocity.velocity_m_s,
-            observation.ion_velocity.axial_distance_m,
-            observation.ion_velocity.velocity_m_s,
-        )
-
-    # Contribution to likelihood from ion current density
-    if data.ion_current_sweeps is not None and observation.ion_current_sweeps is not None:
-        for data_sweep in data.ion_current_sweeps:
-            # find sweep in observation with the same radius, if present
-            observation_sweep = None
-            for sweep in observation.ion_current_sweeps:
-                if data_sweep.radius_m == sweep.radius_m:
-                    observation_sweep = sweep
-                    break
-            # if no sweep in observation with same radius, do nothing
-            if observation_sweep is None:
-                continue
-
-            log_likelihood += _interp_gauss_logpdf(
-                data_sweep.angles_rad,
-                data_sweep.current_density_A_m2,
-                observation_sweep.angles_rad,
-                observation_sweep.current_density_A_m2,
-            )
-
-    return log_likelihood
 
 
 def rel_uncertainty_key(qty: str) -> str:

@@ -12,7 +12,7 @@ requires_python = ">=3.11"
 
 [[package]]
 name = "amisc"
-version = "0.7.1"
+version = "0.7.2"
 requires_python = ">=3.11"
 summary = "Efficient framework for building surrogates of multidisciplinary systems using the adaptive multi-index stochastic collocation (AMISC) technique."
 groups = ["default"]
@@ -26,8 +26,8 @@ dependencies = [
     "scipy>=1.14",
 ]
 files = [
-    {file = "amisc-0.7.1-py3-none-any.whl", hash = "sha256:a52d6bc6d920c4ba204a820bbd2d925ad0cd0c02e9a38c4339f89dd3662021c1"},
-    {file = "amisc-0.7.1.tar.gz", hash = "sha256:63f373bf2c139ff0c3e01199105ce31266a91622e24868165191676077b7ed19"},
+    {file = "amisc-0.7.2-py3-none-any.whl", hash = "sha256:d5e57c2a11ca02c81f40d9fe68d90545bb3210b1dfb96d9662bba506abc4f853"},
+    {file = "amisc-0.7.2.tar.gz", hash = "sha256:b3d665966bb4077adcaecaccb71f75cc55e55c62ce74c79d5a4c9588e8b8bd13"},
 ]
 
 [[package]]

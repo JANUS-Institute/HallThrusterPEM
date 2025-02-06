@@ -1,9 +1,10 @@
+import colorsys
 import math
 import os
 import pickle
 import time
 from pathlib import Path
-from typing import Optional, TypeAlias
+from typing import TypeAlias
 
 import ash
 import matplotlib.pyplot as plt
@@ -14,7 +15,8 @@ from matplotlib.figure import Figure
 from scipy.spatial.distance import cdist, euclidean
 
 import hallmd.data
-from hallmd.data import OperatingCondition, ThrusterData, spt100
+import hallmd.utils
+from hallmd.data import OperatingCondition, ThrusterData
 
 Dataset: TypeAlias = dict[OperatingCondition, ThrusterData]
 
@@ -72,6 +74,8 @@ def analyze_mcmc(path, config, datasets, corner=False, bands=False):
     analysis_start = time.time()
 
     system = System.load_from_file(Path(path) / config)
+    device_name = system['Thruster'].model_kwargs['thruster']
+    device = hallmd.utils.load_device(device_name)
 
     dlm = ","
 
@@ -153,9 +157,19 @@ def analyze_mcmc(path, config, datasets, corner=False, bands=False):
             stop_timer(start)
 
     start = start_timer("Loading data")
-    data = hallmd.data.load(spt100.datasets_from_names(datasets))
+    data = hallmd.data.load(hallmd.data.thrusters[device_name].datasets_from_names(datasets))
+    channel_length = device['geometry']['channel_length']
     map = load_sim_results([ids[map_ind]], mcmc_path)[0]['output']
     stop_timer(start)
+
+    if device_name == "SPT-100":
+        thrust_lims = (0, 110)
+        current_lims = (0, 7.5)
+        vcc_lims = (0, 40)
+    else:
+        thrust_lims = (0, 400)
+        current_lims = (0, 30)
+        vcc_lims = (0, 40)
 
     # Plot bands
     if bands:
@@ -165,12 +179,12 @@ def analyze_mcmc(path, config, datasets, corner=False, bands=False):
         stop_timer(start)
 
         start = start_timer("Plotting thrust")
-        plot_global_quantity(data, outputs, plot_path, "thrust_N", "Thrust [mN]", map=map, scale=1000, lims=(0, 110))
+        plot_global_quantity(data, outputs, plot_path, "thrust_N", "Thrust [mN]", map=map, scale=1000, lims=thrust_lims)
         stop_timer(start)
 
         start = start_timer("Plotting current")
         plot_global_quantity(
-            data, outputs, plot_path, "discharge_current_A", "Discharge current [A]", map=map, lims=(0, 7.5)
+            data, outputs, plot_path, "discharge_current_A", "Discharge current [A]", map=map, lims=current_lims
         )
         stop_timer(start)
 
@@ -182,38 +196,31 @@ def analyze_mcmc(path, config, datasets, corner=False, bands=False):
             "cathode_coupling_voltage_V",
             "Cathode coupling voltage [V]",
             map=map,
-            lims=(0, 40),
+            lims=vcc_lims,
         )
         stop_timer(start)
 
         start = start_timer("Plotting ion velocity")
-        plot_field_quantity(
+        plot_ion_vel(
             data,
             outputs,
             plot_path,
             map=map,
-            xquantity="ion_velocity_coords_m",
-            yquantity="ion_velocity_m_s",
             xlabel="Axial coordinate [channel lengths]",
             ylabel="Ion velocity [km/s]",
-            xscalefactor=1 / 0.025,
+            xscalefactor=1 / channel_length,
             yscalefactor=1 / 1000,
         )
         stop_timer(start)
 
         start = start_timer("Plotting ion current density")
-        plot_field_quantity(
+        plot_ion_cur(
             data,
             outputs,
             plot_path,
             map=map,
-            xquantity="ion_current_density_coords_rad",
-            yquantity="ion_current_density_A_m2",
             xlabel="Angle [degrees]",
             ylabel="Ion current density [A/m$^2$]",
-            xscalefactor=180 / np.pi,
-            yscalefactor=1,
-            yscale='log',
         )
         stop_timer(start)
 
@@ -234,23 +241,165 @@ def _extract_quantity(data: Dataset, quantity: str, sorted=False):
         return pressure, qty
 
 
-def plot_field_quantity(
+def _finalize_plot(fig, ax, ax_legend, out_path, plot_name):
+    handles, labels = ax.get_legend_handles_labels()
+    ax_legend.legend(handles, labels, borderaxespad=0)
+    ax_legend.axis("off")
+    fig.tight_layout()
+    fig.savefig(out_path / plot_name)
+    plt.close(fig)
+
+
+QUANTILES = [0.05, 0.25, 0.5, 0.75, 0.95]
+
+
+def clamp(x, x0, x1):
+    return max(min(x, x1), x0)
+
+
+def darken(color, factor):
+    hsv = colorsys.rgb_to_hsv(float(color[0]), float(color[1]), float(color[2]))
+    return colorsys.hsv_to_rgb(clamp(hsv[0], 0, 1), clamp(hsv[1] * 0.75, 0, 1), clamp(hsv[2] * factor, 0, 1))
+
+
+def plot_ion_cur(
     data: Dataset,
     sim: list[Dataset],
     plot_path: Path,
-    xquantity: str,
-    yquantity: str,
+    xlabel: str,
+    ylabel: str,
+    map: Dataset | None = None,
+):
+    qty_name = "ion_current_density"
+    out_path = plot_path / qty_name
+    os.makedirs(out_path, exist_ok=True)
+
+    # get the sweep radii
+    pressures, _ = _extract_quantity(data, "ion_current_sweeps", sorted=True)
+    _, sim_data_0 = _extract_quantity(sim[0], "ion_current_sweeps", sorted=True)
+    sweep_radii = [x.radius_m for x in sim_data_0[0]]
+    angles_sim = sim_data_0[0][0].angles_rad * 180 / np.pi
+    opconds = list(data.keys())
+
+    colors = plt.get_cmap('turbo')
+    xlims = (0, 90)
+    yscale = 'log'
+
+    data_kwargs = {'fmt': ':o', 'markersize': 4, 'alpha': 1}
+
+    incr = 2
+
+    # for each pressure, plot predictions at all radii
+    jion_quantiles = {}
+    for i, opcond in enumerate(opconds):
+        pressure_uTorr = opcond.background_pressure_torr * 1e6
+        _data = data[opcond].ion_current_sweeps
+        if _data is None or len(data) == 0:
+            continue
+
+        jion_quantiles[opcond] = []
+
+        fig, (ax, ax_legend) = plt.subplots(1, 2, dpi=200, figsize=(10, 6), width_ratios=[3, 1])
+        ax.set_yscale(yscale)
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+        ax.set_xlim(xlims)
+        ax.set_title(ylabel + f" ($p_B = {pressure_uTorr:.2f}$ $\\mu$Torr)")
+
+        # plot data for this operating condition at each radius
+        for j, sweep in enumerate(_data):
+            color = colors((j + 0.5) / len(sweep_radii))
+            theta_deg = sweep.angles_rad * 180 / np.pi
+            jion = sweep.current_density_A_m2
+            ax.errorbar(
+                theta_deg[::incr],
+                jion.mean[::incr],
+                yerr=2 * jion.std[::incr],
+                color=darken(color, 0.8),
+                label=f"$r =$ {sweep.radius_m:.2f} m",
+                **data_kwargs,
+            )
+
+            jion_sim = [_sim[opcond].ion_current_sweeps[j].current_density_A_m2.mean for _sim in sim]
+            qt = np.quantile(jion_sim, q=QUANTILES, axis=0)
+            # Plot median prediction
+            ax.plot(angles_sim, qt[2], color=color, label="Median prediction")
+
+            # _plot_quantiles(ax, angles_sim, qt, color=color, label=False)
+            jion_quantiles[opcond].append(qt)
+
+        plot_name = f"{qty_name}_p={pressure_uTorr:05.2f}uTorr.png"
+        _finalize_plot(fig, ax, ax_legend, out_path, plot_name)
+
+    # for each radius, plot predictions at each pressure
+    for i, sweep_radius in enumerate(sweep_radii):
+        fig, (ax, ax_legend) = plt.subplots(1, 2, dpi=200, figsize=(10, 6), width_ratios=[3, 1])
+        ax.set_yscale(yscale)
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+        ax.set_xlim(xlims)
+        ax.set_title(ylabel + f"($r = {sweep_radius:.2f}$ m)")
+        plot_name = f"{qty_name}_r={sweep_radius:.2f}m.png"
+
+        # plot data for this operating condition at each pressure
+        for j, opcond in enumerate(opconds):
+            pressure_uTorr = opcond.background_pressure_torr * 1e6
+            _data = data[opcond].ion_current_sweeps
+            if _data is None or len(data) == 0:
+                continue
+
+            # make dedicated plot for each opcond
+            fig_solo, (ax_solo, ax_legend_solo) = plt.subplots(1, 2, dpi=200, figsize=(10, 6), width_ratios=[3, 1])
+            ax_solo.set_yscale(yscale)
+            ax_solo.set_xlabel(xlabel)
+            ax_solo.set_ylabel(ylabel)
+            ax_solo.set_xlim(xlims)
+            ax_solo.set_title(ylabel + f"($r = {sweep_radius:.2f}$ m)")
+            pressure_str = f"$p_B = {pressure_uTorr:.2f}$ $\\mu$Torr"
+            subdir = out_path / f"p={pressure_uTorr:05.2f}uTorr"
+            os.makedirs(subdir, exist_ok=True)
+
+            for k, axis in enumerate([ax, ax_solo]):
+                sweep = _data[i]
+                color = colors((j + 0.5) / len(pressures))
+                theta_deg = sweep.angles_rad * 180 / np.pi
+                jion = sweep.current_density_A_m2
+                axis.errorbar(
+                    theta_deg[::incr],
+                    jion.mean[::incr],
+                    yerr=2 * jion.std[::incr],
+                    color=darken(color, 0.8) if k == 0 else 'black',
+                    label=pressure_str,
+                    **data_kwargs,
+                )
+                qt = jion_quantiles[opcond][i]
+                if k == 0:
+                    axis.plot(angles_sim, qt[2], color=color, label="Median prediction")
+                else:
+                    _plot_quantiles(axis, angles_sim, qt, color=(0.3, 0.3, 0.3), label=True)
+
+            _finalize_plot(fig_solo, ax_solo, ax_legend_solo, subdir, plot_name)
+
+        _finalize_plot(fig, ax, ax_legend, out_path, plot_name)
+
+    return
+
+
+def plot_ion_vel(
+    data: Dataset,
+    sim: list[Dataset],
+    plot_path: Path,
     xlabel: str,
     ylabel: str,
     xscalefactor: float,
     yscalefactor: float,
     map: Dataset | None = None,
-    yscale: str = 'linear',
 ):
-    out_path = plot_path / yquantity
+    qty_name = "ion_velocity"
+    out_path = plot_path / qty_name
     os.makedirs(out_path, exist_ok=True)
 
-    mask = np.array([getattr(x, yquantity) is not None for x in data.values()])
+    mask = np.array([getattr(x, qty_name) is not None for x in data.values()])
     opconds = [opcond for (i, opcond) in enumerate(data.keys()) if mask[i]]
 
     if len(opconds) == 0:
@@ -260,77 +409,91 @@ def plot_field_quantity(
 
     # Extract simulation coords and data
     medians = {}
+    data_kwargs = {'markersize': 4, 'capsize': 2}
 
     # Individual plots for each pressure
     for i, opcond in enumerate(opconds):
-        _data = data[opcond]
+        _data = data[opcond].ion_velocity
         pressure_uTorr = opcond.background_pressure_torr * 1e6
 
         fig, (ax, ax_legend) = plt.subplots(1, 2, dpi=200, figsize=(10, 6), width_ratios=[3, 1])
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
-        ax.set_yscale(yscale)
         ax.autoscale(enable=True, tight=True)
-        ax.set_title(ylabel + f" ($p_B = {pressure_uTorr:.0f}$ $\\mu$Torr)")
+        ax.set_title(ylabel + f" ($p_B = {pressure_uTorr:.2f}$ $\\mu$Torr)")
 
-        x_data = getattr(_data, xquantity) * xscalefactor
-        y_data = getattr(_data, yquantity)
-        y_data_mean = y_data.mean * yscalefactor
-        y_data_std = y_data.std * yscalefactor
+        if _data is not None:
+            x_data = _data.axial_distance_m * xscalefactor
+            y_data = _data.velocity_m_s
+            y_data_mean = y_data.mean * yscalefactor
+            y_data_std = y_data.std * yscalefactor
+            ax.errorbar(
+                x_data,
+                y_data_mean,
+                yerr=2 * y_data_std,
+                fmt='o',
+                color="black",
+                label="Data",
+                zorder=10,
+                **data_kwargs,
+            )
 
-        ax.errorbar(x_data, y_data_mean, yerr=2 * y_data_std, color="black", capsize=5, linestyle="")
-        ax.scatter(x_data, y_data_mean, s=40, color='black', label="Data", zorder=10)
+        sim_0 = sim[0][opcond].ion_velocity
+        assert sim_0 is not None
+        x_sim = sim_0.axial_distance_m * xscalefactor
+        y_sim = np.array([_sim[opcond].ion_velocity.velocity_m_s.mean * yscalefactor for _sim in sim])
 
-        x_sim = getattr(sim[0][opcond], xquantity) * xscalefactor
-        y_sim = np.array([getattr(_sim[opcond], yquantity).mean * yscalefactor for _sim in sim])
-
-        qt = _plot_quantiles(ax, x_sim, y_sim)
+        qt = np.quantile(y_sim, q=QUANTILES, axis=0)
+        _plot_quantiles(ax, x_sim, qt)
         medians[opcond] = qt[2]
 
-        if map is not None:
-            x_map = getattr(map[opcond], xquantity) * xscalefactor
-            y_map = getattr(map[opcond], yquantity).mean * yscalefactor
+        if map is not None and (map_data := map[opcond].ion_velocity) is not None:
+            x_map = map_data.axial_distance_m * xscalefactor
+            y_map = map_data.velocity_m_s.mean * yscalefactor
             ax.plot(x_map, y_map, label="Best sample", color='red')
 
-        handles, labels = ax.get_legend_handles_labels()
-        ax_legend.legend(handles, labels, borderaxespad=0)
-        ax_legend.axis("off")
-        fig.tight_layout()
-
-        plot_name = f"{yquantity}_p={pressure_uTorr}uTorr.png"
-        fig.savefig(out_path / plot_name)
-        plt.close(fig)
+        plot_name = f"{qty_name}_p={pressure_uTorr:05.2f}uTorr.png"
+        _finalize_plot(fig, ax, ax_legend, out_path, plot_name)
 
     # Median predictions and best sample vs data on one plot
     fig, (ax, ax_legend) = plt.subplots(1, 2, dpi=200, figsize=(10, 6), width_ratios=[3, 1])
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
-    ax.set_yscale(yscale)
-    ax.autoscale(enable=True, tight=True)
+    ax.set_xlim(0.5, 2)
+
+    x_data_min = np.inf
+    x_data_max = -np.inf
 
     for i, opcond in enumerate(opconds):
-        _data = data[opcond]
+        _data = data[opcond].ion_velocity
         pressure_uTorr = opcond.background_pressure_torr * 1e6
         color = colors(1 - (i + 0.5) / len(opconds))
-        x_data = getattr(_data, xquantity) * xscalefactor
-        y_data = getattr(_data, yquantity)
-        y_data_mean = y_data.mean * yscalefactor
-        y_data_std = y_data.std * yscalefactor
-        ax.errorbar(x_data, y_data_mean, yerr=2 * y_data_std, color=color, capsize=3, linestyle="")
-        ax.plot(
-            x_data, y_data_mean, '--o', color=color, label=f"Data ($p_B = {pressure_uTorr:.0f}$ $\\mu$Torr)", zorder=10
-        )
+        if _data is not None:
+            x_data = _data.axial_distance_m * xscalefactor
+            x_data_max = max(np.max(x_data), x_data_max)
+            x_data_min = min(np.min(x_data), x_data_min)
+            y_data = _data.velocity_m_s
+            y_data_mean = y_data.mean * yscalefactor
+            y_data_std = y_data.std * yscalefactor
+            ax.errorbar(
+                x_data,
+                y_data_mean,
+                yerr=2 * y_data_std,
+                color=color,
+                label=f"Data ($p_B = {pressure_uTorr:.2f}$ $\\mu$Torr)",
+                zorder=1,
+                fmt='--o',
+                **data_kwargs,
+            )
 
-        x_sim = getattr(sim[0][opcond], xquantity) * xscalefactor
-        ax.plot(x_sim, medians[opcond], color=color, label="Median prediction")
+            sim_0 = sim[0][opcond].ion_velocity
+            assert sim_0 is not None
+            x_sim = sim_0.axial_distance_m * xscalefactor
+            ax.plot(x_sim, medians[opcond], color=color, label="Median prediction", zorder=2)
 
-    handles, labels = ax.get_legend_handles_labels()
-    ax_legend.legend(handles, labels, borderaxespad=0)
-    ax_legend.axis("off")
-    fig.tight_layout()
-    plot_name = f"{yquantity}_allpressures.png"
-    fig.savefig(out_path / plot_name)
-    plt.close(fig)
+    ax.set_xlim(x_data_min)
+    plot_name = f"{qty_name}_allpressures.png"
+    _finalize_plot(fig, ax, ax_legend, out_path, plot_name)
 
 
 def plot_global_quantity(
@@ -346,9 +509,6 @@ def plot_global_quantity(
     xlabel = "Background pressure [$\\mu$Torr]"
     pressure_data, qty_data = _extract_quantity(data, quantity)
 
-    if len(qty_data) == 0:
-        return
-
     qty_data_mean = np.array([x.mean for x in qty_data]) * scale
     qty_data_std = np.array([x.std for x in qty_data]) * scale
 
@@ -357,6 +517,9 @@ def plot_global_quantity(
     qty_sim = np.array(
         [[getattr(x, quantity).mean * scale for i, x in enumerate(_sim.values()) if mask_sim[i]] for _sim in sim]
     )
+
+    if len(qty_data) == 0 and len(qty_sim) == 0:
+        return
 
     sortperm_sim = np.argsort(pressure_sim)
     pressure_sim = pressure_sim[sortperm_sim]
@@ -369,15 +532,26 @@ def plot_global_quantity(
     ax.set_ylabel(full_name)
     ax.set_xlim(0, np.max(pressure_sim) * 1.05)
 
-    ax.errorbar(pressure_data, qty_data_mean, yerr=2 * qty_data_std, color="black", capsize=5, linestyle="")
-    ax.scatter(pressure_data, qty_data_mean, s=40, color='black', label="Data", zorder=10)
+    if len(qty_data) > 0:
+        ax.errorbar(
+            pressure_data,
+            qty_data_mean,
+            yerr=2 * qty_data_std,
+            color="black",
+            capsize=5,
+            fmt='o',
+            label="data",
+            zorder=10,
+        )
 
-    _plot_quantiles(ax, pressure_sim, qty_sim)
+    if len(qty_sim) > 0:
+        qt = np.quantile(qty_sim, QUANTILES, axis=0)
+        _plot_quantiles(ax, pressure_sim, qt)
 
-    if map is not None:
-        pressure_map, qty_map = _extract_quantity(map, quantity)
-        qty_map_mean = np.array([x.mean * scale for x in qty_map])
-        ax.scatter(pressure_map, qty_map_mean, s=64, marker='x', color='red', label="Best sample", zorder=9)
+        if map is not None:
+            pressure_map, qty_map = _extract_quantity(map, quantity)
+            qty_map_mean = np.array([x.mean * scale for x in qty_map])
+            ax.scatter(pressure_map, qty_map_mean, s=64, marker='x', color='red', label="Best sample", zorder=9)
 
     handles, labels = ax.get_legend_handles_labels()
     ax_legend.legend(handles, labels, borderaxespad=0)
@@ -398,129 +572,35 @@ def load_sim_results(ids, mcmc_path: Path) -> list[dict]:
     return data
 
 
-def _plot_quantiles(ax, x, y, quantiles=[0.05, 0.25, 0.5, 0.75, 0.95]):
-    qt = np.quantile(y, q=quantiles, axis=0)
-    lc = (0.3, 0.3, 0.3)
-    outer_args = {'linestyle': ':', 'color': lc, 'zorder': 2}
-    inner_args = {'linestyle': '-.', 'color': lc, 'zorder': 2}
-    ax.plot(x, qt[2], color=lc, linestyle='--', linewidth=2, label="Median prediction", zorder=2)
-    ax.fill_between(x, qt[1, :], qt[-2, :], facecolor=(0.7, 0.7, 0.7), label='50% CI', zorder=1)
-    ax.fill_between(x, qt[0, :], qt[-1, :], facecolor=(0.9, 0.9, 0.9), label='90% CI', zorder=0)
-    ax.plot(x, qt[0], **outer_args)
-    ax.plot(x, qt[-1], **outer_args)
-    ax.plot(x, qt[1], **inner_args)
-    ax.plot(x, qt[-2], **inner_args)
+def _plot_quantiles(ax, x, qt, label=True, fill=True, color=(0.3, 0.3, 0.3), zorder: int = 0):
+    outer_args = {'linestyle': ':', 'color': color, 'zorder': 2}
+    inner_args = {'linestyle': '-.', 'color': color, 'zorder': 2}
+    inner_color = darken(color, 1.25)
+    outer_color = darken(color, 2.0)
 
-    return qt
-
-
-def plot_result(data, result, id, plot_path):
-    input = result['input']
-    output = result['output']
-    plot_u_ion(data, output, 0.025, id, plot_path)
-    plot_j_ion(data, output, id, plot_path)
-    # plot_global_quantities(data, output, id, plot_path)
-    return
-
-
-def plot_j_ion(data: Dataset, output: Dataset | None, plot_name: str, plot_path: Path):
-    fig, (ax, ax_legend) = plt.subplots(1, 2, width_ratios=[2.5, 1], figsize=(10, 6))
-
-    ax.set_xlim(0, 90)
-    ax.set_yscale('log')
-    ax.set_xlabel("Probe angle [deg]")
-    ax.set_ylabel("$j_{ion}$ [A / m$^2$]")
-
-    colors = plt.get_cmap('turbo')
-
-    rad2deg = 180 / np.pi
-
-    color_ind = 0
-    for i, (opcond, dataset) in enumerate(data.items()):
-        color_scale = color_ind / 8.0
-        pressure_base = round(1e5 * opcond.background_pressure_torr, 1)
-
-        theta_rad = dataset.ion_current_density_coords_rad
-        j_ion = dataset.ion_current_density_A_m2
-
-        if theta_rad is None or j_ion is None:
-            continue
-
-        theta_deg = theta_rad * rad2deg
-
-        label = f"$P_B = {pressure_base}\\times 10^{{-5}}$ Torr"
-        ax.errorbar(
-            theta_deg, j_ion.mean, yerr=2 * j_ion.std, label=label, fmt="--o", markersize=4.0, color=colors(color_scale)
-        )
-
-        if output is not None and opcond in output:
-            result = output[opcond]
-            theta_rad_sim, j_sim = result.ion_current_density_coords_rad, result.ion_current_density_A_m2
-
-            if theta_rad_sim is not None and j_sim is not None:
-                ax.plot(theta_rad_sim * rad2deg, j_sim.mean, color=colors(color_scale))
-
-        color_ind += 1
-
-    if color_ind == 0:
-        # nothing was plotted
-        return
-
-    handles, labels = ax.get_legend_handles_labels()
-    ax_legend.legend(handles, labels, borderaxespad=0)
-    ax_legend.axis("off")
-    fig.tight_layout()
-    fig.savefig(plot_path / f"j_ion_{plot_name}.png", dpi=300)
-    plt.close(fig)
-
-    return
-
-
-def plot_u_ion(data: Dataset, output: Dataset | None, L_ch: float, plot_name: str, plot_path: Path):
-    colors = ["red", "green", "blue"]
-    fig, (ax, ax_legend) = plt.subplots(1, 2, width_ratios=[2.5, 1], figsize=(10, 6))
-    ax.set_xlim(0, 3.0)
-    ax.set_xlabel("$z / L_{ch}$")
-    ax.set_ylabel("$u_{ion, z}$ [km/s]")
-
-    color_ind = 0
-    for i, (opcond, dataset) in enumerate(data.items()):
-        pressure_base = round(1e5 * opcond.background_pressure_torr, 1)
-
-        z = dataset.ion_velocity_coords_m
-        u_ion = dataset.ion_velocity_m_s
-
-        if z is None or u_ion is None:
-            continue
-
-        label = f"$P_B = {pressure_base}\\times 10^{{-5}}$ Torr"
-        ax.errorbar(
-            z / L_ch,
-            u_ion.mean / 1000,
-            yerr=2 * u_ion.std / 1000,
-            label=label,
-            color=colors[color_ind],
-            fmt="--o",
-            markersize=4.0,
-        )
-
-        if output is not None:
-            result = output[opcond]
-            z_sim, u_sim = result.ion_velocity_coords_m, result.ion_velocity_m_s
-
-            if z_sim is not None and u_sim is not None:
-                ax.plot(z_sim / L_ch, u_sim.mean / 1000, color=colors[color_ind])
-
-        color_ind += 1
-
-    handles, labels = ax.get_legend_handles_labels()
-    ax_legend.legend(handles, labels, borderaxespad=0)
-    ax_legend.axis("off")
-    fig.tight_layout()
-    fig.savefig(plot_path / f"u_ion_{plot_name}.png", dpi=300)
-    plt.close(fig)
-
-    return
+    ax.plot(
+        x,
+        qt[2],
+        color=color,
+        linestyle='--',
+        linewidth=2,
+        label="Median prediction" if label else "",
+        zorder=zorder + 2,
+    )
+    if not np.all(qt[1] == qt[-2]):
+        if fill:
+            ax.fill_between(
+                x, qt[1], qt[-2], facecolor=inner_color, label='50% CI' if label else "", zorder=zorder + 1, alpha=0.5
+            )
+        ax.plot(x, qt[1], **inner_args)
+        ax.plot(x, qt[-2], **inner_args)
+    if not np.all(qt[0] == qt[-1]):
+        if fill:
+            ax.fill_between(
+                x, qt[0], qt[-1], facecolor=outer_color, label='90% CI' if label else "", zorder=zorder, alpha=0.5
+            )
+        ax.plot(x, qt[0], **outer_args)
+        ax.plot(x, qt[-1], **outer_args)
 
 
 def plot_traces(names, samples, dir: Path = Path(".")):
@@ -659,36 +739,6 @@ def _ax_hist1d(ax: Axes, samples: np.ndarray, xlims: tuple[float, float]) -> Non
     bins, heights = ash.ash1d(samples, nbins, nshifts, range=xlims)
     ax.hist(samples, nbins, color="lightgrey", density=True)
     ax.plot(bins, heights, zorder=2, color="black", linewidth=2)
-
-
-def _ax_hist2d(
-    ax: Axes,
-    x: np.ndarray,
-    y: np.ndarray,
-    xlims: tuple[float, float],
-    ylims: tuple[float, float],
-    logpdfs: Optional[np.ndarray] = None,
-) -> None:
-    ax.set_xlim(xlims)
-    ax.set_ylim(ylims)
-    nbins_x = _num_bins(x, xlims)
-    nbins_y = _num_bins(y, ylims)
-    nbins = min(nbins_x, nbins_y)
-    nshifts = 5
-    grid, heights = ash.ash2d(x, y, nbins, nshifts, xrange=xlims, yrange=ylims)
-
-    scatter_kwargs = {
-        "s": 6**2,
-        "alpha": 1 / np.log10(x.size),
-        "zorder": 1,
-    }
-
-    if logpdfs is None:
-        ax.scatter(x, y, color="black", **scatter_kwargs)
-    else:
-        ax.scatter(x, y, c=logpdfs, **scatter_kwargs)
-
-    ax.contour(grid[0], grid[1], heights, zorder=0)
 
 
 def _determine_limits(x: np.ndarray) -> tuple[float, float]:

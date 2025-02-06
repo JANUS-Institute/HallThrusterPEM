@@ -88,7 +88,7 @@ components: !Component
         loss_scale: 1.0      # overwritten by c_w
       domain: [0, 0.08]
       propellant: Xenon
-      ion_wall_losses: true
+      ion_wall_losses: false
       solve_plume: true
       apply_thrust_divergence_correction: false
       neutral_ingestion_multiplier: 1.0 # overwritten by f_n
@@ -157,7 +157,7 @@ components: !Component
         distribution: Uniform(0.001, 0.05)
         norm: linear(1e3)
       - name: anom_shift_length
-        description: Anomalous shift displacement
+        description: Anomalous pressure shift displacement
         category: calibration
         tex: "$\\Delta z_{anom}$"
         nominal: 0.3

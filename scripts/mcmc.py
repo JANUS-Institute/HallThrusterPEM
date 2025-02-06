@@ -2,6 +2,7 @@ import argparse
 import os
 import pickle
 import shutil
+import traceback
 from argparse import Namespace
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import dataclass
@@ -11,12 +12,11 @@ from typing import Type, TypeAlias
 import amisc.distribution as distributions
 import mcmc_analysis as analysis
 import numpy as np
-from amisc import System, YamlLoader
+from amisc import Component, System, Variable, YamlLoader
 from MCMCIterators import samplers
 
 import hallmd.data
-import hallmd.data.spt100 as spt100
-from hallmd.data import Array, OperatingCondition
+from hallmd.data import Array, OperatingCondition, PathLike, ThrusterData
 
 Value: TypeAlias = np.float64 | Array
 NaN = np.float64(np.nan)
@@ -56,7 +56,11 @@ parser.add_argument(
     type=str,
     nargs="+",
     default=["diamant2014", "macdonald2019"],
-    help="A list of datasets to use, pick from [diamant2014, macdonald2019, sankovic1993]",
+    help="""
+    A list of datasets to use.
+    For the SPT-100, pick from [diamant2014, macdonald2019, sankovic1993]".
+    For the H9, pick from [um2024, gt2024].
+    """,
 )
 
 parser.add_argument(
@@ -64,6 +68,13 @@ parser.add_argument(
     type=int,
     default=10,
     help="How frequently plots are generated",
+)
+
+parser.add_argument(
+    "--ncharge",
+    type=int,
+    default=1,
+    help="Number of ion charge states to include in simulation. Must be between 1 and 3.",
 )
 
 parser.add_argument("--output_dir", type=str, default=None, help="Directory into which output files are written")
@@ -79,6 +90,8 @@ class ExecutionOptions:
     max_workers: int
     directory: Path
     fidelity: str | tuple | dict = (0, 0)
+    use_plume: bool = True
+    use_cathode: bool = True
 
 
 def load_system_and_opts(args: Namespace) -> tuple[System, ExecutionOptions]:
@@ -110,7 +123,7 @@ def load_system_and_opts(args: Namespace) -> tuple[System, ExecutionOptions]:
         executor,
         max_workers=args.max_workers,
         directory=system.root_dir / "mcmc",
-        fidelity=(0, 0),
+        fidelity=(0, args.ncharge - 1),
     )
 
     os.mkdir(opts.directory)
@@ -118,7 +131,8 @@ def load_system_and_opts(args: Namespace) -> tuple[System, ExecutionOptions]:
     return system, opts
 
 
-def load_nominal_inputs(system: System) -> dict[str, Value]:
+def get_nominal_inputs(system: System) -> dict[str, Value]:
+    """Create a dict mapping system inputs to their nominal values"""
     inputs: dict[str, Value] = {}
     for input in system.inputs():
         value = input.normalize(input.get_nominal())
@@ -148,8 +162,13 @@ def _run_model(
             verbose=False,
         )
 
+    # Get plume sweep radii
+    sweep_radii = system['Plume'].model_kwargs['sweep_radius']
+
     # Assemble output dict from operating conditions -> results
-    output_thrusterdata = hallmd.data.pem_to_thrusterdata(operating_conditions, outputs)
+    output_thrusterdata = hallmd.data.pem_to_thrusterdata(
+        operating_conditions, outputs, sweep_radii, use_corrected_thrust=opts.use_plume
+    )
 
     # Write outputs to file
     with open(opts.directory / "pemv1.pkl", "wb") as fd:
@@ -176,23 +195,35 @@ def log_prior(system: System, params: dict[str, Value]) -> np.float64:
 
 def log_likelihood(
     params: dict[str, Value],
-    data: dict[OperatingCondition, hallmd.data.ThrusterData],
+    data: dict[OperatingCondition, ThrusterData],
     system: System,
     base_params: dict[str, Value],
     opts: ExecutionOptions,
 ) -> np.float64:
-    result = _run_model(params, system, list(data.keys()), base_params, opts)
+    try:
+        result = _run_model(params, system, list(data.keys()), base_params, opts)
+    except ValueError as e:
+        # Write error info
+        with open(opts.directory / 'error.log', "w") as f:
+            traceback.print_exc(file=f)
+            print(repr(e), file=f)
+
+        # Write params that caused the error
+        with open(opts.directory / "err_params.pkl", "wb") as fd:
+            pickle.dump(params, fd)
+
+        return -np.float64(np.inf)
 
     L = np.float64(0.0)
     for opcond, _data in data.items():
-        L += hallmd.data.log_likelihood(_data, result[opcond])
+        L += ThrusterData.log_likelihood(_data, result[opcond])
 
     return L
 
 
 def log_posterior(
     params: dict[str, Value],
-    data: dict[OperatingCondition, hallmd.data.ThrusterData],
+    data: dict[OperatingCondition, ThrusterData],
     system: System,
     base_params: dict[str, Value],
     opts: ExecutionOptions,
@@ -214,31 +245,49 @@ def update_opts(root_dir, sample_index):
     os.mkdir(opts.directory)
 
 
-def write_row(logfile, sample_index, sample, logp, accepted_bool):
+def append_mcmc_diagnostic_row(logfile, sample_index, sample, logp, accepted_bool):
+    """Append a row of MCMC diagnostic data for the given `logfile`"""
     id_str = f"{sample_index:06d}"
     with open(logfile, "a") as fd:
         row = [id_str] + [f"{s}" for s in sample] + [f"{logp}", f"{accepted_bool}"]
         print(delimiter.join(row), file=fd)
 
 
-def read_csv(file):
+def read_dlm(file: PathLike, delimiter: str | None = ',', comments='#') -> dict[str, Array]:
+    """Read a simple delimited file consisting of headers and numerical data into a dict that maps names to columns"""
     with open(file, 'r') as fd:
         header = fd.readline().rstrip()
-        if header.startswith("#"):
+        if header.startswith(comments):
             header = header[1:].lstrip()
 
-    col_names = header.split(',')
+    col_names = header.split(delimiter)
     table_data = np.genfromtxt(file, skip_header=1).T
     return {col_name: column for (col_name, column) in zip(col_names, table_data)}
+
+
+def get_calibration_params(component: Component, sort: str | None = None) -> list[Variable]:
+    """Extract calibration params from the provided `component`.
+    Optionally sort them based on either their 'name' or 'tex' representations"""
+
+    params = [p for p in component.inputs if p.category == "calibration"]
+    if sort is None:
+        return params
+
+    names = [getattr(p, sort).casefold() for p in params]
+    sorted_params = [p for _, p in sorted(zip(names, params))]
+    return sorted_params
 
 
 if __name__ == "__main__":
     args, _ = parser.parse_known_args()
     system, opts = load_system_and_opts(args)
-    base = load_nominal_inputs(system)
+    base = get_nominal_inputs(system)
 
-    # Load data
-    data = hallmd.data.load(spt100.datasets_from_names(args.datasets))
+    # Determine thruster and load data
+    thruster_name = system['Thruster'].model_kwargs['thruster']
+    thruster = hallmd.data.thrusters[thruster_name]
+    datasets = thruster.datasets_from_names(args.datasets)
+    data = hallmd.data.load(datasets)
     operating_conditions = list(data.keys())
 
     # Load operating conditions into input dict
@@ -249,37 +298,38 @@ if __name__ == "__main__":
         base[param] = system.inputs()[param].normalize(inputs_unnorm)
 
     # Choose calibration params
-    if "diamant2014" in args.datasets:
-        names = (p.name for p in system.inputs())
-        params_to_calibrate = [p for _, p in sorted(zip(names, system.inputs())) if p.category == "calibration"]
-    else:
-        params_to_calibrate = [
-            system.inputs()[p]
-            for p in [
-                "anom_min",
-                "anom_max",
-                "anom_width",
-                "anom_center",
-                "anom_shift_length",
-                "c_w",
-                "u_n",
-            ]
-        ]
+    # Only calibrate cathode coupling params if we have cathode data, and plume params if we have plume data
+    # Always include thruster params
+    opts.use_cathode = any(d.cathode_coupling_voltage_V is not None for d in data.values())
+    opts.use_plume = any(d.ion_current_sweeps is not None for d in data.values())
 
+    sortmethod = 'name'
+    cathode_params = get_calibration_params(system['Cathode'], sort=sortmethod) if opts.use_cathode else []
+    plume_params = get_calibration_params(system['Plume'], sort=sortmethod) if opts.use_plume else []
+    thruster_params = get_calibration_params(system['Thruster'], sort=sortmethod)
+    params_to_calibrate: list[Variable] = cathode_params + thruster_params + plume_params
+
+    # Set plume sweep radii based on data
+    if opts.use_plume:
+        sweep_radii = []
+        for d in data.values():
+            if d.ion_current_sweeps is None:
+                continue
+            sweep_radii += [s.radius_m for s in d.ion_current_sweeps]
+        sweep_radii = np.sort(np.unique(sweep_radii))
+        system['Plume'].model_kwargs['sweep_radius'] = sweep_radii
+
+    print(f"{params_to_calibrate=}")
     print(f"Number of operating conditions: {len(operating_conditions)}")
 
     # Create initial sample
     index_map = {p.name: i for (i, p) in enumerate(params_to_calibrate)}
     init_sample = np.array([base[p] for p in params_to_calibrate])
     if args.init_sample is not None:
-        var_dict = read_csv(args.init_sample)
+        var_dict = read_dlm(args.init_sample)
         for k, v in var_dict.items():
             i = index_map[k]
             init_sample[i] = v
-
-        print(params_to_calibrate)
-        print(var_dict)
-        print(init_sample)
 
     # Create initial covariance
     if args.init_cov is None:
@@ -289,7 +339,7 @@ if __name__ == "__main__":
             dist = system.inputs()[p].distribution
             if isinstance(dist, distributions.Uniform) or isinstance(dist, distributions.LogUniform):
                 lb, ub = dist.dist_args
-                std = (ub - lb) / 10
+                std = (ub - lb) / 4
             elif isinstance(dist, distributions.Normal):
                 std = dist.dist_args[1]
             elif isinstance(dist, distributions.LogNormal):
@@ -301,7 +351,7 @@ if __name__ == "__main__":
 
         init_cov = np.diag(variances)
     else:
-        cov_dict = read_csv(args.init_cov)
+        cov_dict = read_dlm(args.init_cov)
         N = len(params_to_calibrate)
         init_cov = np.zeros((N, N))
 
@@ -326,11 +376,12 @@ if __name__ == "__main__":
     init_logp = logpdf(init_sample)
 
     # Normalize logpdf by initial value
-    norm_const = abs(init_logp)
+    norm_const = abs(init_logp) / 10
+    print(f"{norm_const}")
     logpdf = lambda x: log_posterior(dict(zip(params_to_calibrate, x)), data, system, base, opts) / norm_const
     init_logp = init_logp / norm_const
 
-    write_row(logfile, 0, init_sample, init_logp, True)
+    append_mcmc_diagnostic_row(logfile, 0, init_sample, init_logp, True)
 
     sampler = samplers.DelayedRejectionAdaptiveMetropolis(
         logpdf,
@@ -353,7 +404,7 @@ if __name__ == "__main__":
 
     # MCMC main loop
     for i, (sample, logp, accepted_bool) in enumerate(sampler):
-        write_row(logfile, i + start_index, sample, logp, accepted_bool)
+        append_mcmc_diagnostic_row(logfile, i + start_index, sample, logp, accepted_bool)
 
         if logp > best_logp:
             best_sample = sample
