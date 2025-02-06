@@ -261,8 +261,9 @@ def read_dlm(file: PathLike, delimiter: str | None = ',', comments='#') -> dict[
             header = header[1:].lstrip()
 
     col_names = header.split(delimiter)
-    table_data = np.genfromtxt(file, skip_header=1).T
-    return {col_name: column for (col_name, column) in zip(col_names, table_data)}
+    table_data = np.atleast_2d(np.genfromtxt(file, skip_header=1, delimiter=delimiter))
+    columns = [table_data[:, i] for i in range(len(col_names))]
+    return {col_name: column for (col_name, column) in zip(col_names, columns)}
 
 
 def get_calibration_params(component: Component, sort: str | None = None) -> list[Variable]:
@@ -329,7 +330,7 @@ if __name__ == "__main__":
         var_dict = read_dlm(args.init_sample)
         for k, v in var_dict.items():
             i = index_map[k]
-            init_sample[i] = v
+            init_sample[i] = v[0]
 
     # Create initial covariance
     if args.init_cov is None:
@@ -352,6 +353,7 @@ if __name__ == "__main__":
         init_cov = np.diag(variances)
     else:
         cov_dict = read_dlm(args.init_cov)
+        print(cov_dict)
         N = len(params_to_calibrate)
         init_cov = np.zeros((N, N))
 
@@ -360,6 +362,9 @@ if __name__ == "__main__":
             for j, (var, key2) in enumerate(zip(column, cov_dict.keys())):
                 i2 = index_map[key2]
                 init_cov[i1, i2] = var
+
+    # Verify that the covariance matrix is positive-definite
+    np.linalg.cholesky(init_cov)
 
     logpdf = lambda x: log_posterior(dict(zip(params_to_calibrate, x)), data, system, base, opts)
     root_dir = opts.directory
