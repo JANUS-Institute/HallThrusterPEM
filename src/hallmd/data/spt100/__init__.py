@@ -7,7 +7,7 @@ from . import macdonald2019 as _macdonald2019
 from . import sankovic1993 as _sankovic1993
 
 
-class spt100(ThrusterDataset):
+class SPT100(ThrusterDataset):
     @staticmethod
     def datasets_from_names(dataset_names: list[str]) -> list[Path]:
         data_list = []

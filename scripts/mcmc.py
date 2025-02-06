@@ -353,7 +353,6 @@ if __name__ == "__main__":
         init_cov = np.diag(variances)
     else:
         cov_dict = read_dlm(args.init_cov)
-        print(cov_dict)
         N = len(params_to_calibrate)
         init_cov = np.zeros((N, N))
 

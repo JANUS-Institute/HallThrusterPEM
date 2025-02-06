@@ -1,7 +1,7 @@
 """Testing for loading experimental data."""
 
 import hallmd.data
-from hallmd.data import spt100
+from hallmd.data import ThrusterData, spt100
 
 
 def test_spt100_macdonald2019():
@@ -18,7 +18,7 @@ def test_spt100_macdonald2019():
 
     data = [expdata[cond] for cond in expdata.keys()]
 
-    L = [[hallmd.data.log_likelihood(data_i, data_j) for data_j in data] for data_i in data]
+    L = [[ThrusterData.log_likelihood(data_i, data_j) for data_j in data] for data_i in data]
 
     for i in range(len(data)):
         for j in range(len(data)):
@@ -55,7 +55,7 @@ def test_spt100_diamant2014():
 
     data = [expdata_all_explicit[cond] for cond in expdata_all_explicit.keys()]
 
-    L = [[hallmd.data.log_likelihood(data_i, data_j) for data_j in data] for data_i in data]
+    L = [[ThrusterData.log_likelihood(data_i, data_j) for data_j in data] for data_i in data]
 
     for i in range(len(data)):
         for j in range(len(data)):
@@ -66,11 +66,11 @@ def test_spt100_diamant2014():
     # check that jion is being properly included in likelihood
     data_l3 = expdata_L3[list(expdata_L3.keys())[0]]
 
-    L1 = hallmd.data.log_likelihood(data_l3, data_l3)
+    L1 = ThrusterData.log_likelihood(data_l3, data_l3)
 
     data_l3.ion_current_sweeps = None
 
-    L3 = hallmd.data.log_likelihood(data_l3, data_l3)
+    L3 = ThrusterData.log_likelihood(data_l3, data_l3)
 
     assert L1 != L3
 

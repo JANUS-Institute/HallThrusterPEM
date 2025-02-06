@@ -118,14 +118,14 @@ from typing import Sequence
 
 import numpy as np
 
-from .h9 import h9
+from .h9 import H9
 from .measurement import Measurement
-from .spt100 import spt100
+from .spt100 import SPT100
 from .thrusterdata import CurrentDensitySweep, IonVelocityData, ThrusterData, ThrusterDataset
 from .types import Array, PathLike
 
 # List of available thrusters
-thrusters: dict[str, type[ThrusterDataset]] = {'H9': h9, 'SPT-100': spt100}
+thrusters: dict[str, type[ThrusterDataset]] = {'H9': H9, 'SPT-100': SPT100}
 
 opcond_keys_forward: dict[str, str] = {
     "p_b": "background_pressure_torr",

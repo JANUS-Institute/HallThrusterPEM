@@ -13,6 +13,4 @@ The `hallmd` package contains three sub-packages:
 - `data` - Contains experimental data for validating the models.
 """
 
-import numpy as _np
-
 __version__ = '0.2.0'

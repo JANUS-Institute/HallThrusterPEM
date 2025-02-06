@@ -1,5 +1,6 @@
 results/
 amisc-*
+slurm-*.out
 .DS_Store
 *.png
 

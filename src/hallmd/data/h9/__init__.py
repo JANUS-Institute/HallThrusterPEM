@@ -6,7 +6,7 @@ from . import gt2024 as _gt2024
 from . import um2024 as _um2024
 
 
-class h9(ThrusterDataset):
+class H9(ThrusterDataset):
     @staticmethod
     def datasets_from_names(dataset_names: list[str]) -> list[Path]:
         data_list = []
