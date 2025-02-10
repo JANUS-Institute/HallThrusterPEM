@@ -2,9 +2,6 @@ from importlib import resources
 from pathlib import Path
 
 from ..thrusterdata import ThrusterDataset
-from . import diamant2014 as _diamant2014
-from . import macdonald2019 as _macdonald2019
-from . import sankovic1993 as _sankovic1993
 
 
 class SPT100(ThrusterDataset):
@@ -30,6 +27,8 @@ class SPT100(ThrusterDataset):
 
 
 def diamant2014(datasets: list[str] | str | None = None) -> list[Path]:
+    from . import diamant2014 as _diamant2014
+
     dir = resources.files(_diamant2014)
 
     if datasets is None:
@@ -46,12 +45,16 @@ def diamant2014(datasets: list[str] | str | None = None) -> list[Path]:
 
 
 def macdonald2019() -> list[Path]:
+    from . import macdonald2019 as _macdonald2019
+
     dir = resources.files(_macdonald2019)
     with resources.as_file(dir / "data.csv") as path:
         return [path]
 
 
 def sankovic1993() -> list[Path]:
+    from . import sankovic1993 as _sankovic1993
+
     dir = resources.files(_sankovic1993)
     with resources.as_file(dir / "data.csv") as path:
         return [path]

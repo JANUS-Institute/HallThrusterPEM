@@ -2,8 +2,6 @@ from importlib import resources
 from pathlib import Path
 
 from ..thrusterdata import ThrusterDataset
-from . import gt2024 as _gt2024
-from . import um2024 as _um2024
 
 
 class H9(ThrusterDataset):
@@ -27,12 +25,16 @@ class H9(ThrusterDataset):
 
 
 def gt2024() -> list[Path]:
+    from . import gt2024 as _gt2024
+
     dir = resources.files(_gt2024)
     with resources.as_file(dir / "data.csv") as path:
         return [path]
 
 
 def um2024() -> list[Path]:
+    from . import um2024 as _um2024
+
     dir = resources.files(_um2024)
     datafiles = ["jion_UMH9_fixed.csv", "uion_UMH9.csv", "vcc_UMH9.csv"]
     paths = []
