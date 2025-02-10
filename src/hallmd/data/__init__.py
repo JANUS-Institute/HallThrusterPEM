@@ -158,7 +158,7 @@ def pem_to_thrusterdata(
     :param outputs: the amisc output dict from the run
     :param sweep_radii: an array of radii at which ion current density data was taken
     :param use_corrected_thrust: Whether to use the base thrust from HallThruster.jl or the thrust corrected by the divergence angle computed in the plume model.
-    """
+    """  # noqa: E501
 
     NaN = np.float64(np.nan)
     output_dict = {
