@@ -11,9 +11,9 @@ class H9(ThrusterDataset):
         for dataset in dataset_names:
             match dataset:
                 case "gt2024":
-                    data_list += gt2024()
+                    data_list += _gt2024()
                 case "um2024":
-                    data_list += um2024()
+                    data_list += _um2024()
                 case _:
                     raise ValueError(f"Invalid dataset {dataset} selected for the H9 thruster.")
 
@@ -21,21 +21,21 @@ class H9(ThrusterDataset):
 
     @staticmethod
     def all_data() -> list[Path]:
-        return gt2024() + um2024()
+        return _gt2024() + _um2024()
 
 
-def gt2024() -> list[Path]:
-    from . import gt2024 as _gt2024
+def _gt2024() -> list[Path]:
+    from . import gt2024
 
-    dir = resources.files(_gt2024)
+    dir = resources.files(gt2024)
     with resources.as_file(dir / "data.csv") as path:
         return [path]
 
 
-def um2024() -> list[Path]:
-    from . import um2024 as _um2024
+def _um2024() -> list[Path]:
+    from . import um2024
 
-    dir = resources.files(_um2024)
+    dir = resources.files(um2024)
     datafiles = ["jion_UMH9_fixed.csv", "uion_UMH9.csv", "vcc_UMH9.csv"]
     paths = []
     for file in datafiles:

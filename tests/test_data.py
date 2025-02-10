@@ -5,7 +5,7 @@ from hallmd.data import ThrusterData, spt100
 
 
 def test_spt100_macdonald2019():
-    expdata = hallmd.data.load(spt100.macdonald2019())
+    expdata = hallmd.data.load(spt100._macdonald2019())
     assert len(expdata.keys()) == 3
     for opcond, data in expdata.items():
         assert data.thrust_N is None
@@ -34,10 +34,10 @@ def test_spt100_macdonald2019():
 
 
 def test_spt100_diamant2014():
-    expdata_L3 = hallmd.data.load(spt100.diamant2014("L3"))
-    expdata_aerospace = hallmd.data.load(spt100.diamant2014("aerospace"))
-    expdata_all_explicit = hallmd.data.load(spt100.diamant2014(["L3", "aerospace"]))
-    expdata_all_implicit = hallmd.data.load(spt100.diamant2014())
+    expdata_L3 = hallmd.data.load(spt100._diamant2014("L3"))
+    expdata_aerospace = hallmd.data.load(spt100._diamant2014("aerospace"))
+    expdata_all_explicit = hallmd.data.load(spt100._diamant2014(["L3", "aerospace"]))
+    expdata_all_implicit = hallmd.data.load(spt100._diamant2014())
 
     assert len(expdata_all_explicit.keys()) == len(expdata_all_implicit.keys())
     assert len(expdata_L3.keys()) + len(expdata_aerospace.keys()) == len(expdata_all_explicit.keys())
@@ -76,7 +76,7 @@ def test_spt100_diamant2014():
 
 
 def test_spt100_sankovic1993():
-    expdata = hallmd.data.load(spt100.sankovic1993())
+    expdata = hallmd.data.load(spt100._sankovic1993())
 
     assert (len(expdata.keys())) > 100
 
