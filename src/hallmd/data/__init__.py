@@ -147,28 +147,17 @@ class OperatingCondition:
     anode_mass_flow_rate_kg_s: float
 
 
-def pem_thrust(i, outputs, use_corrected_thrust):
-    NaN = np.float64(np.nan)
-    if use_corrected_thrust:
-        thrust = outputs['T_c'][i]
-        if not np.isscalar(thrust):
-            thrust = thrust[-1]
-    else:
-        thrust = outputs['T'][i]
-
-    return Measurement(thrust, NaN)
-
-
 def pem_to_thrusterdata(
     operating_conditions: list[OperatingCondition], outputs, sweep_radii: Array, use_corrected_thrust: bool = True
 ) -> dict[OperatingCondition, ThrusterData]:
-    # Assemble output dict from operating conditions -> results
-    # Note, we assume that the pem outputs are ordered based on the input operating conditions
+    """Given a list of `OperatingConditions` and an `outputs` dict from the PEM,
+    construct a `dict` mapping the operating conditions to `ThrusterData` objects.
+    Note: we assume that the PEM outputs are ordered based on the input operating conditions"""
     NaN = np.float64(np.nan)
     output_dict = {
         opcond: ThrusterData(
             cathode_coupling_voltage_V=Measurement(outputs["V_cc"][i], NaN),
-            thrust_N=pem_thrust(i, outputs, use_corrected_thrust),
+            thrust_N=_pem_thrust(i, outputs, use_corrected_thrust),
             discharge_current_A=Measurement(outputs["I_d"][i], NaN),
             ion_current_A=Measurement(outputs["I_B0"][i], NaN),
             ion_velocity=IonVelocityData(
@@ -194,17 +183,49 @@ def pem_to_thrusterdata(
     return output_dict
 
 
-def rel_uncertainty_key(qty: str) -> str:
+def _pem_thrust(i, outputs, use_corrected_thrust):
+    NaN = np.float64(np.nan)
+    if use_corrected_thrust:
+        thrust = outputs['T_c'][i]
+        if not np.isscalar(thrust):
+            thrust = thrust[-1]
+    else:
+        thrust = outputs['T'][i]
+
+    return Measurement(thrust, NaN)
+
+
+def load(files: Sequence[PathLike] | PathLike) -> dict[OperatingCondition, ThrusterData]:
+    """Load all data from the given files into a dict map of `OperatingCondition` -> `ThrusterData`.
+    Each thruster operating condition corresponds to one set of thruster measurements or quantities of interest (QoIs).
+
+    :param files: A list of file paths or a single file path to load data from (only .csv supported).
+    :return: A dict map of `OperatingCondition` -> `ThrusterData` objects.
+    """
+    data: dict[OperatingCondition, ThrusterData] = {}
+    if isinstance(files, list):
+        # Recursively load resources in this list (possibly list of lists)
+        for file in files:
+            new_data = load(file)
+            data = _update_data(data, new_data)
+    else:
+        new_data = _load_single_file(files)
+        data = _update_data(data, new_data)
+
+    return data
+
+
+def _rel_uncertainty_key(qty: str) -> str:
     body, _ = qty.split('(', 1) if '(' in qty else (qty, '')
     return body.rstrip().casefold() + ' relative uncertainty'
 
 
-def abs_uncertainty_key(qty: str) -> str:
+def _abs_uncertainty_key(qty: str) -> str:
     body, unit = qty.split('(', 1) if '(' in qty else (qty, '')
     return body.rstrip().casefold() + ' absolute uncertainty (' + unit
 
 
-def read_measurement(
+def _read_measurement(
     table: dict[str, Array],
     key: str,
     val: Array,
@@ -217,9 +238,9 @@ def read_measurement(
     mean = val * scale
     std = default_rel_err * mean / 2
 
-    if (abs_err := table.get(abs_uncertainty_key(key))) is not None:
+    if (abs_err := table.get(_abs_uncertainty_key(key))) is not None:
         std = abs_err * scale / 2
-    elif (rel_err := table.get(rel_uncertainty_key(key))) is not None:
+    elif (rel_err := table.get(_rel_uncertainty_key(key))) is not None:
         std = rel_err * mean / 2
 
     if end is None:
@@ -231,7 +252,7 @@ def read_measurement(
         return Measurement(mean[start:end], std[start:end])
 
 
-def load_single_file(file: PathLike) -> dict[OperatingCondition, ThrusterData]:
+def _load_single_file(file: PathLike) -> dict[OperatingCondition, ThrusterData]:
     """Load data from a single file into a dict map of `OperatingCondition` -> `ThrusterData`."""
 
     # Read table from file
@@ -292,23 +313,23 @@ def load_single_file(file: PathLike) -> dict[OperatingCondition, ThrusterData]:
         # We also assume a default relative error of 2%
         for key, val in table.items():
             if key == "thrust (mn)":
-                data[opcond].thrust_N = read_measurement(table, key, val, opcond_start, scale=1e-3, scalar=True)
+                data[opcond].thrust_N = _read_measurement(table, key, val, opcond_start, scale=1e-3, scalar=True)
 
             elif key in {"anode current (a)", "discharge current (a)"}:
-                data[opcond].discharge_current_A = read_measurement(table, key, val, opcond_start, scalar=True)
+                data[opcond].discharge_current_A = _read_measurement(table, key, val, opcond_start, scalar=True)
 
             elif key == "cathode coupling voltage (v)":
-                data[opcond].cathode_coupling_voltage_V = read_measurement(table, key, val, opcond_start, scalar=True)
+                data[opcond].cathode_coupling_voltage_V = _read_measurement(table, key, val, opcond_start, scalar=True)
 
             elif key == "ion velocity (m/s)":
                 data[opcond].ion_velocity = IonVelocityData(
                     axial_distance_m=table["axial position from anode (m)"][opcond_start:row],
-                    velocity_m_s=read_measurement(table, key, val, start=opcond_start, end=row, scalar=False),
+                    velocity_m_s=_read_measurement(table, key, val, start=opcond_start, end=row, scalar=False),
                 )
 
             elif key == "ion current density (ma/cm^2)":
                 # Load ion current density data
-                jion = read_measurement(table, key, val, start=opcond_start, end=row, scale=10, scalar=False)
+                jion = _read_measurement(table, key, val, start=opcond_start, end=row, scale=10, scalar=False)
                 radii_m = table["radial position from thruster exit (m)"][opcond_start:row]
                 jion_coords: Array = table["angular position from thruster centerline (deg)"][opcond_start:row]
                 unique_radii = np.unique(radii_m)
@@ -342,7 +363,7 @@ def load_single_file(file: PathLike) -> dict[OperatingCondition, ThrusterData]:
     return data
 
 
-def update_data(
+def _update_data(
     old_data: dict[OperatingCondition, ThrusterData], new_data: dict[OperatingCondition, ThrusterData]
 ) -> dict[OperatingCondition, ThrusterData]:
     data = old_data.copy()
@@ -351,26 +372,6 @@ def update_data(
             data[opcond] = ThrusterData.update(old_data[opcond], new_data[opcond])
         else:
             data[opcond] = new_data[opcond]
-
-    return data
-
-
-def load(files: Sequence[PathLike] | PathLike) -> dict[OperatingCondition, ThrusterData]:
-    """Load all data from the given files into a dict map of `OperatingCondition` -> `ThrusterData`.
-    Each thruster operating condition corresponds to one set of thruster measurements or quantities of interest (QoIs).
-
-    :param files: A list of file paths or a single file path to load data from (only .csv supported).
-    :return: A dict map of `OperatingCondition` -> `ThrusterData` objects.
-    """
-    data: dict[OperatingCondition, ThrusterData] = {}
-    if isinstance(files, list):
-        # Recursively load resources in this list (possibly list of lists)
-        for file in files:
-            new_data = load(file)
-            data = update_data(data, new_data)
-    else:
-        new_data = load_single_file(files)
-        data = update_data(data, new_data)
 
     return data
 
