@@ -23,9 +23,19 @@ class H9(ThrusterDataset):
     def all_data() -> list[Path]:
         return _gt2024() + _um2024()
 
+    @staticmethod
+    def no_data_error():
+        return ImportError(
+            "The H9 data is export-controlled and not stored in this repository."
+            + "If you have the data, you must manually place it in the src/hallmd/data/h9 directory"
+        )
+
 
 def _gt2024() -> list[Path]:
-    from . import gt2024
+    try:
+        from . import gt2024
+    except ImportError:
+        raise H9.no_data_error()
 
     dir = resources.files(gt2024)
     with resources.as_file(dir / "data.csv") as path:
@@ -33,7 +43,10 @@ def _gt2024() -> list[Path]:
 
 
 def _um2024() -> list[Path]:
-    from . import um2024
+    try:
+        from . import um2024
+    except ImportError:
+        raise H9.no_data_error()
 
     dir = resources.files(um2024)
     datafiles = ["jion_UMH9_fixed.csv", "uion_UMH9.csv", "vcc_UMH9.csv"]
