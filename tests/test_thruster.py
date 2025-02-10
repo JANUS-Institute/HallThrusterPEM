@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from hallmd.models.thruster import (
-    HALLTHRUSTER_VERSION_DEFAULT,
+    HALLTHRUSTER_VERSION_TEST,
     PEM_TO_JULIA,
     _convert_to_julia,
     _convert_to_pem,
@@ -43,7 +43,7 @@ def test_julia_conversion():
     assert pem_convert["new_output"] == 0.5
 
 
-def test_sim_hallthruster_jl(tmp_path, plots=SHOW_PLOTS, git_ref=HALLTHRUSTER_VERSION_DEFAULT):
+def test_sim_hallthruster_jl(tmp_path, plots=SHOW_PLOTS, git_ref=HALLTHRUSTER_VERSION_TEST):
     """Simulate a fake HallThruster.jl model to test the Python wrapper function."""
     thruster_inputs = {"V_a": 250, "V_cc": 25, "mdot_a": 3.5e-6}
     config = {
@@ -88,7 +88,7 @@ def test_sim_hallthruster_jl(tmp_path, plots=SHOW_PLOTS, git_ref=HALLTHRUSTER_VE
         plt.show()
 
 
-def test_run_hallthruster_jl(tmp_path, plots=SHOW_PLOTS, git_ref=HALLTHRUSTER_VERSION_DEFAULT):
+def test_run_hallthruster_jl(tmp_path, plots=SHOW_PLOTS, git_ref=HALLTHRUSTER_VERSION_TEST):
     """Test actually calling HallThruster.jl using the Python wrapper function (with PEMv0 settings)."""
     num_cells = 200
     pem_inputs = {
@@ -192,7 +192,6 @@ def test_run_hallthruster_jl(tmp_path, plots=SHOW_PLOTS, git_ref=HALLTHRUSTER_VE
         with open(tmp_path / outputs_shift["output_path"], "r") as fd:
             data = json.load(fd)
             anom_shift = data["output"]["average"]["nu_anom"]
-
 
         ax[1].plot(grid, nu_anom, "-k", label="$z_0 = 0.03$")
         ax[1].plot(grid, anom_shift, "--r", label="$z_0 = 0.15$")
