@@ -171,7 +171,7 @@ def _run_model(
     )
 
     # Write outputs to file
-    with open(opts.directory / "pemv1.pkl", "wb") as fd:
+    with open(opts.directory / "pem.pkl", "wb") as fd:
         pickle.dump({"input": sample_dict, "output": output_thrusterdata}, fd)
 
     return output_thrusterdata

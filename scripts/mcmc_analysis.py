@@ -564,8 +564,15 @@ def plot_global_quantity(
 def load_sim_results(ids, mcmc_path: Path) -> list[dict]:
     data = []
     for id in ids:
-        amisc_path = mcmc_path / id / "pemv1.pkl"
-        with open(amisc_path, "rb") as f:
+        amisc_path = mcmc_path / id
+
+        # find pickle file in output dir
+        pkl_file = "pem.pkl"
+        for file in os.listdir(amisc_path):
+            if file.endswith(".pkl"):
+                pkl_file = file
+
+        with open(amisc_path / pkl_file, "rb") as f:
             data.append(pickle.load(f))
 
     return data
@@ -758,9 +765,9 @@ if __name__ == "__main__":
         help="A list of datasets to use, pick from [diamant2014, macdonald2019, sankovic1993]",
     )
 
-    parser.add_argument("--plot-corner", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--plot-corner", action=argparse.BooleanOptionalAction, default=True)
 
-    parser.add_argument("--plot-bands", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--plot-bands", action=argparse.BooleanOptionalAction, default=True)
 
     args = parser.parse_args()
 
