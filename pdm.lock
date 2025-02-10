@@ -5,14 +5,14 @@
 groups = ["default", "dev", "doc", "mpi", "scripts", "test"]
 strategy = ["inherit_metadata"]
 lock_version = "4.5.0"
-content_hash = "sha256:e11d67c541508f616a4eeff78e4271e53628cf8a2c3ba2b83ce2548bc37e3f61"
+content_hash = "sha256:71af0e01ae6380214f4f47b58bad5ef74911915e2e7665511aad6c4407800cf3"
 
 [[metadata.targets]]
 requires_python = ">=3.11"
 
 [[package]]
 name = "amisc"
-version = "0.7.2"
+version = "0.7.3"
 requires_python = ">=3.11"
 summary = "Efficient framework for building surrogates of multidisciplinary systems using the adaptive multi-index stochastic collocation (AMISC) technique."
 groups = ["default"]
@@ -26,8 +26,8 @@ dependencies = [
     "scipy>=1.14",
 ]
 files = [
-    {file = "amisc-0.7.2-py3-none-any.whl", hash = "sha256:d5e57c2a11ca02c81f40d9fe68d90545bb3210b1dfb96d9662bba506abc4f853"},
-    {file = "amisc-0.7.2.tar.gz", hash = "sha256:b3d665966bb4077adcaecaccb71f75cc55e55c62ce74c79d5a4c9588e8b8bd13"},
+    {file = "amisc-0.7.3-py3-none-any.whl", hash = "sha256:1c4d42a967009d25bb5a913a401878db224a172dc459304a0be9ced0e684aa80"},
+    {file = "amisc-0.7.3.tar.gz", hash = "sha256:94a8746a570852db57a36b3300ee7c28d9674585795f8d67ac901764c1c42e2f"},
 ]
 
 [[package]]
@@ -53,17 +53,6 @@ groups = ["dev"]
 files = [
     {file = "argcomplete-3.5.3-py3-none-any.whl", hash = "sha256:2ab2c4a215c59fd6caaff41a869480a23e8f6a5f910b266c1808037f4e375b61"},
     {file = "argcomplete-3.5.3.tar.gz", hash = "sha256:c12bf50eded8aebb298c7b7da7a5ff3ee24dffd9f5281867dfe1424b58c55392"},
-]
-
-[[package]]
-name = "ash"
-version = "0.1"
-git = "https://github.com/ajdittmann/ash"
-revision = "bf752a5920110831cfe37b08cb8d05cb6ac23d00"
-summary = "1D and 2D average shifted histograms"
-groups = ["default"]
-dependencies = [
-    "numpy",
 ]
 
 [[package]]
@@ -941,10 +930,10 @@ files = [
 [[package]]
 name = "mcmciterators"
 version = "0.0.0"
-git = "https://github.com/goroda/MCMCIterators.git"
+git = "https://github.com/goroda/MCMCIterators"
 revision = "030e01c1a082913113e1d853ec0bd6d80088082f"
 summary = "Markov Chain Monte Carlo Iterators"
-groups = ["default"]
+groups = ["scripts"]
 
 [[package]]
 name = "mergedeep"

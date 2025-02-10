@@ -6,7 +6,6 @@ import time
 from pathlib import Path
 from typing import TypeAlias
 
-import ash
 import matplotlib.pyplot as plt
 import numpy as np
 from amisc import System
@@ -735,10 +734,7 @@ def _num_bins(samples: np.ndarray, lims: tuple[float, float]) -> int:
 def _ax_hist1d(ax: Axes, samples: np.ndarray, xlims: tuple[float, float]) -> None:
     ax.set_xlim(xlims)
     nbins = _num_bins(samples, xlims)
-    nshifts = 5
-    bins, heights = ash.ash1d(samples, nbins, nshifts, range=xlims)
     ax.hist(samples, nbins, color="lightgrey", density=True)
-    ax.plot(bins, heights, zorder=2, color="black", linewidth=2)
 
 
 def _determine_limits(x: np.ndarray) -> tuple[float, float]:

@@ -15,9 +15,6 @@ dependencies = [
     "scipy>=1.15.1",
     "amisc>=0.7.1",
     "packaging>=24.2",
-    "matplotlib>=3.10.0",
-    "MCMCIterators @ git+https://github.com/goroda/MCMCIterators.git",
-    "ash @ git+https://github.com/ajdittmann/ash",
 ]
 requires-python = ">=3.11"
 readme = "README.md"
@@ -37,6 +34,7 @@ scripts = [
     "uqtils>=0.4.2",
     "h5py>=3.10.0",
     "matplotlib>=3.9",
+    "MCMCIterators @ git+https://github.com/goroda/MCMCIterators",
 ]
 
 [project.urls]
