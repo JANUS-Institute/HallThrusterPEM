@@ -338,6 +338,7 @@ def hallthruster_jl(
     fidelity_function: Callable[[tuple[int, ...]], dict] = "default",
     julia_script: Optional[str | Path] = None,
     run_kwargs: dict = "default",
+    shock_threshold: float = None,
 ) -> Dataset:
     """Run a single `HallThruster.jl` simulation for a given set of inputs. This function will write a temporary
     input file to disk, call `HallThruster.run_simulation()` in Julia, and read the output file back into Python. Will
@@ -391,6 +392,10 @@ def hallthruster_jl(
                          a command line argument. Defaults to just calling `HallThruster.run_simulation(input_file)`.
     :param run_kwargs: additional keyword arguments to pass to `subprocess.run` when calling the Julia script.
                        Defaults to `check=True`.
+    :param shock_threshold: if provided, an error will be raised if the ion velocity reaches a maximum before this
+                            threshold axial location (in m) - used to detect and filter unwanted "shock-like" behavior,
+                            for example by providing a threshold of half the domain length. If not provided, then no
+                            filtering is performed (default).
     :returns: `dict` of `Hallthruster.jl` outputs: `I_B0`, `I_d`, `T`, `eta_c`, `eta_m`, `eta_v`, and `u_ion` for ion
               beam current (A), discharge current (A), thrust (N), current efficiency, mass efficiency, voltage
               efficiency, and singly-charged ion velocity profile (m/s), all time-averaged.
@@ -437,6 +442,14 @@ def hallthruster_jl(
     beam_current = thruster_outputs.get("I_B0", 0)
     if thrust < 0 or beam_current < 0:
         raise ValueError(f"Exception due to non-physical case: thrust={thrust} N, beam current={beam_current} A")
+
+    # Raise an exception for ion velocity that exhibits "shock" behavior
+    if shock_threshold is not None:
+        z_coords = thruster_outputs.get("u_ion_coords")
+        ion_velocity = thruster_outputs.get("u_ion")
+        if z_coords is not None and ion_velocity is not None:
+            if (z_max := z_coords[np.argmax(ion_velocity)]) < shock_threshold:
+                raise ValueError(f"Exception due to shock-like behavior: max ion velocity occurs at z={z_max:.3f} m")
 
     thruster_outputs["model_cost"] = t2 - t1  # seconds
 

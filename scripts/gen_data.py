@@ -111,7 +111,13 @@ def _object_to_numeric(array: np.ndarray):
     Will only work assuming each field quantity has the same shape (which should be true for compression data).
     """
     if np.issubdtype(array.dtype, np.object_):
-        return np.concatenate([arr[np.newaxis, ...] for arr in array], axis=0)
+        shape = ()
+        for arr in array:
+            if arr is not None:
+                shape = arr.shape
+                break
+        return np.concatenate([arr[np.newaxis, ...] if arr is not None else np.full((1, *shape), np.nan)
+                               for arr in array], axis=0)
     else:
         return array
 
@@ -134,7 +140,7 @@ def _filter_outputs(outputs: dict, iqr_factor: float = 1.5):
     cnt_thresh = 0.75  # Only count a QoI as an outlier if more than 75% of its values are outliers; always true for scalars
 
     for var, arr in outputs.items():
-        if COORDS_STR_ID in str(var):
+        if COORDS_STR_ID in str(var) or str(var) == 'errors':
             continue
 
         try:

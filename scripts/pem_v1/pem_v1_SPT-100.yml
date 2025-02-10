@@ -132,7 +132,7 @@ components: !Component
         category: calibration
         tex: "$\\alpha_1$"
         nominal: 0.00625
-        distribution: LogUniform(0.0001, 0.1)
+        distribution: LogUniform(0.001, 0.1)
         norm: log10
       - name: anom_max
         description: maximum Hall parameter
