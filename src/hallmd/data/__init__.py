@@ -175,7 +175,9 @@ def pem_to_thrusterdata(
                 CurrentDensitySweep(
                     radius_m=radius,
                     angles_rad=outputs["j_ion_coords"][i],
-                    current_density_A_m2=Measurement(j_ion := outputs["j_ion"][i, :, j], np.full_like(j_ion, NaN)),
+                    current_density_A_m2=Measurement(
+                        j_ion := np.atleast_3d(outputs["j_ion"])[i, :, j], np.full_like(j_ion, NaN)
+                    ),
                 )
                 for (j, radius) in enumerate(sweep_radii)
             ],
