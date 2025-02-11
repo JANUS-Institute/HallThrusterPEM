@@ -145,7 +145,7 @@ components: !Component
         category: calibration
         units: m
         tex: "$z_{anom}$"
-        nominal: 0.025
+        nominal: 0.0265
         distribution: Uniform(0.01, 0.035)
         norm: linear(1e3)
       - name: anom_width
@@ -228,34 +228,34 @@ components: !Component
         description: Scatter/main beam ratio
         category: calibration
         tex: "$c_0$"
-        nominal: 0.92434
+        nominal: 0.5
         distribution: U(0, 1)
       - name: c1
         description: Divergence angle ratio
         category: calibration
         tex: "$c_1$"
-        nominal: 0.81486
+        nominal: 0.3
         distribution: U(0.1, 0.9)
       - name: c2
         description: Divergence angle slope
         category: calibration
         tex: "$c_2$"
         units: rad/Pa
-        nominal: 14.00547
+        nominal: 7.0
         distribution: U(-15, 15)
       - name: c3
         description: Divergence angle offset
         category: calibration
         tex: "$c_3$"
         units: rad
-        nominal: 0.44667
+        nominal: 0.3
         distribution: U(0.2, 1.570796)
       - name: c4
         description: Neutral density slope
         category: calibration
         tex: "$c_4$"
         units: "$m^{-3}/Pa$"
-        nominal: 1e20
+        nominal: 1e19
         distribution: LogUniform(1e18, 1e22)
         norm: log10
       - name: c5
@@ -263,7 +263,7 @@ components: !Component
         category: calibration
         tex: "$c_5$"
         units: "$m^{-3}$"
-        nominal: 1e16
+        nominal: 1e17
         distribution: LogUniform(1e14, 1e18)
         norm: log10
       - name: sigma_cex
