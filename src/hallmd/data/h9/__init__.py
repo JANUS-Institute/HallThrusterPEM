@@ -49,7 +49,7 @@ def _um2024() -> list[Path]:
         raise H9.no_data_error()
 
     dir = resources.files(um2024)
-    datafiles = ["jion_UMH9_fixed.csv", "uion_UMH9.csv", "vcc_UMH9.csv"]
+    datafiles = ["jion_UMH9.csv", "uion_UMH9.csv", "vcc_UMH9.csv"]
     paths = []
     for file in datafiles:
         with resources.as_file(dir / file) as path:
