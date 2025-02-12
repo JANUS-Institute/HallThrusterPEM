@@ -308,7 +308,10 @@ if __name__ == "__main__":
     cathode_params = get_calibration_params(system['Cathode'], sort=sortmethod) if opts.use_cathode else []
     plume_params = get_calibration_params(system['Plume'], sort=sortmethod) if opts.use_plume else []
     thruster_params = get_calibration_params(system['Thruster'], sort=sortmethod)
-    params_to_calibrate: list[Variable] = cathode_params + thruster_params + plume_params
+    # assemble params_to_calibrate, has to be done in this way to avoid duplicate Te in cathode and thruster
+    params_to_calibrate: list[Variable] = cathode_params
+    params_to_calibrate += [p for p in thruster_params if p not in params_to_calibrate]
+    params_to_calibrate += [p for p in plume_params if p not in params_to_calibrate]
 
     # Set plume sweep radii based on data
     if opts.use_plume:
@@ -355,14 +358,13 @@ if __name__ == "__main__":
         cov_dict = read_dlm(args.init_cov)
         N = len(params_to_calibrate)
         init_cov = np.zeros((N, N))
-
         for i, (key1, column) in enumerate(cov_dict.items()):
             i1 = index_map[key1]
             for j, (var, key2) in enumerate(zip(column, cov_dict.keys())):
                 i2 = index_map[key2]
                 init_cov[i1, i2] = var
 
-    # Verify that the covariance matrix is positive-definite
+    # Verify that the covariance matrix is positive-definite before proceeding
     np.linalg.cholesky(init_cov)
 
     logpdf = lambda x: log_posterior(dict(zip(params_to_calibrate, x)), data, system, base, opts)
