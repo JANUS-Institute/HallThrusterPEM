@@ -1,13 +1,35 @@
 from importlib import resources
 from pathlib import Path
 
-from . import diamant2014 as _diamant2014
-from . import macdonald2019 as _macdonald2019
-from . import sankovic1993 as _sankovic1993
+from ..thrusterdata import ThrusterDataset
 
 
-def diamant2014(datasets: list[str] | str | None = None) -> list[Path]:
-    dir = resources.files(_diamant2014)
+class SPT100(ThrusterDataset):
+    @staticmethod
+    def datasets_from_names(dataset_names: list[str]) -> list[Path]:
+        data_list = []
+        for dataset in dataset_names:
+            match dataset:
+                case "diamant2014":
+                    data_list += _diamant2014()
+                case "sankovic1993":
+                    data_list += _sankovic1993()
+                case "macdonald2019":
+                    data_list += _macdonald2019()
+                case _:
+                    raise ValueError(f"Invalid dataset {dataset} selected.")
+
+        return data_list
+
+    @staticmethod
+    def all_data() -> list[Path]:
+        return _sankovic1993() + _macdonald2019() + _diamant2014()
+
+
+def _diamant2014(datasets: list[str] | str | None = None) -> list[Path]:
+    from . import diamant2014
+
+    dir = resources.files(diamant2014)
 
     if datasets is None:
         datasets = ["L3", "aerospace"]
@@ -22,17 +44,17 @@ def diamant2014(datasets: list[str] | str | None = None) -> list[Path]:
     return data_paths
 
 
-def macdonald2019() -> list[Path]:
-    dir = resources.files(_macdonald2019)
+def _macdonald2019() -> list[Path]:
+    from . import macdonald2019
+
+    dir = resources.files(macdonald2019)
     with resources.as_file(dir / "data.csv") as path:
         return [path]
 
 
-def sankovic1993() -> list[Path]:
-    dir = resources.files(_sankovic1993)
+def _sankovic1993() -> list[Path]:
+    from . import sankovic1993
+
+    dir = resources.files(sankovic1993)
     with resources.as_file(dir / "data.csv") as path:
         return [path]
-
-
-def all() -> list[Path]:
-    return sankovic1993() + macdonald2019() + diamant2014()

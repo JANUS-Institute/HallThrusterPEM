@@ -18,10 +18,11 @@ from pathlib import Path
 
 from packaging.version import Version
 
+from hallmd.models.thruster import HALLTHRUSTER_VERSION_DEFAULT
+
 ENV = os.environ.copy()
 PLATFORM = platform.system().lower()
 JULIA_VERSION_DEFAULT = "1.10"
-HALLTHRUSTER_VERSION_DEFAULT = "0.18.3"
 HALLTHRUSTER_URL = "https://github.com/UM-PEPL/HallThruster.jl"
 HALLTHRUSTER_NAME = "HallThruster"
 

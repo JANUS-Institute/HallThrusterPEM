@@ -38,6 +38,6 @@ jobs:
           channel: '1.10'
       - name: Install dependencies
         run: pdm sync -G test
-      - run: pdm run python scripts/install_hallthruster.py -y --hallthruster-version 0.18.1
+      - run: pdm run python scripts/install_hallthruster.py -y
       - name: Run tests
         run: pdm run -v test
