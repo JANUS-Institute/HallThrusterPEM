@@ -113,27 +113,136 @@ If only one of these quantities is provided, we throw an error.
 
 """  # noqa: E501
 
-from dataclasses import dataclass
-from typing import Sequence
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, fields
+from pathlib import Path
+from typing import Generic, Optional, Sequence, TypeVar
 
 import numpy as np
 
 from .h9 import H9
-from .measurement import Measurement
 from .spt100 import SPT100
-from .thrusterdata import CurrentDensitySweep, IonVelocityData, ThrusterData, ThrusterDataset
-from .types import Array, PathLike
+from .typing import Array, PathLike
 
-# List of available thrusters
+T = TypeVar("T", np.float64, Array)
+
+
+# ====================================================================================================================
+#   Measurement
+# ====================================================================================================================
+@dataclass(frozen=True)
+class Measurement(Generic[T]):
+    """A measurement object that includes a mean and standard deviation. The mean is the best estimate of the
+    quantity being measured, and the standard deviation is the uncertainty in the measurement. Can be used to specify
+    a scalar measurement quantity or a field quantity (e.g. a profile) in the form of a `numpy` array.
+    """
+
+    mean: T
+    std: T
+
+    def __str__(self):
+        return f"(μ = {self.mean}, σ = {self.std})"
+
+
+# ====================================================================================================================
+#   ThrusterData and associated types
+# ====================================================================================================================
+class ThrusterDataset(ABC):
+    """Abstract base class for thruster datasets"""
+
+    @staticmethod
+    @abstractmethod
+    def datasets_from_names(dataset_names: list[str]) -> list[Path]:
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def all_data() -> list[Path]:
+        pass
+
+
+@dataclass
+class CurrentDensitySweep:
+    """Contains data for a single current density sweep"""
+
+    radius_m: np.float64
+    angles_rad: Array
+    current_density_A_m2: Measurement[Array]
+
+
+@dataclass
+class IonVelocityData:
+    """Contains measurements of axial ion velocity along with coordinates"""
+
+    axial_distance_m: Array
+    velocity_m_s: Measurement[Array]
+
+
+@dataclass
+class ThrusterData:
+    """Class for Hall thruster data. Contains fields for all relevant performance metrics and quantities of interest."""
+
+    # Cathode
+    cathode_coupling_voltage_V: Optional[Measurement[np.float64]] = None
+    # Thruster
+    thrust_N: Optional[Measurement[np.float64]] = None
+    discharge_current_A: Optional[Measurement[np.float64]] = None
+    ion_current_A: Optional[Measurement[np.float64]] = None
+    efficiency_current: Optional[Measurement[np.float64]] = None
+    efficiency_mass: Optional[Measurement[np.float64]] = None
+    efficiency_voltage: Optional[Measurement[np.float64]] = None
+    efficiency_anode: Optional[Measurement[np.float64]] = None
+    ion_velocity: Optional[IonVelocityData] = None
+
+    # Plume
+    ion_current_sweeps: Optional[list[CurrentDensitySweep]] = None
+
+    def __str__(self) -> str:
+        fields_str = ",\n".join(
+            [
+                f"\t{field.name} = {val}"
+                for field in fields(ThrusterData)
+                if (val := getattr(self, field.name)) is not None
+            ]
+        )
+        return f"ThrusterData(\n{fields_str}\n)\n"
+
+    @staticmethod
+    def merge_field(field, data1, data2):
+        val1 = getattr(data1, field)
+        val2 = getattr(data2, field)
+        if val2 is None and val1 is None:
+            return None
+        elif val2 is None:
+            return val1
+        else:
+            return val2
+
+    @staticmethod
+    def update(data1, data2):
+        merged = {}
+        for field in fields(ThrusterData):
+            merged[field.name] = ThrusterData.merge_field(field.name, data1, data2)
+        return ThrusterData(**merged)
+
+
+# ====================================================================================================================
+#   Operating conditions and associated types/functions
+# ====================================================================================================================
+
 thrusters: dict[str, type[ThrusterDataset]] = {'H9': H9, 'SPT-100': SPT100}
+"""Mapping from available thruster names to associated datasets"""
+
 
 opcond_keys_forward: dict[str, str] = {
     "p_b": "background_pressure_torr",
     "v_a": "discharge_voltage_v",
     "mdot_a": "anode_mass_flow_rate_kg_s",
 }
+"""Forward mapping between operating condition short and long names"""
 
 opcond_keys_backward: dict[str, str] = {v: k for (k, v) in opcond_keys_forward.items()}
+"""Backward mapping between operating condition short and long names"""
 
 
 @dataclass(frozen=True)
@@ -147,6 +256,9 @@ class OperatingCondition:
     anode_mass_flow_rate_kg_s: float
 
 
+# ====================================================================================================================
+#   Amisc interop utilities
+# ====================================================================================================================
 def pem_to_thrusterdata(
     operating_conditions: list[OperatingCondition], outputs, sweep_radii: Array, use_corrected_thrust: bool = True
 ) -> dict[OperatingCondition, ThrusterData]:
@@ -204,6 +316,9 @@ def _pem_thrust(i, outputs, use_corrected_thrust):
     return Measurement(thrust, NaN)
 
 
+# ====================================================================================================================
+#   File IO and parsing
+# ====================================================================================================================
 def load(files: Sequence[PathLike] | PathLike) -> dict[OperatingCondition, ThrusterData]:
     """Load all data from the given files into a dict map of `OperatingCondition` -> `ThrusterData`.
     Each thruster operating condition corresponds to one set of thruster measurements or quantities of interest (QoIs).

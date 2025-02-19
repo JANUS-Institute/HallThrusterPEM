@@ -4,9 +4,9 @@ import pickle
 import shutil
 from argparse import Namespace
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from pathlib import Path
-from typing import Type, TypeAlias
+from typing import Type, TypeAlias, TypeVar
 
 import amisc.distribution as distributions
 import mcmc_analysis as analysis
@@ -15,11 +15,13 @@ from amisc import Component, System, Variable, YamlLoader
 from MCMCIterators import samplers
 
 import hallmd.data
-from hallmd.data import Array, OperatingCondition, PathLike, ThrusterData
+from hallmd.data import Array, Measurement, OperatingCondition, PathLike, ThrusterData
 
 Value: TypeAlias = np.float64 | Array
 NaN = np.float64(np.nan)
 Inf = np.float64(np.inf)
+
+T = TypeVar("T", np.float64, Array)
 
 parser = argparse.ArgumentParser(description="MCMC scripts")
 
@@ -130,6 +132,83 @@ def load_system_and_opts(args: Namespace) -> tuple[System, ExecutionOptions]:
     return system, opts
 
 
+def gauss_logpdf(data: Measurement[T] | None, observation: Measurement[T] | None) -> np.float64:
+    if data is None or observation is None:
+        return np.float64(0.0)
+    # taking mean is equivalent to doing geometric mean of independent gaussian pdfs
+    # remove first term (log(2pi * std**2)) bc we don't care about normalization for mcmc
+    return -0.5 * np.mean((data.mean - observation.mean) ** 2 / (data.std**2))
+
+
+def interp_gauss_logpdf(
+    coords: Array | None,
+    data: 'Measurement[Array] | None',
+    obs_coords: Array | None,
+    observation: 'Measurement[Array] | None',
+) -> np.float64:
+    if coords is None or data is None or obs_coords is None or observation is None:
+        return np.float64(0.0)
+
+    obs_interp_mean = np.interp(coords, obs_coords, observation.mean)
+    obs_interp = Measurement(obs_interp_mean, np.zeros(1))
+    return gauss_logpdf(data, obs_interp)
+
+
+def data_log_likelihood(data: 'ThrusterData', observation: 'ThrusterData') -> np.float64:
+    log_likelihood = (
+        # Add contributions from global performance metrics
+        gauss_logpdf(data.cathode_coupling_voltage_V, observation.cathode_coupling_voltage_V)
+        + gauss_logpdf(data.thrust_N, observation.thrust_N)
+        + gauss_logpdf(data.discharge_current_A, observation.discharge_current_A)
+        + gauss_logpdf(data.ion_current_A, observation.ion_current_A)
+        + gauss_logpdf(data.efficiency_current, observation.efficiency_current)
+        + gauss_logpdf(data.efficiency_mass, observation.efficiency_mass)
+        + gauss_logpdf(data.efficiency_voltage, observation.efficiency_voltage)
+        + gauss_logpdf(data.efficiency_anode, observation.efficiency_anode)
+    )
+
+    # Contribution to likelihood from ion velocity
+    if data.ion_velocity is not None and observation.ion_velocity is not None:
+        log_likelihood += interp_gauss_logpdf(
+            data.ion_velocity.axial_distance_m,
+            data.ion_velocity.velocity_m_s,
+            observation.ion_velocity.axial_distance_m,
+            observation.ion_velocity.velocity_m_s,
+        )
+
+    # Contribution to likelihood from ion current density
+    plume_log_likelihood = 0
+    num_sweeps = 0
+    if data.ion_current_sweeps is not None and observation.ion_current_sweeps is not None:
+        for data_sweep in data.ion_current_sweeps:
+            # find sweep in observation with the same radius, if present
+            observation_sweep = None
+            for sweep in observation.ion_current_sweeps:
+                if data_sweep.radius_m == sweep.radius_m:
+                    observation_sweep = sweep
+                    break
+            # if no sweep in observation with same radius, do nothing
+            if observation_sweep is None:
+                continue
+
+            plume_log_likelihood += interp_gauss_logpdf(
+                data_sweep.angles_rad,
+                data_sweep.current_density_A_m2,
+                observation_sweep.angles_rad,
+                observation_sweep.current_density_A_m2,
+            )
+            num_sweeps += 1
+
+        plume_log_likelihood /= num_sweeps
+
+    log_likelihood += plume_log_likelihood
+
+    # divide by number of data categories -- equivalent to geometric mean across all data categories
+    log_likelihood /= len(fields(ThrusterData))
+
+    return log_likelihood
+
+
 def get_nominal_inputs(system: System) -> dict[str, Value]:
     """Create a dict mapping system inputs to their nominal values"""
     inputs: dict[str, Value] = {}
@@ -209,7 +288,7 @@ def log_likelihood(
 
     L = np.float64(0.0)
     for opcond, _data in data.items():
-        L += ThrusterData.log_likelihood(_data, result[opcond])
+        L += data_log_likelihood(_data, result[opcond])
 
     # geometric average of likelihood over operating conditions
     L /= len(list(data.keys()))

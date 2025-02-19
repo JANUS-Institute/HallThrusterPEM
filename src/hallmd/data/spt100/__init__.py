@@ -1,7 +1,7 @@
 from importlib import resources
 from pathlib import Path
 
-from ..thrusterdata import ThrusterDataset
+from ..typing import ThrusterDataset
 
 
 class SPT100(ThrusterDataset):
