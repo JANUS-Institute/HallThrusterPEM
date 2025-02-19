@@ -2,7 +2,6 @@ import argparse
 import os
 import pickle
 import shutil
-import traceback
 from argparse import Namespace
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import dataclass
@@ -152,29 +151,35 @@ def _run_model(
     for key, val in params.items():
         sample_dict[key] = val
 
-    # Run model
-    with opts.executor(max_workers=opts.max_workers) as exec:
-        outputs = system.predict(
-            sample_dict,
-            use_model=opts.fidelity,
-            model_dir=opts.directory,
-            executor=exec,
-            verbose=False,
+    try:
+        # Run model
+        with opts.executor(max_workers=opts.max_workers) as exec:
+            outputs = system.predict(
+                sample_dict,
+                use_model=opts.fidelity,
+                model_dir=opts.directory,
+                executor=exec,
+                verbose=False,
+            )
+
+        # Get plume sweep radii
+        sweep_radii = system['Plume'].model_kwargs['sweep_radius']
+
+        # Assemble output dict from operating conditions -> results
+        output_thrusterdata = hallmd.data.pem_to_thrusterdata(
+            operating_conditions, outputs, sweep_radii, use_corrected_thrust=opts.use_plume
         )
 
-    # Get plume sweep radii
-    sweep_radii = system['Plume'].model_kwargs['sweep_radius']
+        # Write outputs to file
+        with open(opts.directory / "pem.pkl", "wb") as fd:
+            pickle.dump({"input": sample_dict, "output": output_thrusterdata}, fd)
 
-    # Assemble output dict from operating conditions -> results
-    output_thrusterdata = hallmd.data.pem_to_thrusterdata(
-        operating_conditions, outputs, sweep_radii, use_corrected_thrust=opts.use_plume
-    )
+        return output_thrusterdata
 
-    # Write outputs to file
-    with open(opts.directory / "pem.pkl", "wb") as fd:
-        pickle.dump({"input": sample_dict, "output": output_thrusterdata}, fd)
-
-    return output_thrusterdata
+    except Exception as e:
+        print("Error detected. Failing input printed below")
+        print(f"{sample_dict}")
+        raise (e)
 
 
 def log_prior(system: System, params: dict[str, Value]) -> np.float64:
@@ -200,23 +205,18 @@ def log_likelihood(
     base_params: dict[str, Value],
     opts: ExecutionOptions,
 ) -> np.float64:
-    try:
-        result = _run_model(params, system, list(data.keys()), base_params, opts)
-    except ValueError as e:
-        # Write error info
-        with open(opts.directory / 'error.log', "w") as f:
-            traceback.print_exc(file=f)
-            print(repr(e), file=f)
-
-        # Write params that caused the error
-        with open(opts.directory / "err_params.pkl", "wb") as fd:
-            pickle.dump(params, fd)
-
-        return -np.float64(np.inf)
+    result = _run_model(params, system, list(data.keys()), base_params, opts)
 
     L = np.float64(0.0)
     for opcond, _data in data.items():
         L += ThrusterData.log_likelihood(_data, result[opcond])
+
+    # geometric average of likelihood over operating conditions
+    L /= len(list(data.keys()))
+
+    # if somehow nan or otherwise non-finite, return -inf
+    if not np.isfinite(L):
+        return np.float64(-np.inf)
 
     return L
 
@@ -380,12 +380,7 @@ if __name__ == "__main__":
     # Generate initial logpdf
     update_opts(root_dir, 0)
     init_logp = logpdf(init_sample)
-
-    # Normalize logpdf by initial value
-    norm_const = abs(init_logp) / 10
-    print(f"{norm_const}")
-    logpdf = lambda x: log_posterior(dict(zip(params_to_calibrate, x)), data, system, base, opts) / norm_const
-    init_logp = init_logp / norm_const
+    print(f"{init_logp}")
 
     append_mcmc_diagnostic_row(logfile, 0, init_sample, init_logp, True)
 
@@ -426,7 +421,12 @@ if __name__ == "__main__":
 
         if (i == max_samples) or (i % args.output_interval == 0):
             analysis.analyze_mcmc(
-                root_dir.parent, os.path.basename(args.config_file), args.datasets, corner=True, bands=True
+                root_dir.parent,
+                os.path.basename(args.config_file),
+                args.datasets,
+                corner=True,
+                bands=True,
+                proposal_cov=sampler.cov_chol,
             )
 
         if i >= max_samples:

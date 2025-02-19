@@ -137,4 +137,7 @@ class ThrusterData:
 
         log_likelihood += plume_log_likelihood
 
+        # divide by number of data categories -- equivalent to geometric mean across all data categories
+        log_likelihood /= len(fields(ThrusterData))
+
         return log_likelihood

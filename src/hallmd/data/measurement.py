@@ -44,4 +44,6 @@ class Measurement(Generic[T]):
 
 
 def _gauss_logpdf(mean: T, std: T, observation: T) -> np.float64:
-    return -0.5 * np.sum(2 * np.log(std) + (mean - observation) ** 2 / (std**2))
+    # taking mean is equivalent to doing geometric mean of independent gaussian pdfs
+    # remove first term (log(2pi * std**2)) bc we don't care about normalization
+    return -0.5 * np.mean((mean - observation) ** 2 / (std**2))

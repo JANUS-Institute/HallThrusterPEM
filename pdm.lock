@@ -5,8 +5,7 @@
 groups = ["default", "dev", "doc", "mpi", "scripts", "test"]
 strategy = ["inherit_metadata"]
 lock_version = "4.5.0"
-content_hash = "sha256:71af0e01ae6380214f4f47b58bad5ef74911915e2e7665511aad6c4407800cf3"
-
+content_hash = "sha256:58927abcf2ce29fcf0eaccbc4d3270b181ce7cc66a7ed4584ccdf85896eec389"
 
 [[metadata.targets]]
 requires_python = ">=3.11"
@@ -931,8 +930,8 @@ files = [
 [[package]]
 name = "mcmciterators"
 version = "0.0.0"
-git = "https://github.com/goroda/MCMCIterators"
-revision = "030e01c1a082913113e1d853ec0bd6d80088082f"
+git = "https://github.com/archermarx/MCMCIterators"
+revision = "b98c7ba1631092187605f91d0b12bf0645e9a95d"
 summary = "Markov Chain Monte Carlo Iterators"
 groups = ["scripts"]
 

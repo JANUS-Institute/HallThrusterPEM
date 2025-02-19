@@ -63,7 +63,7 @@ def stop_timer(start_time: float):
     print(f"took {elapsed:.2f} s.")
 
 
-def analyze_mcmc(path, config, datasets, corner=False, bands=False):
+def analyze_mcmc(path, config, datasets, corner=False, bands=False, proposal_cov=None):
     mcmc_path = Path(path) / "mcmc"
     logfile = mcmc_path / "mcmc.csv"
     plot_path = Path(path) / "mcmc_analysis"
@@ -137,12 +137,22 @@ def analyze_mcmc(path, config, datasets, corner=False, bands=False):
         start = start_timer("Computing map, mean, median, and covariance")
         map = samples_raw[map_ind, :]
         mean, median = mean_and_median(samples)
-        empirical_covariance = np.cov(samples.T)
         header = ",".join(variables)
         np.savetxt(plot_path / "map.csv", np.matrix(map), header=header, delimiter=',')
         np.savetxt(plot_path / "mean.csv", np.matrix(mean), header=header, delimiter=',')
         np.savetxt(plot_path / "median.csv", np.matrix(median), header=header, delimiter=',')
-        np.savetxt(plot_path / "cov.csv", empirical_covariance, header=header, delimiter=',')
+
+        # Save covariance passed to this function if present, otherwise compute empirical covariance and save it
+        if proposal_cov is not None:
+            np.savetxt(plot_path / "cov.csv", proposal_cov, header=header, delimiter=',')
+        else:
+            empirical_covariance = np.cov(samples.T)
+            np.savetxt(plot_path / "cov.csv", empirical_covariance, header=header, delimiter=',')
+
+        # Save last sample. Combined with proposal covariance, this lets us restart the MCMC process
+        last = samples_raw[-1, :]
+        np.savetxt(plot_path / "lastsample.csv", np.matrix(last), header=header, delimiter=",")
+
         stop_timer(start)
 
         start = start_timer("Plotting traces")
@@ -151,9 +161,13 @@ def analyze_mcmc(path, config, datasets, corner=False, bands=False):
         stop_timer(start)
 
         if corner:
-            start = start_timer("Plotting corner plot")
-            plot_corner(samples, tex_names, plot_path, map=map, mean=mean, median=median)
-            stop_timer(start)
+            try:
+                start = start_timer("Plotting corner plot")
+                plot_corner(samples, tex_names, plot_path, map=map, mean=mean, median=median)
+                stop_timer(start)
+            except ValueError:
+                # the corner plot sometimes fails early on if there aren't enough distinct samples
+                pass
 
     start = start_timer("Loading data")
     data = hallmd.data.load(hallmd.data.thrusters[device_name].datasets_from_names(datasets))
