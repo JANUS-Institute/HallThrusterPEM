@@ -312,7 +312,7 @@ def log_posterior(
         return -Inf
 
     likelihood = log_likelihood(params, data, system, base_params, opts)
-    if not np.isfinite(prior):
+    if not np.isfinite(likelihood):
         return -Inf
 
     return prior + likelihood
@@ -365,7 +365,7 @@ if __name__ == "__main__":
 
     # Determine thruster and load data
     thruster_name = system['Thruster'].model_kwargs['thruster']
-    thruster = hallmd.data.thrusters[thruster_name]
+    thruster = hallmd.data.get_thruster(thruster_name)
     datasets = thruster.datasets_from_names(args.datasets)
     data = hallmd.data.load(datasets)
     operating_conditions = list(data.keys())
@@ -373,7 +373,7 @@ if __name__ == "__main__":
     # Load operating conditions into input dict
     operating_params = ["P_b", "V_a", "mdot_a"]
     for param in operating_params:
-        long_name = hallmd.data.opcond_keys_forward[param.casefold()]
+        long_name = hallmd.data.opcond_keys[param.casefold()]
         inputs_unnorm = np.array([getattr(cond, long_name) for cond in data.keys()])
         base[param] = system.inputs()[param].normalize(inputs_unnorm)
 

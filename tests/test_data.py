@@ -1,12 +1,14 @@
 """Testing for loading and handling experimental data."""
 
 import numpy as np
+import pytest
 
 import hallmd.data
 from hallmd.data import OperatingCondition, spt100
 
 
 def test_thrusterdata():
+    """Test converting amisc pem data into ThrusterData objects."""
     mdots = [5e-6, 6e-6]
     pbs = [1e-6, 10e-6]
     vas = [300.0, 400.0]
@@ -101,8 +103,6 @@ def test_spt100_diamant2014():
         else:
             assert data.ion_current_sweeps is None is None
 
-    data = [expdata_all_explicit[cond] for cond in expdata_all_explicit.keys()]
-
 
 def test_spt100_sankovic1993():
     expdata = hallmd.data.load(spt100._sankovic1993())
@@ -115,3 +115,10 @@ def test_spt100_sankovic1993():
         assert data.cathode_coupling_voltage_V is None
         assert data.ion_velocity is None
         assert data.ion_current_sweeps is None
+
+
+def test_h9_empty():
+    thruster = hallmd.data.get_thruster('H9')
+
+    with pytest.raises(ImportError):
+        _ = thruster.all_data()

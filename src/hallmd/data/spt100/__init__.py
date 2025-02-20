@@ -1,10 +1,13 @@
+"""Module for SPT-100 datasets."""
 from importlib import resources
 from pathlib import Path
 
-from ..typing import ThrusterDataset
+from .. import ThrusterDataset
 
 
 class SPT100(ThrusterDataset):
+    """Class for handling the SPT-100 datasets."""
+
     @staticmethod
     def datasets_from_names(dataset_names: list[str]) -> list[Path]:
         data_list = []
@@ -27,6 +30,7 @@ class SPT100(ThrusterDataset):
 
 
 def _diamant2014(datasets: list[str] | str | None = None) -> list[Path]:
+    """See https://doi.org/10.2514/6.2014-3710 and https://doi.org/10.1088/1361-6595/abd3b6"""
     from . import diamant2014
 
     dir = resources.files(diamant2014)
@@ -45,6 +49,7 @@ def _diamant2014(datasets: list[str] | str | None = None) -> list[Path]:
 
 
 def _macdonald2019() -> list[Path]:
+    """See https://doi.org/10.2514/1.B37133"""
     from . import macdonald2019
 
     dir = resources.files(macdonald2019)
@@ -53,6 +58,7 @@ def _macdonald2019() -> list[Path]:
 
 
 def _sankovic1993() -> list[Path]:
+    """See https://api.semanticscholar.org/CorpusID:108473052"""
     from . import sankovic1993
 
     dir = resources.files(sankovic1993)

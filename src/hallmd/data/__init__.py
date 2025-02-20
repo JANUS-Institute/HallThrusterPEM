@@ -21,12 +21,13 @@ Citations:
 ## Data conventions
 The data used in the PEM is expected to be in a standard format.
 This format may evolve over time to account for more data, but at present, when we read a CSV file, here is what we look for in the columns.
-Note that we treat columns case-insensitvely, so `Anode current (A)` is treated the same as `anode current (a)`
+Note that we treat columns case-insensitively, so `Anode current (A)` is treated the same as `anode current (a)`.
 
 ### Operating conditions
 
 Data is imported into a dictionary that maps operating conditions to data.
-An Operating Condition (made concrete in the `OperatingCondition` class) consists of a unique set of an anode mass flow rate, a background pressure, and a discharge / anode voltage .
+An Operating Condition (made concrete in the `OperatingCondition` class) consists of a unique set of an
+anode mass flow rate, a background pressure, and a discharge / anode voltage.
 These quantities are **mandatory** for each data file, but can be provided in a few ways.
 In cases where multiple options are allowed, the first matching column is chosen.
 
@@ -99,7 +100,7 @@ The current density is assumed to have units of mA / cm^2.
 If one or two of these quantities is provided, we throw an error.
 
 #### Ion velocity
-We look for two columns
+We look for two columns:
 
 1. Axial position from anode
 Allowed keys: 'axial position from anode (m)'
@@ -116,14 +117,16 @@ If only one of these quantities is provided, we throw an error.
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, fields
 from pathlib import Path
-from typing import Generic, Optional, Sequence, TypeVar
+from typing import Any, Generic, Optional, Sequence, TypeAlias, TypeVar
 
 import numpy as np
+import numpy.typing as npt
 
-from .h9 import H9
-from .spt100 import SPT100
-from .typing import Array, PathLike
+__all__ = ['ThrusterDataset', 'ThrusterData', 'OperatingCondition',
+           'get_thruster', 'opcond_keys', 'load', 'pem_to_thrusterdata']
 
+Array: TypeAlias = npt.NDArray[np.floating[Any]]
+PathLike: TypeAlias = str | Path
 T = TypeVar("T", np.float64, Array)
 
 
@@ -148,22 +151,31 @@ class Measurement(Generic[T]):
 #   ThrusterData and associated types
 # ====================================================================================================================
 class ThrusterDataset(ABC):
-    """Abstract base class for thruster datasets"""
+    """Abstract base class for thruster datasets. A thruster dataset provides paths to experimental data files
+    for a specific thruster.
+    """
 
     @staticmethod
     @abstractmethod
     def datasets_from_names(dataset_names: list[str]) -> list[Path]:
+        """Return a list of paths to the datasets with the given names."""
         pass
 
     @staticmethod
     @abstractmethod
     def all_data() -> list[Path]:
+        """Return a list of paths to all datasets for this thruster."""
         pass
 
 
 @dataclass
 class CurrentDensitySweep:
-    """Contains data for a single current density sweep"""
+    """Contains data for a single current density sweep.
+
+    :ivar radius_m: the radial distance (in m) from the thruster exit plane at which the sweep was obtained.
+    :ivar angles_rad: the angular measurement locations (in rad) from thruster centerline.
+    :ivar current_density_A_m2: the measured current density in (A/m^2) at all measurement locations.
+    """
 
     radius_m: np.float64
     angles_rad: Array
@@ -172,7 +184,11 @@ class CurrentDensitySweep:
 
 @dataclass
 class IonVelocityData:
-    """Contains measurements of axial ion velocity along with coordinates"""
+    """Contains measurements of axial ion velocity along with coordinates.
+
+    :ivar axial_distance_m: the axial channel distance (in m) from the anode where the measurements were taken.
+    :ivar velocity_m_s: the ion velocity measurements obtained from LIF (in m/s).
+    """
 
     axial_distance_m: Array
     velocity_m_s: Measurement[Array]
@@ -180,7 +196,20 @@ class IonVelocityData:
 
 @dataclass
 class ThrusterData:
-    """Class for Hall thruster data. Contains fields for all relevant performance metrics and quantities of interest."""
+    """Class for Hall thruster data. Contains fields for all relevant performance metrics and quantities of interest.
+    All metrics are time-averaged unless otherwise noted. A `ThrusterData` instance can contain as many or as few
+    fields as needed, depending on the available data.
+
+    :ivar cathode_coupling_voltage_V: the cathode coupling voltage (V)
+    :ivar thrust_N: the thrust (N)
+    :ivar discharge_current_A: the discharge current (A)
+    :ivar efficiency_current: the current efficiency
+    :ivar efficiency_mass: the mass efficiency
+    :ivar efficiency_voltage: the voltage efficiency
+    :ivar efficiency_anode: the anode efficiency
+    :ivar ion_velocity: the axial ion velocity data
+    :ivar ion_current_sweeps: a list of current density sweeps
+    """
 
     # Cathode
     cathode_coupling_voltage_V: Optional[Measurement[np.float64]] = None
@@ -193,7 +222,6 @@ class ThrusterData:
     efficiency_voltage: Optional[Measurement[np.float64]] = None
     efficiency_anode: Optional[Measurement[np.float64]] = None
     ion_velocity: Optional[IonVelocityData] = None
-
     # Plume
     ion_current_sweeps: Optional[list[CurrentDensitySweep]] = None
 
@@ -208,7 +236,11 @@ class ThrusterData:
         return f"ThrusterData(\n{fields_str}\n)\n"
 
     @staticmethod
-    def merge_field(field, data1, data2):
+    def _merge_field(field: str, data1: 'ThrusterData', data2: 'ThrusterData'):
+        """Merge the given `field` between the two `ThrusterData` instances. If the field is present in both instances,
+        the value from `data2` is used. If the field is present in only one instance, that value is used. If the field
+        is not present in either instance, `None` is returned.
+        """
         val1 = getattr(data1, field)
         val2 = getattr(data2, field)
         if val2 is None and val1 is None:
@@ -219,10 +251,11 @@ class ThrusterData:
             return val2
 
     @staticmethod
-    def update(data1, data2):
+    def update(data1: 'ThrusterData', data2: 'ThrusterData') -> 'ThrusterData':
+        """Return a new `ThrusterData` instance with merged fields from `data1` and `data2`."""
         merged = {}
         for field in fields(ThrusterData):
-            merged[field.name] = ThrusterData.merge_field(field.name, data1, data2)
+            merged[field.name] = ThrusterData._merge_field(field.name, data1, data2)
         return ThrusterData(**merged)
 
 
@@ -230,25 +263,36 @@ class ThrusterData:
 #   Operating conditions and associated types/functions
 # ====================================================================================================================
 
-thrusters: dict[str, type[ThrusterDataset]] = {'H9': H9, 'SPT-100': SPT100}
-"""Mapping from available thruster names to associated datasets"""
+def get_thruster(name: str) -> ThrusterDataset:
+    """Return a thruster dataset object based on the given thruster name.
+
+    :param name: the name of the thruster to get data for
+    """
+    if name.casefold() in {'h9'}:
+        from .h9 import H9
+        return H9
+    elif name.casefold() in {'spt-100', 'spt100'}:
+        from .spt100 import SPT100
+        return SPT100
+    else:
+        raise ValueError(f"Invalid thruster name {name}.")
 
 
-opcond_keys_forward: dict[str, str] = {
+opcond_keys: dict[str, str] = {
     "p_b": "background_pressure_torr",
     "v_a": "discharge_voltage_v",
     "mdot_a": "anode_mass_flow_rate_kg_s",
 }
-"""Forward mapping between operating condition short and long names"""
-
-opcond_keys_backward: dict[str, str] = {v: k for (k, v) in opcond_keys_forward.items()}
-"""Backward mapping between operating condition short and long names"""
+"""Forward mapping between operating condition short and long names."""
 
 
 @dataclass(frozen=True)
 class OperatingCondition:
-    """Operating conditions for a Hall thruster. Currently includes background pressure (Torr),
-    discharge voltage (V), and anode mass flow rate (kg/s).
+    """Operating conditions for a Hall thruster.
+
+    :ivar background_pressure_torr: the background pressure in Torr.
+    :ivar discharge_voltage_v: the discharge voltage in Volts.
+    :ivar anode_mass_flow_rate_kg_s: the anode mass flow rate in kg/s.
     """
 
     background_pressure_torr: float
@@ -260,16 +304,20 @@ class OperatingCondition:
 #   Amisc interop utilities
 # ====================================================================================================================
 def pem_to_thrusterdata(
-    operating_conditions: list[OperatingCondition], outputs, sweep_radii: Array, use_corrected_thrust: bool = True
+        operating_conditions: list[OperatingCondition],
+        outputs: dict,
+        sweep_radii: Array,
+        use_corrected_thrust: bool = True
 ) -> dict[OperatingCondition, ThrusterData]:
     """Given a list of operating conditions and an `outputs` dict from amisc,
     construct a `dict` mapping the operating conditions to `ThrusterData` objects.
-    Note: we assume that the amisc outputs are ordered based on the input operating conditions
+    Note: we assume that the amisc outputs are ordered based on the input operating conditions.
 
     :param operating_conditions: A list of `OperatingConditions` at which the pem was run.
     :param outputs: the amisc output dict from the run
     :param sweep_radii: an array of radii at which ion current density data was taken
-    :param use_corrected_thrust: Whether to use the base thrust from HallThruster.jl or the thrust corrected by the divergence angle computed in the plume model.
+    :param use_corrected_thrust: Whether to use the base thrust from HallThruster.jl or the thrust corrected by the
+           divergence angle computed in the plume model.
     """  # noqa: E501
 
     NaN = np.float64(np.nan)
@@ -304,7 +352,8 @@ def pem_to_thrusterdata(
     return output_dict
 
 
-def _pem_thrust(i, outputs, use_corrected_thrust):
+def _pem_thrust(i: int, outputs: dict, use_corrected_thrust: bool):
+    """Helper to return the correct thrust measurement."""
     NaN = np.float64(np.nan)
     if use_corrected_thrust:
         thrust = outputs['T_c'][i]
@@ -358,6 +407,7 @@ def _read_measurement(
     scale: float = 1.0,
     scalar: bool = False,
 ) -> Measurement:
+    """Read a value and its uncertainty from a csv table and return as a `Measurement` object."""
     default_rel_err = 0.02
     mean = val * scale
     std = default_rel_err * mean / 2
@@ -490,6 +540,7 @@ def _load_single_file(file: PathLike) -> dict[OperatingCondition, ThrusterData]:
 def _update_data(
     old_data: dict[OperatingCondition, ThrusterData], new_data: dict[OperatingCondition, ThrusterData]
 ) -> dict[OperatingCondition, ThrusterData]:
+    """Helper to update operating conditions in `old_data` with those in `new_data`."""
     data = old_data.copy()
     for opcond in new_data.keys():
         if opcond in old_data.keys():

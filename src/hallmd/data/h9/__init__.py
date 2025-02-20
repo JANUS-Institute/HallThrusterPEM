@@ -1,10 +1,12 @@
+"""Module for H9 datasets."""
 from importlib import resources
 from pathlib import Path
 
-from ..typing import ThrusterDataset
+from .. import ThrusterDataset
 
 
 class H9(ThrusterDataset):
+    """Class for handling the H9 datasets."""
     @staticmethod
     def datasets_from_names(dataset_names: list[str]) -> list[Path]:
         data_list = []
@@ -32,6 +34,7 @@ class H9(ThrusterDataset):
 
 
 def _gt2024() -> list[Path]:
+    """JANUS FIT-1 test campaign data at Georgia Tech (unpublished)."""
     try:
         from . import gt2024
     except ImportError:
@@ -43,6 +46,7 @@ def _gt2024() -> list[Path]:
 
 
 def _um2024() -> list[Path]:
+    """JANUS FIT-2 test campaign at the University of Michigan (unpublished)."""
     try:
         from . import um2024
     except ImportError:

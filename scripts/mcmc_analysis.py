@@ -170,7 +170,7 @@ def analyze_mcmc(path, config, datasets, corner=False, bands=False, proposal_cov
                 pass
 
     start = start_timer("Loading data")
-    data = hallmd.data.load(hallmd.data.thrusters[device_name].datasets_from_names(datasets))
+    data = hallmd.data.load(hallmd.data.get_thruster(device_name).datasets_from_names(datasets))
     channel_length = device['geometry']['channel_length']
     map = load_sim_results([ids[map_ind]], mcmc_path)[0]['output']
     stop_timer(start)
