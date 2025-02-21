@@ -1,7 +1,7 @@
 name: Lint and test
 on:
   pull_request:
-    branches: [ main ]
+    branches: [ main, development ]
 permissions:
   contents: write
 jobs:
