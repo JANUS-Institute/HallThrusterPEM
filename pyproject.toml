@@ -33,6 +33,7 @@ scripts = [
     "uqtils>=0.4.2",
     "h5py>=3.10.0",
     "matplotlib>=3.9",
+    "MCMCIterators @ git+https://github.com/archermarx/MCMCIterators",
 ]
 
 [project.urls]

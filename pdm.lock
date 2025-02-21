@@ -5,7 +5,7 @@
 groups = ["default", "dev", "doc", "mpi", "scripts", "test"]
 strategy = ["inherit_metadata"]
 lock_version = "4.5.0"
-content_hash = "sha256:17840875f917cc11362ab3d3b98ef9020392cfc834a9734845c6efe4d7bf3d11"
+content_hash = "sha256:58927abcf2ce29fcf0eaccbc4d3270b181ce7cc66a7ed4584ccdf85896eec389"
 
 [[metadata.targets]]
 requires_python = ">=3.11"
@@ -926,6 +926,14 @@ files = [
     {file = "matplotlib-3.10.0-cp313-cp313t-win_amd64.whl", hash = "sha256:5fd41b0ec7ee45cd960a8e71aea7c946a28a0b8a4dcee47d2856b2af051f334c"},
     {file = "matplotlib-3.10.0.tar.gz", hash = "sha256:b886d02a581b96704c9d1ffe55709e49b4d2d52709ccebc4be42db856e511278"},
 ]
+
+[[package]]
+name = "mcmciterators"
+version = "0.0.0"
+git = "https://github.com/archermarx/MCMCIterators"
+revision = "b98c7ba1631092187605f91d0b12bf0645e9a95d"
+summary = "Markov Chain Monte Carlo Iterators"
+groups = ["scripts"]
 
 [[package]]
 name = "mergedeep"
