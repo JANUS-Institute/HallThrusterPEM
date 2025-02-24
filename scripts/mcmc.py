@@ -19,7 +19,7 @@ from argparse import Namespace
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import dataclass, fields
 from pathlib import Path
-from typing import Type, TypeAlias, TypeVar
+from typing import Optional, Type, TypeAlias, TypeVar
 
 import amisc.distribution as distributions
 import mcmc_analysis as analysis
@@ -28,7 +28,7 @@ from amisc import Component, System, Variable, YamlLoader
 from MCMCIterators import samplers
 
 import hallmd.data
-from hallmd.data import Array, Measurement, OperatingCondition, PathLike, ThrusterData
+from hallmd.data import Array, OperatingCondition, PathLike, ThrusterData
 
 Value: TypeAlias = np.float64 | Array
 NaN = np.float64(np.nan)
@@ -145,83 +145,6 @@ def load_system_and_opts(args: Namespace) -> tuple[System, ExecutionOptions]:
     return system, opts
 
 
-def gauss_logpdf(data: Measurement[T] | None, observation: Measurement[T] | None) -> np.float64:
-    if data is None or observation is None:
-        return np.float64(0.0)
-    # taking mean is equivalent to doing geometric mean of independent gaussian pdfs
-    # remove first term (log(2pi * std**2)) bc we don't care about normalization for mcmc
-    return -0.5 * np.mean((data.mean - observation.mean) ** 2 / (data.std**2))
-
-
-def interp_gauss_logpdf(
-    coords: Array | None,
-    data: 'Measurement[Array] | None',
-    obs_coords: Array | None,
-    observation: 'Measurement[Array] | None',
-) -> np.float64:
-    if coords is None or data is None or obs_coords is None or observation is None:
-        return np.float64(0.0)
-
-    obs_interp_mean = np.interp(coords, obs_coords, observation.mean)
-    obs_interp = Measurement(obs_interp_mean, np.zeros(1))
-    return gauss_logpdf(data, obs_interp)
-
-
-def data_log_likelihood(data: 'ThrusterData', observation: 'ThrusterData') -> np.float64:
-    log_likelihood = (
-        # Add contributions from global performance metrics
-        gauss_logpdf(data.cathode_coupling_voltage_V, observation.cathode_coupling_voltage_V)
-        + gauss_logpdf(data.thrust_N, observation.thrust_N)
-        + gauss_logpdf(data.discharge_current_A, observation.discharge_current_A)
-        + gauss_logpdf(data.ion_current_A, observation.ion_current_A)
-        + gauss_logpdf(data.efficiency_current, observation.efficiency_current)
-        + gauss_logpdf(data.efficiency_mass, observation.efficiency_mass)
-        + gauss_logpdf(data.efficiency_voltage, observation.efficiency_voltage)
-        + gauss_logpdf(data.efficiency_anode, observation.efficiency_anode)
-    )
-
-    # Contribution to likelihood from ion velocity
-    if data.ion_velocity is not None and observation.ion_velocity is not None:
-        log_likelihood += interp_gauss_logpdf(
-            data.ion_velocity.axial_distance_m,
-            data.ion_velocity.velocity_m_s,
-            observation.ion_velocity.axial_distance_m,
-            observation.ion_velocity.velocity_m_s,
-        )
-
-    # Contribution to likelihood from ion current density
-    plume_log_likelihood = 0
-    num_sweeps = 0
-    if data.ion_current_sweeps is not None and observation.ion_current_sweeps is not None:
-        for data_sweep in data.ion_current_sweeps:
-            # find sweep in observation with the same radius, if present
-            observation_sweep = None
-            for sweep in observation.ion_current_sweeps:
-                if data_sweep.radius_m == sweep.radius_m:
-                    observation_sweep = sweep
-                    break
-            # if no sweep in observation with same radius, do nothing
-            if observation_sweep is None:
-                continue
-
-            plume_log_likelihood += interp_gauss_logpdf(
-                data_sweep.angles_rad,
-                data_sweep.current_density_A_m2,
-                observation_sweep.angles_rad,
-                observation_sweep.current_density_A_m2,
-            )
-            num_sweeps += 1
-
-        plume_log_likelihood /= num_sweeps
-
-    log_likelihood += plume_log_likelihood
-
-    # divide by number of data categories -- equivalent to geometric mean across all data categories
-    log_likelihood /= len(fields(ThrusterData))
-
-    return log_likelihood
-
-
 def get_nominal_inputs(system: System) -> dict[str, Value]:
     """Create a dict mapping system inputs to their nominal values"""
     inputs: dict[str, Value] = {}
@@ -230,6 +153,100 @@ def get_nominal_inputs(system: System) -> dict[str, Value]:
         inputs[input.name] = value
 
     return inputs
+
+
+def _get_qoi_single_opcond(data: ThrusterData, observation: ThrusterData, field) -> Optional[tuple[Array, Array]]:
+    data_field = getattr(data, field)
+    obs_field = getattr(observation, field)
+    """
+    For a specified field in the `ThrusterData` class, extract the value of that field.
+    If the field is not present in both the data and observation, returns None.
+    Otherwise, returns a tuple of the (data vals, obs. vals) where both are 1D numpy arrays of the same size.
+    """
+
+    if data_field is None or obs_field is None:
+        return None
+
+    match field:
+        case "ion_velocity":
+            data_coords = data_field.axial_distance_m
+            data_u = data_field.velocity_m_s.mean
+
+            obs_coords = obs_field.axial_distance_m
+            obs_u = obs_field.velocity_m_s.mean
+
+            obs_u_itp = np.interp(data_coords, obs_coords, obs_u)
+            return data_u, obs_u_itp
+
+        case "ion_current_sweeps":
+            data_j = []
+            obs_j = []
+
+            for data_sweep, obs_sweep in zip(data_field, obs_field):
+                data_coords = data_sweep.angles_rad
+                data_sweep_j = data_sweep.current_density_A_m2.mean
+
+                obs_coords = obs_sweep.angles_rad
+                obs_sweep_j = obs_sweep.current_density_A_m2.mean
+
+                obs_j_itp = np.interp(data_coords, obs_coords, obs_sweep_j)
+                data_j.append(data_sweep_j)
+                obs_j.append(obs_j_itp)
+
+            data_j = np.concat(data_j)
+            obs_j = np.concat(obs_j)
+
+            return data_j, obs_j
+
+        case _:
+            return np.array([data_field.mean]), np.array([obs_field.mean])
+
+
+def _get_qoi_all_opconds(
+    data: dict[OperatingCondition, ThrusterData], observation: dict[OperatingCondition, ThrusterData], field: str
+) -> Optional[tuple[Array, Array]]:
+    data_arrays = []
+    obs_arrays = []
+    """
+    For a specified field in the `ThrusterData` class, extract all valid values of that field from both data and
+    observation for all operating conditions where that field is present in both data and observation.
+    If the field is not present in any operating condition, returns None.
+    Otherwise, returns a tuple of the (data vals, obs. vals) where both are 1D numpy arrays of the same size.
+    """
+
+    for _data, _obs in zip(data.values(), observation.values()):
+        out = _get_qoi_single_opcond(_data, _obs, field)
+        if out is not None:
+            data_arr, obs_arr = out
+            obs_arrays.append(obs_arr)
+            data_arrays.append(data_arr)
+
+    if len(data_arrays) == 0 or len(obs_arrays) == 0:
+        return None
+
+    data_array_cat = np.concat(data_arrays)
+    obs_array_cat = np.concat(obs_arrays)
+
+    assert data_array_cat.size == obs_array_cat.size
+
+    return data_array_cat, obs_array_cat
+
+
+def _relative_l2_norm(data: Array, observation: Array) -> np.float64:
+    """
+    Compute the L2-normed distance between a data array and observation array,
+    relative to the magnitude of the data array.
+    """
+    num = np.sum((data - observation) ** 2)
+    denom = np.sum(data**2)
+    return np.sqrt(num / denom)
+
+
+def _gauss_logpdf_1D(x: np.float64 | float, mean: np.float64 | float, std: np.float64 | float) -> np.float64 | float:
+    """
+    Gaussian log-likelihood in 1D
+    """
+    return -0.5 * (np.log(2 * np.pi * std**2) + (x - mean) ** 2 / std**2)
 
 
 def _run_model(
@@ -296,19 +313,28 @@ def log_likelihood(
     system: System,
     base_params: dict[str, Value],
     opts: ExecutionOptions,
-) -> np.float64:
+) -> np.float64 | float:
     result = _run_model(params, system, list(data.keys()), base_params, opts)
 
-    L = np.float64(0.0)
-    for opcond, _data in data.items():
-        L += data_log_likelihood(_data, result[opcond])
+    L = 0.0
+    std = 0.05  # assume 5% relative error
 
-    # geometric average of likelihood over operating conditions
-    L /= len(list(data.keys()))
+    for field in fields(ThrusterData):
+        out = _get_qoi_all_opconds(data, result, field.name)
+        if out is None:
+            continue
+
+        data_arr, obs_arr = out
+        distance = _relative_l2_norm(data_arr, obs_arr)
+
+        # Since the distance is positive-definite, the distribution is a half-normal, so we
+        # need to multiply the normal pdf by 2 (or add ln(2) to the log-pdf)
+        likelihood = _gauss_logpdf_1D(distance, 0.0, std) + np.log(2)
+        L += likelihood
 
     # if somehow nan or otherwise non-finite, return -inf
-    if not np.isfinite(L):
-        return np.float64(-np.inf)
+    if not np.isfinite(L) or np.isnan(L):
+        return -np.inf
 
     return L
 
