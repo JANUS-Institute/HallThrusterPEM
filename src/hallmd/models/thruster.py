@@ -30,13 +30,38 @@ from amisc.typing import Dataset
 
 from hallmd.utils import AVOGADRO_CONSTANT, FUNDAMENTAL_CHARGE, MOLECULAR_WEIGHTS, load_device
 
-__all__ = ["run_hallthruster_jl", "hallthruster_jl", "get_jl_env", "PEM_TO_JULIA"]
+__all__ = ["run_hallthruster_jl", "hallthruster_jl", "get_jl_env", "PEM_TO_JULIA", "JL_BINARY"]
 
 HALLTHRUSTER_VERSION_DEFAULT = "0.18.3"
 
 # Maps PEM variable names to a path in the HallThruster.jl input/output structure (default values here)
 with open(resources.files("hallmd.models") / "pem_to_julia.json", "r") as fd:
     PEM_TO_JULIA = json.load(fd)
+
+
+def get_jl_binary():
+    """Use the juliaup config file to find out where the default julia binary is stored.
+    If Juliaup is not installed, returns 'julia'.
+    This lets us avoid running juliaup's wrapper executable, which has led to concurrency issues."""
+    HOME = os.environ["HOME"]
+    juliaup_dir = Path(f"{HOME}/.julia/juliaup")
+    juliaup_json = juliaup_dir / "juliaup.json"
+    if not os.path.exists(juliaup_json):
+        return "julia"
+
+    with open(juliaup_json, "r") as fd:
+        jl_config = json.load(fd)
+
+    default = jl_config["Default"]
+    versions = jl_config["InstalledVersions"]
+    channels = jl_config["InstalledChannels"]
+
+    version = versions[channels[default]["Version"]]
+    path = juliaup_dir / version["Path"]
+    return path
+
+
+JL_BINARY = get_jl_binary()
 
 
 def get_jl_env(git_ref: str) -> Path:
@@ -282,16 +307,18 @@ def run_hallthruster_jl(
     json.dump(json_input, fd, ensure_ascii=False, indent=4)
     fd.close()
 
+    julia_cmd = "./" + JL_BINARY if JL_BINARY != "julia" else JL_BINARY
+
     # Run HallThruster.jl on input file
     if jl_script is None:
         cmd = [
-            "julia",
+            julia_cmd,
             "--startup-file=no",
             "-e",
             f'using HallThruster; HallThruster.run_simulation(raw"{input_file}")',
         ]
     else:
-        cmd = ["julia", "--startup-file=no", "--", str(Path(jl_script).resolve()), input_file]
+        cmd = [julia_cmd, "--startup-file=no", "--", str(Path(jl_script).resolve()), input_file]
 
     if jl_env is not None:
         if Path(jl_env).exists():
