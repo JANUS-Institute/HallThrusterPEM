@@ -43,7 +43,7 @@ def get_jl_binary():
     """use the juliaup config file to find out where the default julia binary is stored.
     if juliaup is not installed, returns 'julia'.
     this lets us avoid running juliaup's wrapper executable, which has led to concurrency issues."""
-    home = os.environ["home"]
+    home = os.environ["HOME"]
     juliaup_dir = Path(f"{home}/.julia/juliaup")
     juliaup_json = juliaup_dir / "juliaup.json"
     if not os.path.exists(juliaup_json):
@@ -52,12 +52,12 @@ def get_jl_binary():
     with open(juliaup_json, "r") as fd:
         jl_config = json.load(fd)
 
-    default = jl_config["default"]
-    versions = jl_config["installedversions"]
-    channels = jl_config["installedchannels"]
+    default = jl_config["Default"]
+    versions = jl_config["InstalledVersions"]
+    channels = jl_config["InstalledChannels"]
 
-    version = versions[channels[default]["version"]]
-    path = juliaup_dir / version["path"] / "bin" / "julia"
+    version = versions[channels[default]["Version"]]
+    path = juliaup_dir / version["Path"] / "bin" / "julia"
     return path
 
 
