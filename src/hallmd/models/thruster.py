@@ -311,7 +311,6 @@ def run_hallthruster_jl(
     if jl_script is None:
         cmd = [
             JL_BINARY,
-            "julia",
             "--startup-file=no",
             "-e",
             f'using HallThruster; HallThruster.run_simulation(raw"{input_file}")',
