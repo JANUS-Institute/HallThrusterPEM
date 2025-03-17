@@ -44,7 +44,7 @@ def get_jl_binary():
     if juliaup is not installed, returns 'julia'.
     this lets us avoid running juliaup's wrapper executable, which has led to concurrency issues."""
     home = os.environ["home"]
-    juliaup_dir = path(f"{home}/.julia/juliaup")
+    juliaup_dir = Path(f"{home}/.julia/juliaup")
     juliaup_json = juliaup_dir / "juliaup.json"
     if not os.path.exists(juliaup_json):
         return "julia"
@@ -311,6 +311,7 @@ def run_hallthruster_jl(
     if jl_script is None:
         cmd = [
             JL_BINARY,
+            "julia",
             "--startup-file=no",
             "-e",
             f'using HallThruster; HallThruster.run_simulation(raw"{input_file}")',
