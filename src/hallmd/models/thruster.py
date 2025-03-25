@@ -15,6 +15,7 @@ Includes:
 import copy
 import json
 import os
+import platform
 import random
 import string
 import subprocess
@@ -42,7 +43,12 @@ with open(resources.files("hallmd.models") / "pem_to_julia.json", "r") as fd:
 def get_jl_binary():
     """use the juliaup config file to find out where the default julia binary is stored.
     if juliaup is not installed, returns 'julia'.
-    this lets us avoid running juliaup's wrapper executable, which has led to concurrency issues."""
+    this lets us avoid running juliaup's wrapper executable, which has led to concurrency issues.
+    This is designed for use on the cluster, so on windows it just returns `julia`."""
+
+    if platform.system() == "Windows":
+        return "julia"
+
     home = os.environ["HOME"]
     juliaup_dir = Path(f"{home}/.julia/juliaup")
     juliaup_json = juliaup_dir / "juliaup.json"
