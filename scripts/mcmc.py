@@ -14,6 +14,7 @@ For usage details and a full list of options , run 'pdm run scripts/mcmc.py --he
 import argparse
 import os
 import pickle
+import random
 import shutil
 from argparse import Namespace
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
@@ -80,7 +81,7 @@ parser.add_argument(
 parser.add_argument(
     "--output_interval",
     type=int,
-    default=10,
+    default=100,
     help="How frequently plots are generated",
 )
 
@@ -88,14 +89,53 @@ parser.add_argument(
     "--ncharge",
     type=int,
     default=1,
+    choices=[1, 2, 3],
     help="Number of ion charge states to include in simulation. Must be between 1 and 3.",
 )
 
 parser.add_argument("--output_dir", type=str, default=None, help="Directory into which output files are written")
 
-parser.add_argument("--init_sample", type=str, default=None, help="CSV file containing initial sample")
+parser.add_argument(
+    "--init_sample",
+    type=str,
+    help="""CSV file containing initial sample. Only used with the `dram` sampler.""",
+)
 
-parser.add_argument("--init_cov", type=str, default=None, help="CSV file containing initial covariance matrix")
+parser.add_argument(
+    "--init_cov",
+    type=str,
+    help="""CSV file containing initial covariance matrix. Only used with the `dram` sampler.""",
+)
+
+parser.add_argument(
+    "--sampler",
+    type=str,
+    choices=["dram", "prior", "prev-run"],
+    default="dram",
+    help="""
+    The type of sampler to use
+    - `dram`: the delayed-rejection adaptive metropolis sampler
+    - `prior`: sample from the variable prior distributions only
+    - `prev-run`: draw randomly (with replacement) from the samples of a previous run.
+
+    The `prev-run` sampler requires the --prev argument to be passed.
+    """,
+)
+
+parser.add_argument(
+    "--prev",
+    type=str,
+    help="""
+    The file containing samples from a previous run using this config.
+    This is only useful when using the `prev-run` sampler.
+    """,
+)
+
+parser.add_argument(
+    "--sample-aleatoric",
+    action='store_true',
+    help="Sample aleatoric varibles from distributions in config file instead of using fixed values.",
+)
 
 
 @dataclass
@@ -106,6 +146,7 @@ class ExecutionOptions:
     fidelity: str | tuple | dict = (0, 0)
     use_plume: bool = True
     use_cathode: bool = True
+    sample_aleatoric: bool = False
 
 
 def load_system_and_opts(args: Namespace) -> tuple[System, ExecutionOptions]:
@@ -138,6 +179,7 @@ def load_system_and_opts(args: Namespace) -> tuple[System, ExecutionOptions]:
         max_workers=args.max_workers,
         directory=system.root_dir / "mcmc",
         fidelity=(0, args.ncharge - 1),
+        sample_aleatoric=args.sample_aleatoric,
     )
 
     os.mkdir(opts.directory)
@@ -249,6 +291,18 @@ def _gauss_logpdf_1D(x: np.float64 | float, mean: np.float64 | float, std: np.fl
     return -0.5 * (np.log(2 * np.pi * std**2) + (x - mean) ** 2 / std**2)
 
 
+def _sample_aleatoric(sample_dict, system):
+    aleatoric_vars = ["P_b", "V_a", "mdot_a"]
+    for var in aleatoric_vars:
+        nominal = sample_dict[var]
+        for i in range(np.atleast_1d(nominal).size):
+            input = system.inputs()[var]
+            nom = input.denormalize(nominal[i])
+            nominal[i] = input.normalize(input.distribution.sample((1,), nom))[0]
+
+        sample_dict[var] = nominal
+
+
 def _run_model(
     params: dict[str, Value],
     system: System,
@@ -259,6 +313,10 @@ def _run_model(
     sample_dict = base_params.copy()
     for key, val in params.items():
         sample_dict[key] = val
+
+    # Add aleatoric variables if requested
+    if opts.sample_aleatoric:
+        _sample_aleatoric(sample_dict, system)
 
     try:
         # Run model
@@ -288,7 +346,8 @@ def _run_model(
     except Exception as e:
         print("Error detected. Failing input printed below")
         print(f"{sample_dict}")
-        raise (e)
+        print(e)
+        return None
 
 
 def log_prior(system: System, params: dict[str, Value]) -> np.float64:
@@ -315,22 +374,51 @@ def log_likelihood(
     opts: ExecutionOptions,
 ) -> np.float64 | float:
     result = _run_model(params, system, list(data.keys()), base_params, opts)
+    if result is None:
+        return -np.inf
 
     L = 0.0
     std = 0.05  # assume 5% relative error
 
-    for field in fields(ThrusterData):
-        out = _get_qoi_all_opconds(data, result, field.name)
+    component_stats = {}
+
+    field_names = [f.name for f in fields(ThrusterData)]
+
+    for field in field_names:
+        # Assemble a vector of all data points for a single operating condition
+        out = _get_qoi_all_opconds(data, result, field)
         if out is None:
             continue
 
         data_arr, obs_arr = out
         distance = _relative_l2_norm(data_arr, obs_arr)
 
-        # Since the distance is positive-definite, the distribution is a half-normal, so we
+        # Since the l2-norm is positive-definite, the distribution is a half-normal, so we
         # need to multiply the normal pdf by 2 (or add ln(2) to the log-pdf)
         likelihood = _gauss_logpdf_1D(distance, 0.0, std) + np.log(2)
+
+        component_stats[field] = (distance, likelihood)
+
         L += likelihood
+
+    # print table to output
+    print_table = True
+    if print_table:
+        name_len = max(len(n) for n in field_names) + 1
+        indent = "  "
+
+        header = indent + " Field" + (" " * (name_len - 5)) + "|  L2 norm   | Likelihood  "
+        rule = "-" * len(header)
+
+        print("\n" + rule)
+        print(header)
+        print(rule)
+
+        for name, (l2, logp) in component_stats.items():
+            pad = name_len - len(name)
+            print(indent + f" {name}{' ' * pad}| {l2:10.5f} | {logp:10.5f}")
+
+        print(rule + "\n")
 
     # if somehow nan or otherwise non-finite, return -inf
     if not np.isfinite(L) or np.isnan(L):
@@ -397,8 +485,67 @@ def get_calibration_params(component: Component, sort: str | None = None) -> lis
     return sorted_params
 
 
+class PreviousRunSampler:
+    """
+    Samples (with replacement) from a previous MCMC run
+    """
+
+    def __init__(self, file, variables, data, system, base_vars, opts, burn_fraction=0.5):
+        self.variables = variables
+        self.data = data
+        self.system = system
+        self.base_vars = base_vars
+        self.opts = opts
+
+        _vars, _samples, *_ = analysis.read_output_file(Path(file))
+        self.start_index = round(burn_fraction * len(_samples))
+
+        # associate variable names with columns and remove burned samples
+        _samples = np.array(_samples)
+        col_dict = {system.inputs[v]: _samples[start_index - 1 :, i] for (i, v) in enumerate(_vars)}
+
+        # reorder to match input varible list.
+        # this will error if variable lists don't match
+        self.samples = np.array(col_dict[v] for v in self.variables).T
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        print(f"{self.samples.shape=}")
+
+        index = random.randint(0, self.samples.shape[0] - 1)
+
+        sample = self.samples[index, :]
+        logp = log_posterior(dict(zip(self.variables, sample)), self.data, self.system, self.base_vars, self.opts)
+        accept = True
+        return (sample, logp, accept)
+
+
+class PriorSampler:
+    """
+    Samples from prior distribution, run model, and evaluates posterior probability
+    """
+
+    def __init__(self, variables, data, system, base_vars, opts):
+        self.variables = variables
+        self.data = data
+        self.system = system
+        self.base_vars = base_vars
+        self.opts = opts
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        sample = np.array([var.normalize(var.distribution.sample((1,)))[0] for var in self.variables])
+        logp = log_posterior(dict(zip(self.variables, sample)), self.data, self.system, self.base_vars, self.opts)
+        accept = True
+        return (sample, logp, accept)
+
+
 if __name__ == "__main__":
-    args, _ = parser.parse_known_args()
+    args = parser.parse_args()
     system, opts = load_system_and_opts(args)
     base = get_nominal_inputs(system)
 
@@ -444,84 +591,95 @@ if __name__ == "__main__":
     print(f"{params_to_calibrate=}")
     print(f"Number of operating conditions: {len(operating_conditions)}")
 
-    # Create initial sample
-    index_map = {p.name: i for (i, p) in enumerate(params_to_calibrate)}
-    init_sample = np.array([base[p] for p in params_to_calibrate])
-    if args.init_sample is not None:
-        var_dict = read_dlm(args.init_sample)
-        for k, v in var_dict.items():
-            i = index_map[k]
-            init_sample[i] = v[0]
-
-    # Create initial covariance
-    if args.init_cov is None:
-        variances = np.ones(len(params_to_calibrate))
-
-        for i, p in enumerate(params_to_calibrate):
-            dist = system.inputs()[p].distribution
-            if isinstance(dist, distributions.Uniform) or isinstance(dist, distributions.LogUniform):
-                lb, ub = dist.dist_args
-                std = (ub - lb) / 4
-            elif isinstance(dist, distributions.Normal):
-                std = dist.dist_args[1]
-            elif isinstance(dist, distributions.LogNormal):
-                std = dist.base ** dist.dist_args[1]
-            else:
-                raise ValueError(f"Invalid distribution {dist}")
-
-            variances[i] = system.inputs()[p].normalize(std) ** 2
-
-        init_cov = np.diag(variances)
-    else:
-        cov_dict = read_dlm(args.init_cov)
-        N = len(params_to_calibrate)
-        init_cov = np.zeros((N, N))
-        for i, (key1, column) in enumerate(cov_dict.items()):
-            i1 = index_map[key1]
-            for j, (var, key2) in enumerate(zip(column, cov_dict.keys())):
-                i2 = index_map[key2]
-                init_cov[i1, i2] = var
-
-    # Verify that the covariance matrix is positive-definite before proceeding
-    np.linalg.cholesky(init_cov)
-
-    logpdf = lambda x: log_posterior(dict(zip(params_to_calibrate, x)), data, system, base, opts)
+    # Prepare output file
     root_dir = opts.directory
     logfile = root_dir / "mcmc.csv"
-
-    # Prepare output file
     delimiter = ","
     header = delimiter.join(["id"] + [p.name for p in params_to_calibrate] + ["log_posterior"] + ["accepted"])
     with open(logfile, "w") as fd:
         print(header, file=fd)
 
-    # Generate initial logpdf
-    update_opts(root_dir, 0)
-    init_logp = logpdf(init_sample)
-    print(f"{init_logp}")
-
-    append_mcmc_diagnostic_row(logfile, 0, init_sample, init_logp, True)
-
-    sampler = samplers.DelayedRejectionAdaptiveMetropolis(
-        logpdf,
-        init_sample,
-        init_cov,
-        adapt_start=10,
-        eps=1e-6,
-        sd=None,
-        interval=1,
-        level_scale=1e-1,
-    )
-
+    # Initialize sampler parameters
     max_samples: int = args.max_samples
-    best_sample = init_sample
-    best_logp = init_logp
-    num_accept = 1
+    best_sample = None
+    best_logp = -np.inf
+    num_accept = 0
+    start_index = 0
 
-    start_index = 1
+    # Set up samplers
+    match args.sampler:
+        case "dram":
+            # Create initial sample
+            index_map = {p.name: i for (i, p) in enumerate(params_to_calibrate)}
+            init_sample = np.array([base[p] for p in params_to_calibrate])
+            if args.init_sample is not None:
+                var_dict = read_dlm(args.init_sample)
+                for k, v in var_dict.items():
+                    i = index_map[k]
+                    init_sample[i] = v[0]
+
+            # Create initial covariance
+            if args.init_cov is None:
+                variances = np.ones(len(params_to_calibrate))
+
+                for i, p in enumerate(params_to_calibrate):
+                    dist = system.inputs()[p].distribution
+                    if isinstance(dist, distributions.Uniform) or isinstance(dist, distributions.LogUniform):
+                        lb, ub = dist.dist_args
+                        std = (ub - lb) / 4
+                    elif isinstance(dist, distributions.Normal):
+                        std = dist.dist_args[1]
+                    elif isinstance(dist, distributions.LogNormal):
+                        std = dist.base ** dist.dist_args[1]
+                    else:
+                        raise ValueError(f"Invalid distribution {dist}")
+
+                    variances[i] = system.inputs()[p].normalize(std) ** 2
+
+                init_cov = np.diag(variances)
+            else:
+                cov_dict = read_dlm(args.init_cov)
+                N = len(params_to_calibrate)
+                init_cov = np.zeros((N, N))
+                for i, (key1, column) in enumerate(cov_dict.items()):
+                    i1 = index_map[key1]
+                    for j, (var, key2) in enumerate(zip(column, cov_dict.keys())):
+                        i2 = index_map[key2]
+                        init_cov[i1, i2] = var
+
+            # Verify that the covariance matrix is positive-definite before proceeding
+            np.linalg.cholesky(init_cov)
+
+            # Generate initial sample
+            update_opts(root_dir, start_index)
+            logpdf = lambda x: log_posterior(dict(zip(params_to_calibrate, x)), data, system, base, opts)
+            best_sample = init_sample
+            init_logp = logpdf(init_sample)
+            start_index += 1
+            num_accept += 1
+            print(f"{init_logp=}")
+            append_mcmc_diagnostic_row(logfile, 0, init_sample, init_logp, True)
+
+            sampler = samplers.DelayedRejectionAdaptiveMetropolis(
+                logpdf,
+                init_sample,
+                init_cov,
+                adapt_start=10,
+                eps=1e-6,
+                sd=None,
+                interval=1,
+                level_scale=1e-1,
+            )
+        case "prior":
+            sampler = PriorSampler(params_to_calibrate, data, system, base, opts)
+        case "prev-run":
+            sampler = PreviousRunSampler(args.prev, params_to_calibrate, data, system, base, opts)
+        case _:
+            raise ValueError("Unreachable")
+
     update_opts(root_dir, start_index)
 
-    # MCMC main loop
+    # Main sampler loop
     for i, (sample, logp, accepted_bool) in enumerate(sampler):
         append_mcmc_diagnostic_row(logfile, i + start_index, sample, logp, accepted_bool)
 
@@ -537,6 +695,11 @@ if __name__ == "__main__":
             f"accepted: {accepted_bool}, p_accept: {num_accept / (i + start_index + 1) * 100:.1f}%",
         )
 
+        if isinstance(sampler, samplers.DelayedRejectionAdaptiveMetropolis):
+            proposal_cov = sampler.cov_chol
+        else:
+            proposal_cov = None
+
         if (i == max_samples) or (i % args.output_interval == 0):
             analysis.analyze_mcmc(
                 root_dir.parent,
@@ -544,7 +707,7 @@ if __name__ == "__main__":
                 args.datasets,
                 corner=True,
                 bands=True,
-                proposal_cov=sampler.cov_chol,
+                proposal_cov=proposal_cov,
             )
 
         if i >= max_samples:

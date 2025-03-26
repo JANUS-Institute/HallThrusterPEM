@@ -122,8 +122,15 @@ from typing import Any, Generic, Optional, Sequence, TypeAlias, TypeVar
 import numpy as np
 import numpy.typing as npt
 
-__all__ = ['ThrusterDataset', 'ThrusterData', 'OperatingCondition',
-           'get_thruster', 'opcond_keys', 'load', 'pem_to_thrusterdata']
+__all__ = [
+    'ThrusterDataset',
+    'ThrusterData',
+    'OperatingCondition',
+    'get_thruster',
+    'opcond_keys',
+    'load',
+    'pem_to_thrusterdata',
+]
 
 Array: TypeAlias = npt.NDArray[np.floating[Any]]
 PathLike: TypeAlias = str | Path
@@ -263,6 +270,7 @@ class ThrusterData:
 #   Operating conditions and associated types/functions
 # ====================================================================================================================
 
+
 def get_thruster(name: str) -> ThrusterDataset:
     """Return a thruster dataset object based on the given thruster name.
 
@@ -270,9 +278,11 @@ def get_thruster(name: str) -> ThrusterDataset:
     """
     if name.casefold() in {'h9'}:
         from .h9 import H9
+
         return H9
     elif name.casefold() in {'spt-100', 'spt100'}:
         from .spt100 import SPT100
+
         return SPT100
     else:
         raise ValueError(f"Invalid thruster name {name}.")
@@ -304,10 +314,7 @@ class OperatingCondition:
 #   Amisc interop utilities
 # ====================================================================================================================
 def pem_to_thrusterdata(
-        operating_conditions: list[OperatingCondition],
-        outputs: dict,
-        sweep_radii: Array,
-        use_corrected_thrust: bool = True
+    operating_conditions: list[OperatingCondition], outputs: dict, sweep_radii: Array, use_corrected_thrust: bool = True
 ) -> dict[OperatingCondition, ThrusterData]:
     """Given a list of operating conditions and an `outputs` dict from amisc,
     construct a `dict` mapping the operating conditions to `ThrusterData` objects.

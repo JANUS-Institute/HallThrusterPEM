@@ -44,7 +44,19 @@ from hallmd.data import OperatingCondition, ThrusterData
 
 Dataset: TypeAlias = dict[OperatingCondition, ThrusterData]
 
-plt.rcParams.update({"font.size": '14'})
+plt.rcParams.update(
+    {
+        "axes.formatter.use_mathtext": True,
+        "axes.titleweight": "bold",
+        "axes.labelweight": "bold",
+        "font.family": "serif",
+        "font.serif": ["Computer Modern Roman"],
+        "font.size": 18,
+        "text.usetex": True,
+        "xtick.minor.visible": True,
+        "ytick.minor.visible": True,
+    }
+)
 
 
 def mean_and_median(X, eps=1e-5):
@@ -88,22 +100,9 @@ def stop_timer(start_time: float):
     print(f"took {elapsed:.2f} s.")
 
 
-def analyze_mcmc(path, config, datasets, corner=False, bands=False, proposal_cov=None):
-    mcmc_path = Path(path) / "mcmc"
-    logfile = mcmc_path / "mcmc.csv"
-    plot_path = Path(path) / "mcmc_analysis"
-    os.makedirs(plot_path, exist_ok=True)
-    print("Generating plots in", plot_path)
-
-    analysis_start = time.time()
-
-    system = System.load_from_file(Path(path) / config)
-    device_name = system['Thruster'].model_kwargs['thruster']
-    device = hallmd.utils.load_device(device_name)
-
+def read_output_file(path: Path):
     dlm = ","
-
-    with open(logfile, "r") as file:
+    with open(path, "r") as file:
         header = file.readline().rstrip()
 
         fields = header.split(dlm)
@@ -123,10 +122,8 @@ def analyze_mcmc(path, config, datasets, corner=False, bands=False, proposal_cov
         logposts = []
         accepted = []
         ids = []
-        total_samples = 0
 
-        for line in file:
-            total_samples += 1
+        for i, line in enumerate(file):
             fields = line.rstrip().split(dlm)
             accept_str = fields[accept_ind].casefold()
 
@@ -135,7 +132,7 @@ def analyze_mcmc(path, config, datasets, corner=False, bands=False, proposal_cov
             elif accept_str == "false":
                 accept = False
             else:
-                raise ValueError(f"Invalid accept value {fields[accept_ind]} at row {total_samples} in file {logfile}.")
+                raise ValueError(f"Invalid accept value {fields[accept_ind]} at row {i} in file {path}.")
 
             if accept:
                 ids.append(fields[id_ind])
@@ -145,6 +142,24 @@ def analyze_mcmc(path, config, datasets, corner=False, bands=False, proposal_cov
             logposts.append(float(fields[log_post_ind]))
             samples.append(np.array([float(x) for x in fields[var_start:var_end]]))
             accepted.append(accept)
+
+    return variables, samples, logposts, accepted, ids
+
+
+def analyze_mcmc(path, config, datasets, corner=False, bands=False, proposal_cov=None):
+    mcmc_path = Path(path) / "mcmc"
+    logfile = mcmc_path / "mcmc.csv"
+    plot_path = Path(path) / "mcmc_analysis"
+    os.makedirs(plot_path, exist_ok=True)
+    print("Generating plots in", plot_path)
+
+    analysis_start = time.time()
+
+    system = System.load_from_file(Path(path) / config)
+    device_name = system['Thruster'].model_kwargs['thruster']
+    device = hallmd.utils.load_device(device_name)
+
+    variables, samples, logposts, accepted, ids = read_output_file(logfile)
 
     burn_in_frac = 0.5
     num_burn = math.floor(burn_in_frac * len(samples))
@@ -320,6 +335,7 @@ def plot_ion_cur(
     opconds = list(data.keys())
 
     colors = plt.get_cmap('turbo')
+    color_black = (0, 0, 0)
     xlims = (0, 90)
     yscale = 'log'
 
@@ -347,6 +363,7 @@ def plot_ion_cur(
         # plot data for this operating condition at each radius
         for j, sweep in enumerate(_data):
             color = colors((j + 0.5) / len(sweep_radii))
+
             theta_deg = sweep.angles_rad * 180 / np.pi
             jion = sweep.current_density_A_m2
             ax.errorbar(
@@ -360,14 +377,18 @@ def plot_ion_cur(
 
             jion_sim = [_sim[opcond].ion_current_sweeps[j].current_density_A_m2.mean for _sim in sim]
             qt = np.quantile(jion_sim, q=QUANTILES, axis=0)
+
             # Plot median prediction
             ax.plot(angles_sim, qt[2], color=color, label="Median prediction")
 
-            # _plot_quantiles(ax, angles_sim, qt, color=color, label=False)
             jion_quantiles[opcond].append(qt)
 
-        plot_name = f"{qty_name}_p={pressure_uTorr:05.2f}uTorr.png"
-        _finalize_plot(fig, ax, ax_legend, out_path, plot_name)
+        # Don't save plot if we only have one radius
+        if len(sweep_radii) > 1:
+            plot_name = f"{qty_name}_p={pressure_uTorr:05.2f}uTorr.png"
+            _finalize_plot(fig, ax, ax_legend, out_path, plot_name)
+        else:
+            plt.close(fig)
 
     # for each radius, plot predictions at each pressure
     for i, sweep_radius in enumerate(sweep_radii):
@@ -397,11 +418,12 @@ def plot_ion_cur(
             subdir = out_path / f"p={pressure_uTorr:05.2f}uTorr"
             os.makedirs(subdir, exist_ok=True)
 
+            color = colors((j + 0.5) / len(pressures))
+            sweep = _data[i]
+            theta_deg = sweep.angles_rad * 180 / np.pi
+            jion = sweep.current_density_A_m2
+
             for k, axis in enumerate([ax, ax_solo]):
-                sweep = _data[i]
-                color = colors((j + 0.5) / len(pressures))
-                theta_deg = sweep.angles_rad * 180 / np.pi
-                jion = sweep.current_density_A_m2
                 axis.errorbar(
                     theta_deg[::incr],
                     jion.mean[::incr],
@@ -412,7 +434,7 @@ def plot_ion_cur(
                 )
                 qt = jion_quantiles[opcond][i]
                 if k == 0:
-                    axis.plot(angles_sim, qt[2], color=color, label="Median prediction")
+                    axis.plot(angles_sim, qt[2], color=color, label="Median prediction" if j == 0 else "")
                 else:
                     _plot_quantiles(axis, angles_sim, qt, color=(0.3, 0.3, 0.3), label=True)
 
