@@ -13,7 +13,7 @@ components: !Component
         units: Torr
         nominal: 1.0e-5
         domain: (1.0e-8, 1.0e-4)
-        distribution: Relative(20)
+        distribution: Relative(5)
         norm: log10
       - name: V_a
         description: Anode voltage
@@ -22,7 +22,7 @@ components: !Component
         units: V
         nominal: 300
         domain: (200, 400)
-        distribution: Relative(2)
+        distribution: Relative(1)
       - name: T_e
         description: Electron temperature at cathode
         category: calibration
@@ -117,7 +117,7 @@ components: !Component
         tex: "$\\dot{m}_a$"
         units: kg/s
         nominal: 5.0e-6
-        distribution: Relative(3)
+        distribution: Relative(1)
         domain: (2.0e-6, 7.0e-6)
         norm: linear(1e6)
       - name: T_e

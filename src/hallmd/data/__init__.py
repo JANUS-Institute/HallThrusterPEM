@@ -72,7 +72,7 @@ If both relative and absolute uncertainties are provided, we use the absolute un
 If an uncertainty is not provided, a relative uncertainty of 2% is assumed.
 
 #### Thrust
-We look for a column called 'thrust (mn)'.
+We look for a column called 'thrust (mn)' or 'thrust (n)'.
 
 #### Discharge current
 We look for one of the following column names in order:
@@ -93,10 +93,10 @@ Allowed keys: 'radial position from thruster exit (m)'
 Allowed keys: 'angular position from thruster centerline (deg)'
 
 3. The current density.
-Allowed keys: 'ion current density (ma/cm^2)'
+Allowed keys: 'ion current density (ma/cm^2)' or 'ion current density (a/m^2)'
 
 We do not look for uncertainties for the radius and angle.
-The current density is assumed to have units of mA / cm^2.
+The current density is assumed to have units of mA / cm^2 or A / m^2, depending on the key.
 If one or two of these quantities is provided, we throw an error.
 
 #### Ion velocity
@@ -313,9 +313,85 @@ class OperatingCondition:
 # ====================================================================================================================
 #   Amisc interop utilities
 # ====================================================================================================================
+
+
+def _amisc_output_is_valid(outputs: dict, num_conditions: int) -> bool:
+    """
+    Check all keys we use from amisc output and make sure that they're present.
+    """
+    keys = [
+        "V_cc",
+        "I_d",
+        "I_B0",
+        "u_ion_coords",
+        "u_ion",
+        "j_ion_coords",
+        "j_ion",
+        "eta_m",
+        "eta_c",
+        "eta_v",
+        "eta_a",
+    ]
+
+    # Check that all keys are present
+    for key in keys:
+        value = outputs.get(key)
+
+        if value is None:
+            return False
+
+    return True
+
+
+def _single_opcond_to_thrusterdata(
+    i: int, outputs: dict, sweep_radii: Any, use_corrected_thrust: bool = True
+) -> ThrusterData:
+    NaN = np.float64(np.nan)
+
+    cathode_coupling_voltage_V = Measurement(outputs["V_cc"][i], NaN)
+    thrust_N = _pem_thrust(i, outputs, use_corrected_thrust)
+    discharge_current_A = Measurement(outputs["I_d"][i], NaN)
+    ion_current_A = Measurement(outputs["I_B0"][i], NaN)
+
+    coords = outputs["u_ion_coords"][i]
+    u_ion = outputs["u_ion"][i]
+
+    ion_velocity = IonVelocityData(
+        axial_distance_m=coords,
+        velocity_m_s=Measurement(u_ion, np.full_like(u_ion, NaN)),
+    )
+
+    ion_current_sweeps = []
+    for j, radius in enumerate(sweep_radii):
+        angles_rad = outputs["j_ion_coords"][i]
+        j_ion = np.atleast_3d(outputs["j_ion"])[i, :, j]
+        sweep = CurrentDensitySweep(
+            radius_m=radius, angles_rad=angles_rad, current_density_A_m2=Measurement(j_ion, np.full_like(j_ion, NaN))
+        )
+        ion_current_sweeps.append(sweep)
+
+    efficiency_mass = Measurement(outputs["eta_m"][i], NaN)
+    efficiency_current = Measurement(outputs["eta_c"][i], NaN)
+    efficiency_voltage = Measurement(outputs["eta_v"][i], NaN)
+    efficiency_anode = Measurement(outputs["eta_a"][i], NaN)
+
+    return ThrusterData(
+        cathode_coupling_voltage_V=cathode_coupling_voltage_V,
+        thrust_N=thrust_N,
+        discharge_current_A=discharge_current_A,
+        ion_current_A=ion_current_A,
+        ion_velocity=ion_velocity,
+        ion_current_sweeps=ion_current_sweeps,
+        efficiency_mass=efficiency_mass,
+        efficiency_current=efficiency_current,
+        efficiency_voltage=efficiency_voltage,
+        efficiency_anode=efficiency_anode,
+    )
+
+
 def pem_to_thrusterdata(
     operating_conditions: list[OperatingCondition], outputs: dict, sweep_radii: Array, use_corrected_thrust: bool = True
-) -> dict[OperatingCondition, ThrusterData]:
+) -> Optional[dict[OperatingCondition, ThrusterData]]:
     """Given a list of operating conditions and an `outputs` dict from amisc,
     construct a `dict` mapping the operating conditions to `ThrusterData` objects.
     Note: we assume that the amisc outputs are ordered based on the input operating conditions.
@@ -327,44 +403,25 @@ def pem_to_thrusterdata(
            divergence angle computed in the plume model.
     """  # noqa: E501
 
-    NaN = np.float64(np.nan)
+    # Check to make sure all keys that we expect to be there are there
+    if not _amisc_output_is_valid(outputs, len(operating_conditions)):
+        return None
+
     output_dict = {
-        opcond: ThrusterData(
-            cathode_coupling_voltage_V=Measurement(outputs["V_cc"][i], NaN),
-            thrust_N=_pem_thrust(i, outputs, use_corrected_thrust),
-            discharge_current_A=Measurement(outputs["I_d"][i], NaN),
-            ion_current_A=Measurement(outputs["I_B0"][i], NaN),
-            ion_velocity=IonVelocityData(
-                axial_distance_m=outputs["u_ion_coords"][i],
-                velocity_m_s=Measurement(u_ion := outputs["u_ion"][i], np.full_like(u_ion, NaN)),
-            ),
-            ion_current_sweeps=[
-                CurrentDensitySweep(
-                    radius_m=radius,
-                    angles_rad=outputs["j_ion_coords"][i],
-                    current_density_A_m2=Measurement(
-                        j_ion := np.atleast_3d(outputs["j_ion"])[i, :, j], np.full_like(j_ion, NaN)
-                    ),
-                )
-                for (j, radius) in enumerate(sweep_radii)
-            ],
-            efficiency_mass=Measurement(outputs["eta_m"][i], NaN),
-            efficiency_current=Measurement(outputs["eta_c"][i], NaN),
-            efficiency_voltage=Measurement(outputs["eta_v"][i], NaN),
-            efficiency_anode=Measurement(outputs["eta_a"][i], NaN),
-        )
+        opcond: _single_opcond_to_thrusterdata(i, outputs, sweep_radii, use_corrected_thrust)
         for (i, opcond) in enumerate(operating_conditions)
     }
 
     return output_dict
 
 
-def _pem_thrust(i: int, outputs: dict, use_corrected_thrust: bool):
+def _pem_thrust(i: int, outputs: dict, use_corrected_thrust: bool) -> Measurement:
     """Helper to return the correct thrust measurement."""
     NaN = np.float64(np.nan)
     if use_corrected_thrust:
         thrust = outputs['T_c'][i]
         if not np.isscalar(thrust):
+            # Take the last (furthest) thrust to be the "true" thrust
             thrust = thrust[-1]
     else:
         thrust = outputs['T'][i]
@@ -491,10 +548,18 @@ def _load_single_file(file: PathLike) -> dict[OperatingCondition, ThrusterData]:
 
         # Fill up data
         # We assume all errors (expressed as value +/- error) correspond to two standard deviations
-        # We also assume a default relative error of 2%
+        # We also assume a default relative error of 2% if none is provided
         for key, val in table.items():
-            if key == "thrust (mn)":
-                data[opcond].thrust_N = _read_measurement(table, key, val, opcond_start, scale=1e-3, scalar=True)
+            if key == "thrust (mn)" or key == "thrust (n)":
+                # Load thrust, converting units if necessary
+                if key.endswith("(mn)"):
+                    conversion_scale = 1e-3
+                else:
+                    conversion_scale = 1.0
+
+                data[opcond].thrust_N = _read_measurement(
+                    table, key, val, opcond_start, scale=conversion_scale, scalar=True
+                )
 
             elif key in {"anode current (a)", "discharge current (a)"}:
                 data[opcond].discharge_current_A = _read_measurement(table, key, val, opcond_start, scalar=True)
@@ -508,9 +573,16 @@ def _load_single_file(file: PathLike) -> dict[OperatingCondition, ThrusterData]:
                     velocity_m_s=_read_measurement(table, key, val, start=opcond_start, end=row, scalar=False),
                 )
 
-            elif key == "ion current density (ma/cm^2)":
-                # Load ion current density data
-                jion = _read_measurement(table, key, val, start=opcond_start, end=row, scale=10, scalar=False)
+            elif key == "ion current density (ma/cm^2)" or key == "ion current density (a/m^2)":
+                # Load ion current density data and convert to A/m^2
+                if key.endswith("(ma/cm^2)"):
+                    conversion_scale = 10.0
+                else:
+                    conversion_scale = 1.0
+
+                jion = _read_measurement(
+                    table, key, val, start=opcond_start, end=row, scale=conversion_scale, scalar=False
+                )
                 radii_m = table["radial position from thruster exit (m)"][opcond_start:row]
                 jion_coords: Array = table["angular position from thruster centerline (deg)"][opcond_start:row]
                 unique_radii = np.unique(radii_m)
