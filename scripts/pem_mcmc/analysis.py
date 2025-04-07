@@ -1,4 +1,3 @@
-import colorsys
 import json
 import math
 import os
@@ -12,7 +11,6 @@ import numpy as np
 from amisc import System
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
-from matplotlib.lines import Line2D
 from scipy.spatial.distance import cdist, euclidean
 
 import hallmd.data
@@ -21,22 +19,31 @@ import pem_mcmc.io as io
 from pem_mcmc.metrics import likelihood_and_distances
 from pem_mcmc.types import Dataset
 
-plt.rcParams.update(
-    {
-        "axes.formatter.use_mathtext": True,
-        "axes.titleweight": "bold",
-        "axes.labelweight": "bold",
-        "axes.grid": True,
-        "font.family": "serif",
-        "font.serif": ["Computer Modern Roman"],
-        "font.size": 18,
-        "text.usetex": True,
-        "xtick.minor.visible": True,
-        "ytick.minor.visible": True,
-    }
-)
+# Common styling for all plots
+RCPARAMS = {
+    "axes.formatter.use_mathtext": True,
+    "axes.titleweight": "bold",
+    "axes.labelweight": "bold",
+    "axes.grid": True,
+    "errorbar.capsize": 0.0,
+    "font.family": "serif",
+    "font.serif": ["Computer Modern Roman"],
+    "font.size": 18,
+    "text.usetex": True,
+    "xtick.minor.visible": True,
+    "ytick.minor.visible": True,
+    "legend.borderpad": 0.3,
+    "legend.borderaxespad": 0.0,
+    "legend.edgecolor": 'black',
+    "legend.fancybox": False,
+    "legend.framealpha": 1.0,
+    "legend.handlelength": 2.0,
+    "legend.handletextpad": 0.4,
+}
+plt.rcParams.update(RCPARAMS)
 
-named_colors = {
+# Pre-selected named colors that look good together
+COLORS = {
     "black": "#000000ff",
     "white": "#ffffffff",
     "lightgrey": "#ccccccff",
@@ -53,7 +60,7 @@ named_colors = {
     "darkorange": "#a3561cff",
     "lightgreen": "#bcbd22ff",
     "green": "#729f23ff",
-    "darkgreen": "#547b25ff",
+    "darkgreen": "#3e5d19ff",
     "lightblue": "#17becfff",
     "blue": "#2a90c2ff",
     "darkblue": "#196599ff",
@@ -62,18 +69,48 @@ named_colors = {
     "darkpurple": "#6a438bff",
 }
 
-data_kwargs = {'markersize': 3.5, 'capsize': 0}
-
-legend_kwargs = {
-    'fancybox': False,
-    'framealpha': 1.0,
-    'edgecolor': 'black',
-    'borderpad': 0.3,
-    'borderaxespad': 0.0,
-    'handlelength': 1.0,
-    'handletextpad': 0.4,
+# axis limits for different thrusters and quantities
+AXIS_LIMITS = {
+    "SPT-100": {
+        "prior": {
+            "thrust": (0.0, 150.0),
+            "current": (0.0, 65.0),
+            "vcc": (0.0, 60.0),
+        },
+        "posterior": {
+            "thrust": (60.0, 90.0),
+            "current": (3.0, 6.0),
+            "vcc": (28.0, 38.0),
+        },
+        "test": {
+            "thrust": (0.0, 130.0),
+            "current": (0.0, 80.0),
+            "vcc": (0.0, 60.0),
+        },
+    },
+    "H9": {
+        "prior": {
+            "thrust": (0.0, 300.0),
+            "current": (0.0, 100.0),
+            "vcc": (0.0, 60.0),
+        },
+        "posterior": {
+            "thrust": (150.0, 300.0),
+            "current": (5.0, 20.0),
+            "vcc": (0.0, 20.0),
+        },
+        "test": {
+            "thrust": (0.0, 300.0),
+            "current": (0.0, 100.0),
+            "vcc": (0.0, 60.0),
+        },
+    },
 }
 
+data_kwargs = {'markersize': 3.5}
+
+
+# Quantiles for computing error bars
 QUANTILES = [0.05, 0.25, 0.5, 0.75, 0.95]
 
 
@@ -99,6 +136,7 @@ def analyze(
     proposal_cov=None,
     subsample=None,
     burn_fraction=0.0,
+    limits="posterior",
 ):
     mcmc_path = Path(path) / "mcmc"
     logfile = mcmc_path / "mcmc.csv"
@@ -164,23 +202,13 @@ def analyze(
     start = _start_timer("Loading data")
     data = hallmd.data.load(hallmd.data.get_thruster(device_name).datasets_from_names(datasets))
     channel_length = device['geometry']['channel_length']
-    map = _load_sim_results([ids[map_ind]], mcmc_path)[0]['output']
-    _stop_timer(start)
-
-    # TODO: factor this out into a dict or something
-    if device_name == "SPT-100":
-        # posterior lims
-        thrust_lims = (50, 110)
-        current_lims = (0, 7.5)
-        vcc_lims = (28, 38)
-        # prior lims
-        # thrust_lims = (0, 150)
-        # current_lims = (0, 65)
-        # vcc_lims = (0, 60)
+    map = _load_sim_results([ids[map_ind]], mcmc_path)
+    if map:
+        map = map[0]['output']
     else:
-        thrust_lims = (0, 300)
-        current_lims = (0, 100)
-        vcc_lims = (0, 60)
+        map = None
+
+    _stop_timer(start)
 
     if subsample is not None and len(samples) > subsample:
         print(f"Subsampling {subsample} samples.")
@@ -213,6 +241,10 @@ def analyze(
             _stop_timer(start)
 
         if plot_bands:
+            thrust_lims = AXIS_LIMITS[device_name][limits]["thrust"]
+            current_lims = AXIS_LIMITS[device_name][limits]["current"]
+            vcc_lims = AXIS_LIMITS[device_name][limits]["vcc"]
+
             start = _start_timer("Plotting thrust")
             thrust_median = _plot_global_quantity(
                 data,
@@ -226,7 +258,7 @@ def analyze(
                 xscale="log",
             )
 
-            plot_prediction_accuracy(data, outputs, plot_path, "thrust_N", "Thrust [mN]", scale=1000)
+            _plot_prediction_accuracy(data, outputs, plot_path, "thrust_N", "Thrust [mN]", scale=1000, lims=thrust_lims)
 
             _stop_timer(start)
 
@@ -242,7 +274,9 @@ def analyze(
                 xscale="log",
             )
 
-            plot_prediction_accuracy(data, outputs, plot_path, "discharge_current_A", "Discharge current [A]")
+            _plot_prediction_accuracy(
+                data, outputs, plot_path, "discharge_current_A", "Discharge current [A]", lims=current_lims
+            )
 
             _stop_timer(start)
 
@@ -258,8 +292,8 @@ def analyze(
                 xscale="log",
             )
 
-            plot_prediction_accuracy(
-                data, outputs, plot_path, "cathode_coupling_voltage_V", "Cathode coupling voltage [V]"
+            _plot_prediction_accuracy(
+                data, outputs, plot_path, "cathode_coupling_voltage_V", "Cathode coupling voltage [V]", lims=vcc_lims
             )
             _stop_timer(start)
 
@@ -288,19 +322,13 @@ def analyze(
             _stop_timer(start)
 
             if calc_metrics:
-                assert thrust_median is not None
-                assert current_median is not None
-                assert vcc_median is not None
-                assert uion_median is not None
-                assert jion_median is not None
-
                 median_dataset = {
                     opcond: hallmd.data.ThrusterData(
-                        thrust_N=thrust_median[opcond],
-                        discharge_current_A=current_median[opcond],
-                        cathode_coupling_voltage_V=vcc_median[opcond],
-                        ion_velocity=uion_median[opcond],
-                        ion_current_sweeps=jion_median[opcond],
+                        thrust_N=thrust_median[opcond] if thrust_median is not None else None,
+                        discharge_current_A=current_median[opcond] if current_median is not None else None,
+                        cathode_coupling_voltage_V=vcc_median[opcond] if vcc_median is not None else None,
+                        ion_velocity=uion_median[opcond] if uion_median is not None else None,
+                        ion_current_sweeps=jion_median[opcond] if jion_median is not None else None,
                     )
                     for opcond in data
                 }
@@ -310,8 +338,8 @@ def analyze(
                 metrics_median = {
                     k: distance for (k, (distance, _)) in likelihood_and_distances(data, median_dataset)[1].items()
                 }
-                for k, v in metrics_out.items():
-                    v['median'] = metrics_median[k]
+                for k, v in metrics_median.items():
+                    metrics_out[k]['median'] = v
 
         if calc_metrics:
             assert metrics_out is not None
@@ -370,12 +398,7 @@ def _extract_quantity(data: Dataset, quantity: str, sorted=False):
         return pressure, qty
 
 
-def _finalize_plot(fig, ax, ax_legend, out_path, plot_name):
-    if ax_legend is not None:
-        handles, labels = ax.get_legend_handles_labels()
-        ax_legend.legend(handles, labels, borderaxespad=0)
-        ax_legend.axis("off")
-
+def save_figure(fig, out_path: os.PathLike, plot_name):
     fig.tight_layout()
 
     if plot_name.endswith(".png"):
@@ -384,22 +407,8 @@ def _finalize_plot(fig, ax, ax_legend, out_path, plot_name):
         _plot_name_noext = plot_name
 
     for extension in ["png", "pdf"]:
-        fig.savefig(out_path / (_plot_name_noext + "." + extension))
+        fig.savefig(Path(out_path) / (_plot_name_noext + "." + extension))
     plt.close(fig)
-
-
-def clamp(x, x0, x1):
-    return max(min(x, x1), x0)
-
-
-def darken(color, factor):
-    hsv = colorsys.rgb_to_hsv(float(color[0]), float(color[1]), float(color[2]))
-    return colorsys.hsv_to_rgb(clamp(hsv[0], 0, 1), clamp(hsv[1] * 0.75, 0, 1), clamp(hsv[2] * factor, 0, 1))
-
-
-def set_value(color, value):
-    hsv = colorsys.rgb_to_hsv(float(color[0]), float(color[1]), float(color[2]))
-    return colorsys.hsv_to_rgb(hsv[0], hsv[1], value)
 
 
 def _plot_ion_cur(
@@ -414,7 +423,6 @@ def _plot_ion_cur(
     os.makedirs(out_path, exist_ok=True)
 
     # get the sweep radii
-    pressures, _ = _extract_quantity(data, "ion_current_sweeps", sorted=True)
     _, sim_data_0 = _extract_quantity(sim[0], "ion_current_sweeps", sorted=True)
     sweep_radii = [x.radius_m for x in sim_data_0[0]]
     angles_sim_rad = sim_data_0[0][0].angles_rad
@@ -425,13 +433,15 @@ def _plot_ion_cur(
     xlims = (0, 90)
     yscale = 'log'
 
-    data_kwargs = {'fmt': ':o', 'markersize': 4, 'alpha': 1}
-
-    incr = 2
+    max_points = 40
 
     # for each pressure, plot predictions at all radii
     jion_quantiles = {}
     medians = {}
+    colors = ["red", "lightorange", "green", "darkblue"]
+    markerstyles = ["o", "v", "^", ">"]
+    linestyles = ["solid", "dashed", "dashdot", "dotted"]
+
     for i, opcond in enumerate(opconds):
         pressure_uTorr = opcond.background_pressure_torr * 1e6
         _data = data[opcond].ion_current_sweeps
@@ -442,33 +452,38 @@ def _plot_ion_cur(
         jion_quantiles[opcond] = []
         medians[opcond] = []
 
-        fig, (ax, ax_legend) = plt.subplots(1, 2, dpi=200, figsize=(10, 6), width_ratios=[3, 1])
+        fig, ax = plt.subplots(dpi=200, figsize=(7, 6))
         ax.set_yscale(yscale)
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
         ax.set_xlim(xlims)
-        ax.set_title(ylabel + f" ($p_B = {pressure_uTorr:.2f}$ $\\mu$Torr)")
 
         # plot data for this operating condition at each radius
+        handles_data = []
+        labels_data = []
         for j, sweep in enumerate(_data):
-            color = colors((j + 0.5) / len(sweep_radii))
+            color = COLORS[colors[j]]
 
             theta_deg = sweep.angles_rad * 180 / np.pi
             jion = sweep.current_density_A_m2
-            ax.errorbar(
+            incr = max(1, math.floor(len(theta_deg) / max_points))
+            h_data = ax.errorbar(
                 theta_deg[::incr],
                 jion.mean[::incr],
                 yerr=2 * jion.std[::incr],
-                color=darken(color, 0.8),
-                label=f"$r =$ {sweep.radius_m:.2f} m",
-                **data_kwargs,
+                color=color,
+                fmt=markerstyles[j],
+                markersize=5,
             )
 
             jion_sim = [_sim[opcond].ion_current_sweeps[j].current_density_A_m2.mean for _sim in sim]
             qt = np.quantile(jion_sim, q=QUANTILES, axis=0)
 
             # Plot median prediction
-            ax.plot(angles_sim, qt[2], color=color, label="Median prediction")
+            h_sim = ax.plot(angles_sim, qt[2], color=color, linestyle=linestyles[j])[0]
+
+            handles_data.append((h_sim, h_data))
+            labels_data.append(f"$r =$ {sweep.radius_m:.2f} m")
 
             jion_quantiles[opcond].append(qt)
 
@@ -483,61 +498,78 @@ def _plot_ion_cur(
         # Don't save plot if we only have one radius
         if len(sweep_radii) > 1:
             plot_name = f"{qty_name}_p={pressure_uTorr:05.2f}uTorr.png"
-            _finalize_plot(fig, ax, ax_legend, out_path, plot_name)
+            ax.legend(handles_data, labels_data, loc='upper right')
+            save_figure(fig, out_path, plot_name)
         else:
             plt.close(fig)
 
-    # for each radius, plot predictions at each pressure
+    colors = ["red", "green", "blue"]
+    linestyles = ["solid", "dashed", "dashdot"]
+    markerstyles = ["o", "v", "^"]
+    opconds_ji = [o for o in opconds if data[o].ion_current_sweeps is not None]
+    if len(opconds_ji) > 3:
+        middle_index = round((len(opconds_ji) - 1) / 2)
+        inds = [0, middle_index, len(opconds_ji) - 1]
+    else:
+        inds = list(range(len(opconds_ji)))
+
+    # for each radius, plot predictions at up to three pressures
     for i, sweep_radius in enumerate(sweep_radii):
-        fig, (ax, ax_legend) = plt.subplots(1, 2, dpi=200, figsize=(10, 6), width_ratios=[3, 1])
+        fig, ax = plt.subplots(dpi=200, figsize=(7, 6))
         ax.set_yscale(yscale)
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
         ax.set_xlim(xlims)
-        ax.set_title(ylabel + f"($r = {sweep_radius:.2f}$ m)")
         plot_name = f"{qty_name}_r={sweep_radius:.2f}m.png"
 
         # plot data for this operating condition at each pressure
-        for j, opcond in enumerate(opconds):
+        handles_data = []
+        labels_data = []
+        for j, opcond_ind in enumerate(inds):
+            opcond = opconds_ji[opcond_ind]
+            color = COLORS[colors[j]]
             pressure_uTorr = opcond.background_pressure_torr * 1e6
             _data = data[opcond].ion_current_sweeps
             if _data is None or len(data) == 0:
                 continue
 
             # make dedicated plot for each opcond
-            fig_solo, (ax_solo, ax_legend_solo) = plt.subplots(1, 2, dpi=200, figsize=(10, 6), width_ratios=[3, 1])
+            fig_solo, ax_solo = plt.subplots(dpi=200, figsize=(7, 6))
             ax_solo.set_yscale(yscale)
             ax_solo.set_xlabel(xlabel)
             ax_solo.set_ylabel(ylabel)
             ax_solo.set_xlim(xlims)
-            ax_solo.set_title(ylabel + f"($r = {sweep_radius:.2f}$ m)")
-            pressure_str = f"$p_B = {pressure_uTorr:.2f}$ $\\mu$Torr"
+            pressure_str = f"${pressure_uTorr:.2f}$ $\\mu$Torr"
             subdir = out_path / f"p={pressure_uTorr:05.2f}uTorr"
             os.makedirs(subdir, exist_ok=True)
 
-            color = colors((j + 0.5) / len(pressures))
             sweep = _data[i]
             theta_deg = sweep.angles_rad * 180 / np.pi
             jion = sweep.current_density_A_m2
+            incr = max(1, math.floor(len(theta_deg) / max_points))
 
             for k, axis in enumerate([ax, ax_solo]):
-                axis.errorbar(
+                h_data = axis.errorbar(
                     theta_deg[::incr],
                     jion.mean[::incr],
                     yerr=2 * jion.std[::incr],
-                    color=darken(color, 0.8) if k == 0 else 'black',
-                    label=pressure_str,
-                    **data_kwargs,
+                    color=color if k == 0 else 'black',
+                    fmt=markerstyles[j] if k == 0 else 'o',
+                    markersize=4.5,
                 )
                 qt = jion_quantiles[opcond][i]
                 if k == 0:
-                    axis.plot(angles_sim, qt[2], color=color, label="Median prediction" if j == 0 else "")
+                    h_sim = axis.plot(angles_sim, qt[2], color=color, linestyle=linestyles[j])[0]
+                    handles_data.append((h_sim, h_data))
+                    labels_data.append(f"{pressure_str}")
                 else:
-                    _plot_median_and_uncertainty(axis, angles_sim, qt)
+                    h_model = _plot_median_and_uncertainty(axis, angles_sim, qt)
+                    ax_solo.legend([h_data, h_model], ["Data", "Model (median + 90\\% CI)"], loc='upper right')
 
-            _finalize_plot(fig_solo, ax_solo, ax_legend_solo, subdir, plot_name)
+            save_figure(fig_solo, subdir, plot_name)
 
-        _finalize_plot(fig, ax, ax_legend, out_path, plot_name)
+        ax.legend(handles_data, labels_data, loc='upper right')
+        save_figure(fig, out_path, plot_name)
 
     return medians
 
@@ -589,7 +621,7 @@ def _plot_ion_vel(
         _data = data[opcond].ion_velocity
         pressure_uTorr = opcond.background_pressure_torr * 1e6
 
-        fig, ax = plt.subplots(dpi=200, figsize=(6, 6))
+        fig, ax = plt.subplots(dpi=200, figsize=(7, 6))
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
         ax.set_xlim(xlim)
@@ -617,7 +649,7 @@ def _plot_ion_vel(
         # Plot median and 90% credible intervals
         handles.append(_plot_median_and_uncertainty(ax, x_sim, qt))
 
-        labels += ["Model"]
+        labels += ["Model (median and 90\\% CI)"]
 
         # Plot best sample
         if map is not None and (map_data := map[opcond].ion_velocity) is not None:
@@ -626,9 +658,9 @@ def _plot_ion_vel(
             ax.plot(x_map, y_map, label="Best sample", color='red')
 
         plot_name = f"{qty_name}_p={pressure_uTorr:05.2f}uTorr"
-        ax.legend(handles, labels, loc='lower right', **legend_kwargs)
+        ax.legend(handles, labels, loc='lower right')
 
-        _finalize_plot(fig, ax, None, out_path, plot_name)
+        save_figure(fig, out_path, plot_name)
 
     # ========================================================
     # Plot medians at selected pressures
@@ -656,6 +688,8 @@ def _plot_ion_vel(
         axes.append(ax_inset)
 
     colors = ["red", "green", "blue"]
+    linestyles = ["solid", "dashed", "dashdot"]
+    markerstyles = ["o", "v", "^"]
     if len(opconds) > 3:
         middle_index = round((len(opconds) - 1) / 2)
         inds = [0, middle_index, len(opconds) - 1]
@@ -672,7 +706,7 @@ def _plot_ion_vel(
         opcond = opconds[ind]
         _data = data[opcond].ion_velocity
         pressure_uTorr = opcond.background_pressure_torr * 1e6
-        color = named_colors[colors[i]]
+        color = COLORS[colors[i]]
         if _data is not None:
             x_data = _data.axial_distance_m * xscalefactor
             y_data = _data.velocity_m_s
@@ -692,19 +726,29 @@ def _plot_ion_vel(
                     y_data_mean,
                     yerr=2 * y_data_std,
                     color=color,
-                    fmt='o',
-                    **data_kwargs,
+                    fmt=markerstyles[i],
+                    markersize=4.5,
                 )
 
                 if iax == 0:
-                    labels.append(f"$p_B = {pressure_uTorr:.1f}$ $\\mu$Torr")
+                    labels.append(f"${pressure_uTorr}$ $\\mu$Torr")
                     handles.append(handle)
 
             sim_0 = sim[0][opcond].ion_velocity
             assert sim_0 is not None
             x_sim = sim_0.axial_distance_m * xscalefactor
-            for axis in axes:
-                axis.plot(x_sim, medians[opcond].velocity_m_s.mean * yscalefactor, color=color, zorder=2, alpha=0.8)
+            for iax, axis in enumerate(axes):
+                handle = axis.plot(
+                    x_sim,
+                    medians[opcond].velocity_m_s.mean * yscalefactor,
+                    color=color,
+                    zorder=2,
+                    alpha=0.8,
+                    linestyle=linestyles[i],
+                )[0]
+
+                if iax == 0:
+                    handles[i] = (handle, handles[i])
 
     plot_name = f"{qty_name}_allpressures"
 
@@ -717,15 +761,15 @@ def _plot_ion_vel(
         pad = 0.02 * (ymax - ymin)
         ax_inset.set_ylim(ymin - pad, ymax + pad)
 
-    handles.append(Line2D([0], [0], color="black", lw=2))
-    labels.append("Median prediction")
+    # handles.append(Line2D([0], [0], color="black", lw=2))
+    # labels.append("Median prediction")
 
-    ax.legend(handles, labels, loc=legend_loc, **legend_kwargs)
-    _finalize_plot(fig, ax, None, out_path, plot_name)
+    ax.legend(handles, labels, loc=legend_loc)
+    save_figure(fig, out_path, plot_name)
     return medians
 
 
-def plot_prediction_accuracy(
+def _plot_prediction_accuracy(
     data: Dataset,
     sim: list[Dataset],
     plot_path: Path,
@@ -771,9 +815,14 @@ def plot_prediction_accuracy(
     y_med = np.array(y_med)
     y_err = [np.array(y_err_lo), np.array(y_err_hi)]
 
+    # build matrix to save to file so we can plot multiple runs on the sample plot
+    out_header = "data mean,data err,sim 0.5 percentile,sim 0.05 percentile, sim 0.95 percentile"
+    out_data = np.vstack([x_mean, x_err, y_med, y_err_lo, y_err_hi]).T
+    np.savetxt(plot_path / f"{quantity}.csv", out_data, delimiter=",", header=out_header)
+
     color = "black"
-    ax.errorbar(x_mean, y_med, xerr=x_err, yerr=y_err, fmt="none", color=color)
-    ax.scatter(x_mean, y_med, color=color)
+    ax.errorbar(x_mean, y_med, xerr=x_err, yerr=y_err, fmt="none", color=color, markersize=3, alpha=0.5, zorder=4)
+    ax.scatter(x_mean, y_med, color=color, linewidth=0, s=10, zorder=5)
 
     # plot y = x line
     if lims is None:
@@ -798,9 +847,8 @@ def plot_prediction_accuracy(
 
     line_x = np.array([min_x, max_x])
     ax.plot(line_x, line_x, color="red", zorder=4)
-    fig.tight_layout()
 
-    fig.savefig(plot_path / f"{quantity}_prediction.png")
+    save_figure(fig, plot_path, f"{quantity}_prediction")
     plt.close(fig)
 
 
@@ -834,7 +882,7 @@ def _plot_global_quantity(
     sortperm_sim = np.argsort(pressure_sim)
     pressure_sim = pressure_sim[sortperm_sim]
 
-    fig, ax = plt.subplots(dpi=200, figsize=(6, 6))
+    fig, ax = plt.subplots(dpi=200, figsize=(7, 6))
     if lims is not None:
         ax.set_ylim(lims)
     ax.set_xlabel(xlabel)
@@ -870,8 +918,8 @@ def _plot_global_quantity(
             qty_map_mean = np.array([x.mean * scale for x in qty_map])
             ax.scatter(pressure_map, qty_map_mean, s=64, marker='x', color='red', label="Best sample", zorder=9)
 
-    ax.legend(handles, labels, loc='upper left', **legend_kwargs)
-    _finalize_plot(fig, ax, None, plot_path, f"{quantity}_pressure_bands")
+    ax.legend(handles, labels, loc='upper left')
+    save_figure(fig, plot_path, f"{quantity}_pressure_bands")
 
     return median
 
@@ -887,15 +935,21 @@ def _load_sim_results(ids, mcmc_path: Path) -> list[dict]:
             if file.endswith(".pkl"):
                 pkl_file = file
 
+        if not os.path.exists(amisc_path / pkl_file):
+            continue
+
         with open(amisc_path / pkl_file, "rb") as f:
-            data.append(pickle.load(f))
+            ds = pickle.load(f)
+            if ds['output'] is None:
+                print(f"{amisc_path=}, {id=}")
+            data.append(ds)
 
     return data
 
 
 def _plot_median_and_uncertainty(ax, x, qt):
-    h_uncertainty = ax.fill_between(x, qt[0], qt[-1], facecolor=named_colors["blue"], zorder=0, alpha=0.25)
-    h_median = ax.plot(x, qt[2], color=named_colors["darkblue"])
+    h_uncertainty = ax.fill_between(x, qt[0], qt[-1], facecolor=COLORS["blue"], zorder=0, alpha=0.25)
+    h_median = ax.plot(x, qt[2], color=COLORS["darkblue"])
     return h_uncertainty, h_median[0]
 
 

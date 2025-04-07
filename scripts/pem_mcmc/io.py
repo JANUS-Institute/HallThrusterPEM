@@ -67,7 +67,11 @@ def read_output_file(path: PathLike):
                 raise ValueError(f"Invalid accept value {fields[accept_ind]} at row {i} in file {path}.")
 
             if accept:
-                ids.append(fields[id_ind])
+                # Create IDs from scratch rather than read ID.
+                # This is for compatibility with older runs where a bug led to some duplicate ids.
+                id = f"{i:06d}"
+                ids.append(id)
+
             elif len(ids) > 0:
                 ids.append(ids[-1])
             else:

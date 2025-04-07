@@ -73,6 +73,7 @@ If an uncertainty is not provided, a relative uncertainty of 2% is assumed.
 
 #### Thrust
 We look for a column called 'thrust (mn)' or 'thrust (n)'.
+We then convert the thrust to Newtons internally.
 
 #### Discharge current
 We look for one of the following column names in order:
@@ -81,7 +82,13 @@ We look for one of the following column names in order:
 2. 'anode current (a)'
 
 #### Cathode coupling voltage
-We look for a column called 'cathode coupling voltage (v)'
+We look for a column called 'cathode coupling voltage (v)'.
+
+### Ion/beam current
+We look for one of the following column names in order:
+1. 'ion current (a)'
+2. 'beam current (a)'
+3. 'ion beam current (a)'
 
 #### Ion current density
 We look for three columns
@@ -550,7 +557,7 @@ def _load_single_file(file: PathLike) -> dict[OperatingCondition, ThrusterData]:
         # We assume all errors (expressed as value +/- error) correspond to two standard deviations
         # We also assume a default relative error of 2% if none is provided
         for key, val in table.items():
-            if key == "thrust (mn)" or key == "thrust (n)":
+            if key in {"thrust (mn)", "thrust (n)"}:
                 # Load thrust, converting units if necessary
                 if key.endswith("(mn)"):
                     conversion_scale = 1e-3
@@ -567,13 +574,16 @@ def _load_single_file(file: PathLike) -> dict[OperatingCondition, ThrusterData]:
             elif key == "cathode coupling voltage (v)":
                 data[opcond].cathode_coupling_voltage_V = _read_measurement(table, key, val, opcond_start, scalar=True)
 
+            elif key in {"ion current (a)", "beam current (a)", "ion beam current (a)"}:
+                data[opcond].ion_current_A = _read_measurement(table, key, val, opcond_start, scalar=True)
+
             elif key == "ion velocity (m/s)":
                 data[opcond].ion_velocity = IonVelocityData(
                     axial_distance_m=table["axial position from anode (m)"][opcond_start:row],
                     velocity_m_s=_read_measurement(table, key, val, start=opcond_start, end=row, scalar=False),
                 )
 
-            elif key == "ion current density (ma/cm^2)" or key == "ion current density (a/m^2)":
+            elif key in {"ion current density (ma/cm^2)", "ion current density (a/m^2)"}:
                 # Load ion current density data and convert to A/m^2
                 if key.endswith("(ma/cm^2)"):
                     conversion_scale = 10.0
@@ -649,5 +659,5 @@ def _table_from_file(file: PathLike, delimiter=",", comments="#") -> dict[str, A
     column_names = header.split(delimiter)
     data = np.genfromtxt(file, delimiter=delimiter, comments=comments, skip_header=header_start + 1)
 
-    table: dict[str, Array] = {column.casefold(): data[:, i] for (i, column) in enumerate(column_names)}
+    table: dict[str, Array] = {column.casefold().strip(): data[:, i] for (i, column) in enumerate(column_names)}
     return table

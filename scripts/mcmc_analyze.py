@@ -55,6 +55,14 @@ parser.add_argument("--subsample", type=int)
 
 parser.add_argument("--burn-fraction", type=float, default=0.0)
 
+parser.add_argument(
+    "--limits",
+    type=str,
+    choices=["prior", "posterior", "test"],
+    default="posterior",
+    help="Which set of device-specific axis-limits to use.",
+)
+
 
 def main(args):
     config_file = ""
@@ -75,6 +83,7 @@ def main(args):
         plot_map=args.plot_map,
         calc_metrics=args.calc_metrics,
         subsample=args.subsample,
+        limits=args.limits,
     )
 
 

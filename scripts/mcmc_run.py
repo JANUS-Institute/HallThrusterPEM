@@ -221,7 +221,7 @@ def main(args):
     start_index = 1
     _update_opts(opts, root_dir, start_index)
     for i, (sample, logp, accepted_bool) in enumerate(sampler):
-        mcmc.append_sample_row(logfile, start_index + i - 1, sample, logp, accepted_bool)
+        mcmc.append_sample_row(logfile, start_index + i, sample, logp, accepted_bool)
 
         if logp > best_logp:
             best_logp = logp
@@ -231,7 +231,7 @@ def main(args):
 
         print(
             f"sample: {i + start_index}/{max_samples}, logp: {logp:.3f}, best logp: {best_logp:.3f},",
-            f"accepted: {accepted_bool}, p_accept: {num_accept / (i + 1) * 100:.1f}%",
+            f"accepted: {accepted_bool}, p_accept: {num_accept / (i + 1 + start_index) * 100:.1f}%",
         )
 
         corner = i == max_samples or (i > 100 and (i % (args.output_interval * 10) == 0))
@@ -244,6 +244,7 @@ def main(args):
                 plot_corner=corner,
                 plot_bands=True,
                 plot_traces=True,
+                calc_metrics=False,
                 proposal_cov=sampler.cov(),
                 subsample=num_subsample,
                 burn_fraction=burn_fraction,

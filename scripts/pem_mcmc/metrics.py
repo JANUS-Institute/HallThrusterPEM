@@ -161,6 +161,7 @@ def _log_likelihood(
     opts: ExecutionOptions,
 ) -> np.float64 | float:
     result = _run_model(params, system, list(data.keys()), base_params, opts)
+
     if result is None:
         return -np.inf
 
@@ -230,9 +231,10 @@ def _run_model(
             operating_conditions, outputs, sweep_radii, use_corrected_thrust=True
         )
 
-        # Write outputs to file
-        with open(opts.directory / "pem.pkl", "wb") as fd:
-            pickle.dump({"input": sample_dict, "output": output_thrusterdata}, fd)
+        if output_thrusterdata is not None:
+            # Write outputs to file
+            with open(opts.directory / "pem.pkl", "wb") as fd:
+                pickle.dump({"input": sample_dict, "output": output_thrusterdata}, fd)
 
         return output_thrusterdata
 
