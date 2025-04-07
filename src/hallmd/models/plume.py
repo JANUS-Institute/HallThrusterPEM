@@ -88,13 +88,13 @@ def current_density(inputs: Dataset, sweep_radius: float | list = 1.0):
         alpha1 = np.expand_dims(alpha1, axis=(-1, -2))
         alpha2 = np.expand_dims(alpha2, axis=(-1, -2))
         I_B0 = np.expand_dims(I_B0, axis=(-1, -2))
-        n = np.expand_dims(n , axis=(-1, -2))
+        n = np.expand_dims(n, axis=(-1, -2))
         sigma_cex = np.expand_dims(sigma_cex, axis=(-1, -2))
 
         decay = np.exp(-sweep_radius * n * sigma_cex)  # (..., 1, r)
-        j_cex = I_B0 * (1 - decay) / (2 * np.pi * sweep_radius ** 2)
+        j_cex = I_B0 * (1 - decay) / (2 * np.pi * sweep_radius**2)
 
-        base_density = I_B0 * decay / sweep_radius ** 2
+        base_density = I_B0 * decay / sweep_radius**2
         j_beam = base_density * A1 * np.exp(-((alpha_rad[..., np.newaxis] / alpha1) ** 2))
         j_scat = base_density * A2 * np.exp(-((alpha_rad[..., np.newaxis] / alpha2) ** 2))
 

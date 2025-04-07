@@ -16,6 +16,8 @@
     "anom_max": ["config", "anom_model", "model", "hall_max"],
     "anom_center": ["config", "anom_model", "model", "center"],
     "anom_width": ["config", "anom_model", "model", "width"],
+	"anom_scale": ["config", "anom_model", "model", "anom_scale"],
+	"anom_barrier_scale": ["config", "anom_model", "model", "barrier_scale"],
 	"anom_shift_length": ["config", "anom_model", "shift_length"],
     "f_n": ["config", "neutral_ingestion_multiplier"],
 	"c_w": ["config", "wall_loss_model", "loss_scale"],

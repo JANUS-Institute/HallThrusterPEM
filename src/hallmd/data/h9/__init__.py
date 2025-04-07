@@ -1,4 +1,5 @@
 """Module for H9 datasets."""
+
 from importlib import resources
 from pathlib import Path
 
@@ -7,6 +8,7 @@ from .. import ThrusterDataset
 
 class H9(ThrusterDataset):
     """Class for handling the H9 datasets."""
+
     @staticmethod
     def datasets_from_names(dataset_names: list[str]) -> list[Path]:
         data_list = []
@@ -41,8 +43,13 @@ def _gt2024() -> list[Path]:
         raise H9.no_data_error()
 
     dir = resources.files(gt2024)
-    with resources.as_file(dir / "data.csv") as path:
-        return [path]
+    datafiles = ["jion_GT_behind_thruster.csv", "thrust_GT_behind_thruster.csv"]
+    paths = []
+    for file in datafiles:
+        with resources.as_file(dir / file) as path:
+            paths.append(path)
+
+    return paths
 
 
 def _um2024() -> list[Path]:

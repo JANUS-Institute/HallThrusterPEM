@@ -13,7 +13,7 @@ components: !Component
         units: Torr
         nominal: 1.0e-5
         domain: (1.0e-8, 1.0e-4)
-        distribution: Relative(20)
+        distribution: Relative(5)
         norm: log10
       - name: V_a
         description: Anode voltage
@@ -22,6 +22,7 @@ components: !Component
         units: V
         nominal: 300
         domain: (200, 400)
+        distribution: Relative(1)
       - name: T_e
         description: Electron temperature at cathode
         category: calibration
@@ -61,7 +62,7 @@ components: !Component
         domain: (0, 60)
   - name: Thruster
     model: !!python/name:hallmd.models.thruster.hallthruster_jl
-    version: 0.18.3
+    version: 0.18.5
     thruster: SPT-100
     config:
       discharge_voltage: 300             # overwritten by V_a
@@ -74,12 +75,12 @@ components: !Component
       anom_model:
         type: SimpleLogisticShift
         model:
-          type: GaussianBohm
-          hall_min: 0.00625  # overwritten by anom_min
-          hall_max: 0.0625   # overwritten by anom_max * anom_min
-          center: 0.025      # overwritten by anom_center
-          width: 0.005       # overwritten by anom_width
-        shift_length: 0.3    # overwritten by anom_shift_length
+          type: ScaledGaussianBohm
+          anom_scale: 0.0625    # overwritten by anom_scale
+          barrier_scale: 0.95   # overwritten by anom_barrier_scale
+          center: 1.0           # overwritten by anom_center
+          width: 0.2            # overwritten by anom_width
+        shift_length: 0.3   # overwritten by anom_shift_length
         midpoint_pressure: 25.0e-6
         slope: 2.0
       wall_loss_model:
@@ -116,7 +117,7 @@ components: !Component
         tex: "$\\dot{m}_a$"
         units: kg/s
         nominal: 5.0e-6
-        distribution: Relative(3)
+        distribution: Relative(1)
         domain: (2.0e-6, 7.0e-6)
         norm: linear(1e6)
       - name: T_e
@@ -127,35 +128,30 @@ components: !Component
         units: m/s
         nominal: 141.24234
         distribution: U(100, 500)
-      - name: anom_min
-        description: minimum Hall parameter
+      - name: anom_barrier_scale
+        description: 1 - minimum inverse Hall parameter
         category: calibration
-        tex: "$\\alpha_1$"
-        nominal: 0.00625
-        distribution: LogUniform(0.001, 0.1)
-        norm: log10
-      - name: anom_max
-        description: maximum Hall parameter
+        tex: "$\\beta_{anom}$"
+        nominal: 0.95
+        distribution: Uniform(0,1)
+      - name: anom_scale
+        description: maximum inverse Hall parameter
         category: calibration
-        tex: "$\\alpha_2$"
-        nominal: 10
-        distribution: Uniform(1, 100)
+        tex: "$\\alpha_{anom}$"
+        nominal: 0.0625
+        distribution: Uniform(0,1)
       - name: anom_center
         description: location of gaussian trough in anom profile
         category: calibration
-        units: m
         tex: "$z_{anom}$"
-        nominal: 0.0265
-        distribution: Uniform(0.01, 0.035)
-        norm: linear(1e3)
+        nominal: 1.1
+        distribution: Uniform(0.75, 1.5)
       - name: anom_width
         description: width of gaussian trough in anom profile
         category: calibration
-        units: m
         tex: "$L_{anom}$"
-        nominal: 0.005
-        distribution: Uniform(0.001, 0.05)
-        norm: linear(1e3)
+        nominal: 0.2
+        distribution: Uniform(0, 0.5)
       - name: anom_shift_length
         description: Anomalous pressure shift displacement
         category: calibration
