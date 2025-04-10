@@ -61,7 +61,7 @@ COLORS = {
     "lightgreen": "#bcbd22ff",
     "green": "#729f23ff",
     "darkgreen": "#3e5d19ff",
-    "lightblue": "#17becfff",
+    "lightblue": "#c7ecffff",
     "blue": "#2a90c2ff",
     "darkblue": "#196599ff",
     "lightpurple": "#e377c2ff",
@@ -112,6 +112,12 @@ data_kwargs = {'markersize': 3.5}
 
 # Quantiles for computing error bars
 QUANTILES = [0.05, 0.25, 0.5, 0.75, 0.95]
+
+
+def pad_limits(lims: tuple[float, float], pad: float) -> tuple[float, float]:
+    min_val, max_val = lims
+    pad_amt = 0.5 * pad * (max_val - min_val)
+    return (min_val - pad_amt, max_val + pad_amt)
 
 
 def _start_timer(msg: str) -> float:
@@ -398,8 +404,9 @@ def _extract_quantity(data: Dataset, quantity: str, sorted=False):
         return pressure, qty
 
 
-def save_figure(fig, out_path: os.PathLike, plot_name):
-    fig.tight_layout()
+def save_figure(fig, out_path: os.PathLike, plot_name: str, tight_layout: bool = True):
+    if tight_layout:
+        fig.tight_layout()
 
     if plot_name.endswith(".png"):
         _plot_name_noext = plot_name[0:-4]
