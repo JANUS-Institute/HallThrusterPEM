@@ -4,7 +4,7 @@ import numpy as np
 from amisc import Component, System, Variable
 
 from pem_mcmc.analysis import analyze
-from pem_mcmc.io import append_sample_row, read_output_file
+from pem_mcmc.io import append_sample_row, load_system, read_output_file
 from pem_mcmc.metrics import likelihood_and_distances, log_posterior
 from pem_mcmc.options import ExecutionOptions, load_system_and_opts
 from pem_mcmc.samplers import DRAMSampler, PreviousRunSampler, PriorSampler
@@ -23,6 +23,7 @@ __all__ = [
     "log_posterior",
     "read_output_file",
     "ExecutionOptions",
+    "load_system",
 ]
 
 

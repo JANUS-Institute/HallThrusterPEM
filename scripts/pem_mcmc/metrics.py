@@ -1,9 +1,11 @@
+import copy
 import pickle
 import sys
 import traceback
 from dataclasses import fields
 from typing import Optional
 
+import amisc.distribution
 import numpy as np
 from amisc import System
 
@@ -202,7 +204,7 @@ def _run_model(
     base_params: dict[str, Value],
     opts: ExecutionOptions,
 ) -> Dataset | None:
-    sample_dict = base_params.copy()
+    sample_dict = copy.deepcopy(base_params)
     for key, val in params.items():
         sample_dict[key] = val
 
@@ -266,13 +268,22 @@ def log_posterior(
 
 
 def _sample_aleatoric(sample_dict, system):
+    # We sample from normal distributions, as these are more reflective of the experimental uncertainty than
+    # the uniform distributions that amisc uses for Relative.
     aleatoric_vars = ["P_b", "V_a", "mdot_a"]
     for var in aleatoric_vars:
         nominal = sample_dict[var]
+        input = system.inputs()[var]
+        dist = input.distribution
+        assert isinstance(dist, amisc.distribution.Relative)
+
+        # we assume the error specified in the config file is 2 standard deviations
+        percent = dist.dist_args[0] / 100 / 2
+
         for i in range(np.atleast_1d(nominal).size):
-            input = system.inputs()[var]
             nom = input.denormalize(nominal[i])
-            nominal[i] = input.normalize(input.distribution.sample((1,), nom))[0]
+            sample = nom * (1 + percent * np.random.randn())
+            nominal[i] = input.normalize(sample)
 
         sample_dict[var] = nominal
     return sample_dict
