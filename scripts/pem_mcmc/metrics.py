@@ -277,8 +277,8 @@ def _sample_aleatoric(sample_dict, system):
         dist = input.distribution
         assert isinstance(dist, amisc.distribution.Relative)
 
-        # we assume the error specified in the config file is 2 standard deviations
-        percent = dist.dist_args[0] / 100 / 2
+        # we assume the error specified in the config file is 1 standard deviation
+        percent = dist.dist_args[0] / 100
 
         for i in range(np.atleast_1d(nominal).size):
             nom = input.denormalize(nominal[i])
