@@ -70,7 +70,6 @@ def main(args):
         plot_corner=args.plot_corner,
         plot_bands=args.plot_bands,
         plot_traces=args.plot_traces,
-        plot_map=args.plot_map,
         calc_metrics=args.calc_metrics,
         subsample=args.subsample,
         limits=args.limits,
