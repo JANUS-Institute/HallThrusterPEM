@@ -1,8 +1,12 @@
 import copy
+import json
+import os
 import pickle
+import shutil
 import sys
 import traceback
 from dataclasses import fields
+from pathlib import Path
 from typing import Optional
 
 import amisc.distribution
@@ -197,6 +201,47 @@ def _log_likelihood(
     return L
 
 
+def _consolidate_outputs(path: Path):
+    """
+    By default, amisc creates a directory with Thruster, Cathode, and Plume folders. The latter two are empty, but the
+    former has individual files for each individual Hall thruster simulation. This creates a ton of individual files
+    that can quickly deplete the maximum allowance of the Great Lakes scratch partition. This script deletes the empty
+    folders, consolidates all output files into a single file, and deletes the individual files. Additionally, for
+    failed runs the containing folder may be empty, so we delete it.
+    """
+
+    # Check if folder is empty
+    if not os.listdir(path):
+        shutil.rmtree(path)
+
+    cathode_path = path / "Cathode"
+    plume_path = path / "Plume"
+    thruster_path = path / "Thruster"
+
+    if thruster_path.is_dir():
+        jsons = [f for f in thruster_path.iterdir() if f.suffix == ".json"]
+
+        # Read JSON files and consolidate them into a single file
+        json_contents = []
+        for json_file in jsons:
+            with open(json_file, "r") as fd:
+                contents = json.load(fd)
+                json_contents.append(contents)
+
+        with open(path / "thruster.json", "w") as fd:
+            json.dump(json_contents, fd)
+
+    # Delete unneeded files
+    if cathode_path.is_dir():
+        cathode_path.rmdir()
+
+    if plume_path.is_dir():
+        plume_path.rmdir()
+
+    if thruster_path.is_dir():
+        shutil.rmtree(thruster_path)
+
+
 def _run_model(
     params: dict[str, Value],
     system: System,
@@ -212,6 +257,8 @@ def _run_model(
     if opts.sample_aleatoric:
         sample_dict = _sample_aleatoric(sample_dict, system)
 
+    output = None
+
     try:
         # Run model
         with opts.executor(max_workers=opts.max_workers) as exec:
@@ -222,8 +269,6 @@ def _run_model(
                 executor=exec,
                 verbose=False,
             )
-
-        # _print_amisc_output(outputs)
 
         # Get plume sweep radii
         sweep_radii = system['Plume'].model_kwargs['sweep_radius']
@@ -238,7 +283,7 @@ def _run_model(
             with open(opts.directory / "pem.pkl", "wb") as fd:
                 pickle.dump({"input": sample_dict, "output": output_thrusterdata}, fd)
 
-        return output_thrusterdata
+        output = output_thrusterdata
 
     except Exception as e:
         print("Error detected. Failing input printed below")
@@ -246,7 +291,10 @@ def _run_model(
         print(e)
         traceback.print_exc(file=sys.stdout)
 
-        return None
+    # Consolidate output files
+    _consolidate_outputs(opts.directory)
+
+    return output
 
 
 def log_posterior(
