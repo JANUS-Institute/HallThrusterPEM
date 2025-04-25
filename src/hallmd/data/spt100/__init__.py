@@ -1,4 +1,5 @@
 """Module for SPT-100 datasets."""
+
 from importlib import resources
 from pathlib import Path
 
@@ -19,6 +20,8 @@ class SPT100(ThrusterDataset):
                     data_list += _sankovic1993()
                 case "macdonald2019":
                     data_list += _macdonald2019()
+                case "express2001":
+                    data_list += _express2001()
                 case _:
                     raise ValueError(f"Invalid dataset {dataset} selected.")
 
@@ -26,7 +29,7 @@ class SPT100(ThrusterDataset):
 
     @staticmethod
     def all_data() -> list[Path]:
-        return _sankovic1993() + _macdonald2019() + _diamant2014()
+        return _sankovic1993() + _macdonald2019() + _diamant2014() + _express2001()
 
 
 def _diamant2014(datasets: list[str] | str | None = None) -> list[Path]:
@@ -62,5 +65,14 @@ def _sankovic1993() -> list[Path]:
     from . import sankovic1993
 
     dir = resources.files(sankovic1993)
+    with resources.as_file(dir / "data.csv") as path:
+        return [path]
+
+
+def _express2001() -> list[Path]:
+    """See https://ntrs.nasa.gov/api/citations/20020014412/downloads/20020014412.pdf"""
+    from . import express2001
+
+    dir = resources.files(express2001)
     with resources.as_file(dir / "data.csv") as path:
         return [path]

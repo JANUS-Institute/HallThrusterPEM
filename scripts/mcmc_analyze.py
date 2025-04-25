@@ -24,7 +24,6 @@ For usage details and a full list of options , run 'pdm run scripts/mcmc_analysi
 """  # noqa: E501
 
 import argparse
-import os
 from pathlib import Path
 
 import pem_mcmc as mcmc
@@ -65,25 +64,16 @@ parser.add_argument(
 
 
 def main(args):
-    config_file = ""
-    for file in os.listdir(args.path):
-        if file.endswith(".yml") or file.endswith(".yaml"):
-            config_file = file
-
-    if config_file == "":
-        raise FileNotFoundError(f"No YAML file found in {args.path}.")
-
     mcmc.analyze(
         Path(args.path),
-        Path(config_file),
         args.datasets,
         plot_corner=args.plot_corner,
         plot_bands=args.plot_bands,
         plot_traces=args.plot_traces,
-        plot_map=args.plot_map,
         calc_metrics=args.calc_metrics,
         subsample=args.subsample,
         limits=args.limits,
+        burn_fraction=args.burn_fraction,
     )
 
 

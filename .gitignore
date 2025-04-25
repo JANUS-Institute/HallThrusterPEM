@@ -1,4 +1,5 @@
 results/
+results_*/
 amisc-*
 slurm-*.out
 .DS_Store

@@ -239,12 +239,12 @@ def main(args):
         if (i == max_samples) or (i % args.output_interval == 0):
             mcmc.analyze(
                 root_dir.parent,
-                os.path.basename(args.config_file),
                 args.datasets,
                 plot_corner=corner,
                 plot_bands=True,
                 plot_traces=True,
-                calc_metrics=False,
+                calc_metrics=True,
+                save_restart=True,
                 proposal_cov=sampler.cov(),
                 subsample=num_subsample,
                 burn_fraction=burn_fraction,

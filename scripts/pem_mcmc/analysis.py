@@ -3,14 +3,18 @@ import math
 import os
 import pickle
 import time
+from dataclasses import dataclass
+from os import PathLike
 from pathlib import Path
 from typing import Optional
 
+import amisc.distribution as distributions
+import amisc.transform as transform
 import matplotlib.pyplot as plt
 import numpy as np
-from amisc import System
+import scipy.stats
+from amisc import System, Variable
 from matplotlib.axes import Axes
-from matplotlib.figure import Figure
 from scipy.spatial.distance import cdist, euclidean
 
 import hallmd.data
@@ -61,7 +65,7 @@ COLORS = {
     "lightgreen": "#bcbd22ff",
     "green": "#729f23ff",
     "darkgreen": "#3e5d19ff",
-    "lightblue": "#17becfff",
+    "lightblue": "#c7ecffff",
     "blue": "#2a90c2ff",
     "darkblue": "#196599ff",
     "lightpurple": "#e377c2ff",
@@ -73,12 +77,12 @@ COLORS = {
 AXIS_LIMITS = {
     "SPT-100": {
         "prior": {
-            "thrust": (0.0, 150.0),
-            "current": (0.0, 65.0),
-            "vcc": (0.0, 60.0),
+            "thrust": (0.0, 120.0),
+            "current": (0.0, 80.0),
+            "vcc": (0.0, 70.0),
         },
         "posterior": {
-            "thrust": (60.0, 90.0),
+            "thrust": (70.0, 90.0),
             "current": (3.0, 6.0),
             "vcc": (28.0, 38.0),
         },
@@ -90,12 +94,12 @@ AXIS_LIMITS = {
     },
     "H9": {
         "prior": {
-            "thrust": (0.0, 300.0),
-            "current": (0.0, 100.0),
+            "thrust": (0.0, 350.0),
+            "current": (0.0, 120.0),
             "vcc": (0.0, 60.0),
         },
         "posterior": {
-            "thrust": (150.0, 300.0),
+            "thrust": (160.0, 270.0),
             "current": (5.0, 20.0),
             "vcc": (0.0, 20.0),
         },
@@ -109,9 +113,46 @@ AXIS_LIMITS = {
 
 data_kwargs = {'markersize': 3.5}
 
+# Sort order for pemv1 variables.
+# For other systems, we do not try and sort the variables
+sort_order = [
+    "T_e",
+    "V_vac",
+    "P_T",
+    "Pstar",
+    "anom_scale",
+    "anom_barrier_scale",
+    "anom_center",
+    "anom_width",
+    "anom_shift_length",
+    "u_n",
+    "c_w",
+    "f_n",
+    "c0",
+    "c1",
+    "c2",
+    "c3",
+    "c4",
+    "c5",
+]
 
 # Quantiles for computing error bars
 QUANTILES = [0.05, 0.25, 0.5, 0.75, 0.95]
+
+
+def try_sort_variables(vars: dict[Variable, np.ndarray], sort_order: list[Variable]) -> dict[Variable, np.ndarray]:
+    # Check that the keys are the same
+    input_vars = set(vars.keys())
+    if input_vars != set(sort_order):
+        return vars
+
+    return {var: vars[var] for var in sort_order}
+
+
+def pad_limits(lims: tuple[float, float], pad: float) -> tuple[float, float]:
+    min_val, max_val = lims
+    pad_amt = 0.5 * pad * (max_val - min_val)
+    return (min_val - pad_amt, max_val + pad_amt)
 
 
 def _start_timer(msg: str) -> float:
@@ -125,111 +166,128 @@ def _stop_timer(start_time: float):
 
 
 def analyze(
-    path,
-    config,
+    amisc_dir,
     datasets,
-    plot_map=False,
     plot_corner=False,
     plot_bands=False,
     plot_traces=False,
     calc_metrics=False,
+    save_restart=False,
     proposal_cov=None,
     subsample=None,
     burn_fraction=0.0,
     limits="posterior",
+    output_dir=None,
+    secondary_simulation=None,
 ):
-    mcmc_path = Path(path) / "mcmc"
+    dir = Path(amisc_dir)
+    mcmc_path = dir / "mcmc"
     logfile = mcmc_path / "mcmc.csv"
-    plot_path = Path(path) / "mcmc_analysis"
-    os.makedirs(plot_path, exist_ok=True)
-    print("Generating plots in", plot_path)
+
+    if output_dir is None:
+        output_dir = dir / "mcmc_analysis"
+    else:
+        output_dir = Path(output_dir)
+
+    os.makedirs(output_dir, exist_ok=True)
+    print("Generating plots in", output_dir)
 
     analysis_start = time.time()
 
-    system = System.load_from_file(Path(path) / config)
+    system = io.load_system(dir)
     device_name = system['Thruster'].model_kwargs['thruster']
     device = hallmd.utils.load_device(device_name)
 
     variables, samples, logposts, accepted, ids = io.read_output_file(logfile)
-
     num_burn = math.floor(burn_fraction * len(samples))
 
-    samples_raw = np.array(samples)
-    samples = np.array(samples)[num_burn:]
-    logposts = np.array(logposts)
+    samples_raw = samples
+    samples = samples[num_burn:]
     map_ind = np.argmax(logposts)
-    accepted = np.array(accepted)[num_burn:]
+    accepted = accepted[num_burn:]
 
     num_accept = len(samples)
     tex_names = [system.inputs()[name].tex for name in variables]
 
+    sorted_vars = [system.inputs()[var] for var in sort_order]
+    variable_dict = try_sort_variables(
+        {system.inputs()[name]: samples[:, i] for (i, name) in enumerate(variables)}, sorted_vars
+    )
+
     if num_accept > 10:
-        start = _start_timer("Computing map, mean, median, and covariance")
-        map = samples_raw[map_ind, :]
-        mean, median = _mean_and_median(samples)
-        header = ",".join(variables)
-        np.savetxt(plot_path / "map.csv", np.matrix(map), header=header, delimiter=',')
-        np.savetxt(plot_path / "mean.csv", np.matrix(mean), header=header, delimiter=',')
-        np.savetxt(plot_path / "median.csv", np.matrix(median), header=header, delimiter=',')
+        if save_restart:
+            start = _start_timer("Computing map, mean, median, and covariance")
+            map = samples_raw[map_ind, :]
+            mean, median = _mean_and_median(samples)
+            header = ",".join(variables)
+            np.savetxt(output_dir / "map.csv", np.matrix(map), header=header, delimiter=',')
+            np.savetxt(output_dir / "mean.csv", np.matrix(mean), header=header, delimiter=',')
+            np.savetxt(output_dir / "median.csv", np.matrix(median), header=header, delimiter=',')
 
-        # Save covariance passed to this function if present, otherwise compute empirical covariance and save it
-        if proposal_cov is not None:
-            np.savetxt(plot_path / "cov.csv", proposal_cov, header=header, delimiter=',')
-        else:
-            empirical_covariance = np.cov(samples.T)
-            np.savetxt(plot_path / "cov.csv", empirical_covariance, header=header, delimiter=',')
+            # Save covariance passed to this function if present, otherwise compute empirical covariance and save it
+            if proposal_cov is not None:
+                np.savetxt(output_dir / "cov.csv", proposal_cov, header=header, delimiter=',')
+            else:
+                empirical_covariance = np.cov(samples.T)
+                np.savetxt(output_dir / "cov.csv", empirical_covariance, header=header, delimiter=',')
 
-        # Save last sample. Combined with proposal covariance, this lets us restart the MCMC process
-        last = samples_raw[-1, :]
-        np.savetxt(plot_path / "lastsample.csv", np.matrix(last), header=header, delimiter=",")
+            # Save last sample. Combined with proposal covariance, this lets us restart the MCMC process
+            last = samples_raw[-1, :]
+            np.savetxt(output_dir / "lastsample.csv", np.matrix(last), header=header, delimiter=",")
 
-        _stop_timer(start)
+            _stop_timer(start)
 
         if plot_traces:
             start = _start_timer("Plotting traces")
-            _plot_traces(tex_names, samples_raw, plot_path)
+            _plot_traces(tex_names, samples_raw, output_dir)
             _stop_timer(start)
 
         if plot_corner:
+            start = _start_timer("Plotting corner plot")
+            # the corner plot sometimes fails early on if there aren't enough distinct samples
             try:
-                start = _start_timer("Plotting corner plot")
-                _plot_corner(samples, tex_names, plot_path, map=map, mean=mean, median=median)
-                _stop_timer(start)
+                make_componentwise_cornerplots(variable_dict, system, output_dir)
             except ValueError:
-                # the corner plot sometimes fails early on if there aren't enough distinct samples
                 pass
+            _stop_timer(start)
 
-    start = _start_timer("Loading data")
-    data = hallmd.data.load(hallmd.data.get_thruster(device_name).datasets_from_names(datasets))
-    channel_length = device['geometry']['channel_length']
-    map = _load_sim_results([ids[map_ind]], mcmc_path)
-    if map:
-        map = map[0]['output']
-    else:
-        map = None
+        # Compute parameter statistics and dump to a LaTeX table
+        compute_sample_statistics(variable_dict, output_dir)
 
-    _stop_timer(start)
-
-    if subsample is not None and len(samples) > subsample:
-        print(f"Subsampling {subsample} samples.")
-        sample_inds = np.random.randint(low=num_burn, high=len(ids) - 1, size=subsample, dtype=int)
-    else:
-        sample_inds = np.arange(num_burn, len(ids))
-
-    # Plot bands
     if plot_bands or calc_metrics:
-        start = _start_timer("Loading results")
-        results_all = _load_sim_results(np.array(ids)[sample_inds], mcmc_path)
-        outputs = [res['output'] for res in results_all]
+        start = _start_timer("Loading data")
+        data = hallmd.data.load(hallmd.data.get_thruster(device_name).datasets_from_names(datasets))
+        channel_length = device['geometry']['channel_length']
+
         _stop_timer(start)
 
-        _map = map if plot_map else None
+        if subsample is not None and len(samples) > subsample:
+            print(f"Subsampling {subsample} samples.")
+            sample_inds = np.random.randint(low=num_burn, high=len(ids) - 1, size=subsample, dtype=int)
+        else:
+            sample_inds = np.arange(num_burn, len(ids))
+
+        # Plot bands
+
+        # Load results from secondary simulation to plot behind first (used for aleatoric and epistemic on same plot)
+        results_secondary = None
+        if secondary_simulation is not None:
+            secondary_dir = Path(secondary_simulation) / "mcmc"
+            _, _, _, _, ids_2 = io.read_output_file(secondary_dir / "mcmc.csv")
+            results_secondary = _load_sim_results(np.array(ids_2), secondary_dir)
+            if device_name.casefold() == "h9":
+                results_secondary = _merge_opconds(results_secondary, data)
+
+        # Load results from primary simulation
+        outputs = _load_sim_results(np.array(ids)[sample_inds], mcmc_path)
+        if device_name.casefold() == "h9":
+            outputs = _merge_opconds(outputs, data)
 
         metrics_out = None
 
         if calc_metrics:
             start = _start_timer("Calculating metrics")
-            metrics = {k: [] for k in likelihood_and_distances(data, map)[1]}
+            metrics = {k: [] for k in likelihood_and_distances(data, outputs[0])[1]}
 
             for output in outputs:
                 _dist = likelihood_and_distances(data, output)[1]
@@ -249,16 +307,16 @@ def analyze(
             thrust_median = _plot_global_quantity(
                 data,
                 outputs,
-                plot_path,
+                output_dir,
                 "thrust_N",
                 "Thrust [mN]",
-                map=_map,
                 scale=1000,
                 lims=thrust_lims,
                 xscale="log",
+                secondary=results_secondary,
             )
 
-            _plot_prediction_accuracy(data, outputs, plot_path, "thrust_N", "Thrust [mN]", scale=1000, lims=thrust_lims)
+            analyze_global_quantity(data, outputs, output_dir, "thrust_N", scale=1000)
 
             _stop_timer(start)
 
@@ -266,17 +324,15 @@ def analyze(
             current_median = _plot_global_quantity(
                 data,
                 outputs,
-                plot_path,
+                output_dir,
                 "discharge_current_A",
                 "Discharge current [A]",
-                map=_map,
                 lims=current_lims,
                 xscale="log",
+                secondary=results_secondary,
             )
 
-            _plot_prediction_accuracy(
-                data, outputs, plot_path, "discharge_current_A", "Discharge current [A]", lims=current_lims
-            )
+            analyze_global_quantity(data, outputs, output_dir, "discharge_current_A")
 
             _stop_timer(start)
 
@@ -284,40 +340,45 @@ def analyze(
             vcc_median = _plot_global_quantity(
                 data,
                 outputs,
-                plot_path,
+                output_dir,
                 "cathode_coupling_voltage_V",
                 "Cathode coupling voltage [V]",
-                map=_map,
                 lims=vcc_lims,
                 xscale="log",
+                secondary=results_secondary,
             )
 
-            _plot_prediction_accuracy(
-                data, outputs, plot_path, "cathode_coupling_voltage_V", "Cathode coupling voltage [V]", lims=vcc_lims
-            )
+            analyze_global_quantity(data, outputs, output_dir, "cathode_coupling_voltage_V")
             _stop_timer(start)
 
             start = _start_timer("Plotting ion velocity")
-            uion_median = _plot_ion_vel(
+
+            uion_median, uion_pressures = _plot_ion_vel(
                 data,
                 outputs,
-                plot_path,
-                map=_map,
+                output_dir,
                 xlabel="Axial coordinate [channel lengths]",
                 ylabel="Ion velocity [km/s]",
                 xscalefactor=1 / channel_length,
                 yscalefactor=1 / 1000,
                 thruster=device_name,
+                secondary=results_secondary,
             )
             _stop_timer(start)
+
+            if uion_median:
+                start = _start_timer("Plotting anom. transport")
+                plot_anom(variable_dict, uion_pressures, output_dir)
+                _stop_timer(start)
 
             start = _start_timer("Plotting ion current density")
             jion_median = _plot_ion_cur(
                 data,
                 outputs,
-                plot_path,
+                output_dir,
                 xlabel="Angle [degrees]",
                 ylabel="Ion current density [A/m$^2$]",
+                secondary=results_secondary,
             )
             _stop_timer(start)
 
@@ -327,8 +388,8 @@ def analyze(
                         thrust_N=thrust_median[opcond] if thrust_median is not None else None,
                         discharge_current_A=current_median[opcond] if current_median is not None else None,
                         cathode_coupling_voltage_V=vcc_median[opcond] if vcc_median is not None else None,
-                        ion_velocity=uion_median[opcond] if uion_median is not None else None,
-                        ion_current_sweeps=jion_median[opcond] if jion_median is not None else None,
+                        ion_velocity=uion_median[opcond] if uion_median else None,
+                        ion_current_sweeps=jion_median[opcond] if jion_median else None,
                     )
                     for opcond in data
                 }
@@ -343,8 +404,8 @@ def analyze(
 
         if calc_metrics:
             assert metrics_out is not None
-
-            with open(plot_path / "metrics.json", "w") as fd:
+            metric_file = output_dir / "metrics.json"
+            with open(metric_file, "w") as fd:
                 json.dump(metrics_out, fd, indent=4)
 
     plt.close('all')
@@ -398,25 +459,33 @@ def _extract_quantity(data: Dataset, quantity: str, sorted=False):
         return pressure, qty
 
 
-def save_figure(fig, out_path: os.PathLike, plot_name):
-    fig.tight_layout()
+def save_figure(
+    fig, out_path: os.PathLike, plot_name: str, tight_layout: bool = True, extensions: Optional[list[str]] = None
+) -> list[Path]:
+    os.makedirs(out_path, exist_ok=True)
+
+    if tight_layout:
+        fig.tight_layout()
 
     if plot_name.endswith(".png"):
         _plot_name_noext = plot_name[0:-4]
     else:
         _plot_name_noext = plot_name
 
-    for extension in ["png", "pdf"]:
-        fig.savefig(Path(out_path) / (_plot_name_noext + "." + extension))
+    if extensions is None:
+        extensions = ["png", "pdf"]
+
+    paths = [Path(out_path) / (_plot_name_noext + "." + extension) for extension in extensions]
+    for path in paths:
+        fig.savefig(path)
+
     plt.close(fig)
+
+    return paths
 
 
 def _plot_ion_cur(
-    data: Dataset,
-    sim: list[Dataset],
-    plot_path: Path,
-    xlabel: str,
-    ylabel: str,
+    data: Dataset, sim: list[Dataset], plot_path: Path, xlabel: str, ylabel: str, secondary: list[Dataset] | None = None
 ):
     qty_name = "ion_current_density"
     out_path = plot_path / qty_name
@@ -437,6 +506,7 @@ def _plot_ion_cur(
 
     # for each pressure, plot predictions at all radii
     jion_quantiles = {}
+    secondary_quantiles = {}
     medians = {}
     colors = ["red", "lightorange", "green", "darkblue"]
     markerstyles = ["o", "v", "^", ">"]
@@ -450,6 +520,10 @@ def _plot_ion_cur(
             continue
 
         jion_quantiles[opcond] = []
+
+        if secondary:
+            secondary_quantiles[opcond] = []
+
         medians[opcond] = []
 
         fig, ax = plt.subplots(dpi=200, figsize=(7, 6))
@@ -478,14 +552,18 @@ def _plot_ion_cur(
 
             jion_sim = [_sim[opcond].ion_current_sweeps[j].current_density_A_m2.mean for _sim in sim]
             qt = np.quantile(jion_sim, q=QUANTILES, axis=0)
+            jion_quantiles[opcond].append(qt)
+
+            if secondary:
+                jion_2 = [_sim[opcond].ion_current_sweeps[j].current_density_A_m2.mean for _sim in secondary]
+                qt_2 = np.quantile(jion_2, q=QUANTILES, axis=0)
+                secondary_quantiles[opcond].append(qt_2)
 
             # Plot median prediction
             h_sim = ax.plot(angles_sim, qt[2], color=color, linestyle=linestyles[j])[0]
 
             handles_data.append((h_sim, h_data))
             labels_data.append(f"$r =$ {sweep.radius_m:.2f} m")
-
-            jion_quantiles[opcond].append(qt)
 
             medians[opcond].append(
                 hallmd.data.CurrentDensitySweep(
@@ -563,8 +641,20 @@ def _plot_ion_cur(
                     handles_data.append((h_sim, h_data))
                     labels_data.append(f"{pressure_str}")
                 else:
-                    h_model = _plot_median_and_uncertainty(axis, angles_sim, qt)
-                    ax_solo.legend([h_data, h_model], ["Data", "Model (median + 90\\% CI)"], loc='upper right')
+                    h_model = plot_median_and_uncertainty(axis, angles_sim, qt)
+
+                    handles_solo = [h_data, h_model]
+                    label_model = f"Median + 90\\% CI{'epistemic' if secondary else ''}"
+                    labels_solo = ["Data", label_model]
+
+                    # Plot secondary sim behind primary sim
+                    if secondary_quantiles:
+                        qt_2 = secondary_quantiles[opcond][i]
+                        h_aleatoric = plot_aleatoric(axis, angles_sim, qt, qt_2, scale='log')
+                        handles_solo.append(h_aleatoric)
+                        labels_solo.append("90\\% CI (epistemic + aleatoric)")
+
+                    ax_solo.legend(handles_solo, labels_solo, loc='upper right')
 
             save_figure(fig_solo, subdir, plot_name)
 
@@ -576,38 +666,42 @@ def _plot_ion_cur(
 
 def _plot_ion_vel(
     data: Dataset,
-    sim: list[Dataset],
+    sims: list[Dataset],
     plot_path: Path,
     xlabel: str,
     ylabel: str,
     xscalefactor: float,
     yscalefactor: float,
     thruster: str,
-    map: Dataset | None = None,
-):
+    secondary: list[Dataset] | None = None,
+) -> tuple[dict[hallmd.data.OperatingCondition, hallmd.data.IonVelocityData], list[float]]:
     qty_name = "ion_velocity"
-    out_path = plot_path / qty_name
-    os.makedirs(out_path, exist_ok=True)
 
     xlim = (0.0, 2.5)
 
     mask = np.array([getattr(x, qty_name) is not None for x in data.values()])
     opconds = [opcond for (i, opcond) in enumerate(data.keys()) if mask[i]]
 
-    if len(opconds) == 0:
-        return
-
     # Extract simulation coords and data
     medians = {}
 
-    # Individual plots for each pressure
-    for i, opcond in enumerate(data.keys()):
-        sim_0 = sim[0][opcond].ion_velocity
+    if len(opconds) == 0:
+        return {}, []
+
+    out_path = plot_path / qty_name
+    os.makedirs(out_path, exist_ok=True)
+
+    def _load_data(sims: list[Dataset], opcond: hallmd.data.OperatingCondition) -> tuple[np.ndarray, np.ndarray]:
+        sim_0 = sims[0][opcond].ion_velocity
         assert sim_0 is not None
         x_sim = sim_0.axial_distance_m * xscalefactor
-        y_sim = np.array([_sim[opcond].ion_velocity.velocity_m_s.mean * yscalefactor for _sim in sim])
-
+        y_sim = np.array([sim[opcond].ion_velocity.velocity_m_s.mean * yscalefactor for sim in sims])
         qt = np.quantile(y_sim, q=QUANTILES, axis=0)
+        return x_sim, qt
+
+    # Individual plots for each pressure
+    for i, opcond in enumerate(data.keys()):
+        x_sim, qt = _load_data(sims, opcond)
 
         # save medians for output
         medians[opcond] = hallmd.data.IonVelocityData(
@@ -641,21 +735,22 @@ def _plot_ion_vel(
                 fmt='o',
                 color="black",
                 zorder=10,
+                *[],
                 **data_kwargs,
             )
             handles.append(h_data)
             labels.append("Data")
 
         # Plot median and 90% credible intervals
-        handles.append(_plot_median_and_uncertainty(ax, x_sim, qt))
+        handles.append(plot_median_and_uncertainty(ax, x_sim, qt))
+        labels += [f"Median and 90\\% CI{' (epistemic)' if secondary else ''}"]
 
-        labels += ["Model (median and 90\\% CI)"]
-
-        # Plot best sample
-        if map is not None and (map_data := map[opcond].ion_velocity) is not None:
-            x_map = map_data.axial_distance_m * xscalefactor
-            y_map = map_data.velocity_m_s.mean * yscalefactor
-            ax.plot(x_map, y_map, label="Best sample", color='red')
+        # Plot secondary sim behind primary sim
+        if secondary:
+            x2, qt_2 = _load_data(secondary, opcond)
+            handle = plot_aleatoric(ax, x2, qt, qt_2)
+            handles.append(handle)
+            labels.append("90\\% CI (epistemic + aleatoric)")
 
         plot_name = f"{qty_name}_p={pressure_uTorr:05.2f}uTorr"
         ax.legend(handles, labels, loc='lower right')
@@ -696,6 +791,8 @@ def _plot_ion_vel(
     else:
         inds = list(range(len(opconds)))
 
+    pressures = [opconds[ind].background_pressure_torr for ind in inds]
+
     ymin = np.inf
     ymax = -np.inf
 
@@ -734,7 +831,7 @@ def _plot_ion_vel(
                     labels.append(f"${pressure_uTorr}$ $\\mu$Torr")
                     handles.append(handle)
 
-            sim_0 = sim[0][opcond].ion_velocity
+            sim_0 = sims[0][opcond].ion_velocity
             assert sim_0 is not None
             x_sim = sim_0.axial_distance_m * xscalefactor
             for iax, axis in enumerate(axes):
@@ -766,25 +863,72 @@ def _plot_ion_vel(
 
     ax.legend(handles, labels, loc=legend_loc)
     save_figure(fig, out_path, plot_name)
-    return medians
+    return medians, pressures
 
 
-def _plot_prediction_accuracy(
+def add_tag(name: str, tag: str):
+    return name + (f"_{tag}" if tag else "")
+
+
+@dataclass
+class GlobalQuantityData:
+    quantity: str
+    pressure: np.ndarray
+    x_mean: np.ndarray
+    x_err: np.ndarray
+    y_median: np.ndarray
+    y_err_lo: np.ndarray
+    y_err_hi: np.ndarray
+
+
+def load_global_quantity(folder: PathLike, quantity: str) -> GlobalQuantityData | None:
+    file = Path(folder) / (quantity + ".csv")
+
+    if not file.exists():
+        return None
+
+    data = np.genfromtxt(file, delimiter=",")
+    num_cols = data.shape[1]
+    expected_cols = 6
+    if num_cols != expected_cols:
+        raise ValueError(f"Expected {expected_cols} columns in data file '{file}' but found {num_cols}.")
+
+    return GlobalQuantityData(
+        quantity,
+        pressure=data[:, 0],
+        x_mean=data[:, 1],
+        x_err=data[:, 2],
+        y_median=data[:, 3],
+        y_err_lo=data[:, 4],
+        y_err_hi=data[:, 5],
+    )
+
+
+def save_global_quantity(data: GlobalQuantityData, output_dir: Path) -> Path:
+    out_header = "pressure[Torr],data mean,data err,sim 0.5 percentile,sim 0.05 percentile, sim 0.95 percentile"
+    out_data = np.vstack(
+        [
+            data.pressure,
+            data.x_mean,
+            data.x_err,
+            data.y_median,
+            data.y_median - data.y_err_lo,
+            data.y_median + data.y_err_hi,
+        ]
+    ).T
+    out_file = output_dir / (data.quantity + ".csv")
+    np.savetxt(out_file, out_data, delimiter=",", header=out_header)
+    return output_dir
+
+
+def analyze_global_quantity(
     data: Dataset,
     sim: list[Dataset],
-    plot_path: Path,
+    output_dir: Path,
     quantity: str,
-    full_name: str,
     scale: float = 1,
-    lims: Optional[tuple[float, float]] = None,
 ):
-    lowercase_first_letter = lambda s: s[:1].casefold() + s[1:] if s else ""
-
-    name_lowercase = lowercase_first_letter(full_name)
-    fig, ax = plt.subplots(1, 1, dpi=200)
-    ax.set_xlabel(f"Experimental {name_lowercase}")
-    ax.set_ylabel(f"Predicted {name_lowercase}")
-
+    pressure = []
     x_mean = []
     x_err = []
     y_med = []
@@ -794,11 +938,14 @@ def _plot_prediction_accuracy(
     for opcond in data.keys():
         qty_data = getattr(data[opcond], quantity)
 
-        if qty_data is None:
-            continue
+        pressure.append(opcond.background_pressure_torr)
 
-        x_mean.append(qty_data.mean * scale)
-        x_err.append(2 * qty_data.std * scale)
+        if qty_data is None:
+            x_mean.append(np.nan)
+            x_err.append(np.nan)
+        else:
+            x_mean.append(qty_data.mean * scale)
+            x_err.append(2 * qty_data.std * scale)
 
         qty_sim = np.array([getattr(s[opcond], quantity).mean * scale for s in sim])
         qt = np.quantile(qty_sim, QUANTILES, axis=0)
@@ -813,43 +960,20 @@ def _plot_prediction_accuracy(
     x_mean = np.array(x_mean)
     x_err = np.array(x_err)
     y_med = np.array(y_med)
-    y_err = [np.array(y_err_lo), np.array(y_err_hi)]
 
-    # build matrix to save to file so we can plot multiple runs on the sample plot
-    out_header = "data mean,data err,sim 0.5 percentile,sim 0.05 percentile, sim 0.95 percentile"
-    out_data = np.vstack([x_mean, x_err, y_med, y_err_lo, y_err_hi]).T
-    np.savetxt(plot_path / f"{quantity}.csv", out_data, delimiter=",", header=out_header)
+    qty_data = GlobalQuantityData(
+        quantity,
+        np.array(pressure),
+        np.array(x_mean),
+        np.array(x_err),
+        np.array(y_med),
+        np.array(y_err_lo),
+        np.array(y_err_hi),
+    )
 
-    color = "black"
-    ax.errorbar(x_mean, y_med, xerr=x_err, yerr=y_err, fmt="none", color=color, markersize=3, alpha=0.5, zorder=4)
-    ax.scatter(x_mean, y_med, color=color, linewidth=0, s=10, zorder=5)
+    save_global_quantity(qty_data, output_dir)
 
-    # plot y = x line
-    if lims is None:
-        min_val = min(np.min(x_mean), np.min(y_med - y_err_lo))
-        max_val = max(np.max(x_mean), np.max(y_med + y_err_hi))
-        diff = max_val - min_val
-        pad = 0.05 * diff
-        max_val += pad
-        min_val -= pad
-    else:
-        min_val, max_val = lims
-
-    min_x = np.min(x_mean - x_err)
-    max_x = np.max(x_mean + x_err)
-    diff_x = max_x - min_x
-    pad = 0.05 * diff_x
-    max_x += pad
-    min_x -= pad
-
-    ax.set_xlim(min_x, max_x)
-    ax.set_ylim(min_val, max_val)
-
-    line_x = np.array([min_x, max_x])
-    ax.plot(line_x, line_x, color="red", zorder=4)
-
-    save_figure(fig, plot_path, f"{quantity}_prediction")
-    plt.close(fig)
+    return qty_data
 
 
 def _plot_global_quantity(
@@ -858,29 +982,31 @@ def _plot_global_quantity(
     plot_path: Path,
     quantity: str,
     full_name: str,
-    map: Dataset | None = None,
     scale: float = 1,
     xscale: str = "linear",
+    secondary: list[Dataset] | None = None,
     lims=None,
 ):
     xlabel = "Background pressure [Torr]"
     pressure_data, qty_data = _extract_quantity(data, quantity)
     pressure_data /= 1e6
-
     qty_data_mean = np.array([x.mean for x in qty_data]) * scale
     qty_data_std = np.array([x.std for x in qty_data]) * scale
 
-    mask_sim = np.array([getattr(x, quantity) is not None for x in sim[0].values()])
-    pressure_sim = np.array([opcond.background_pressure_torr for opcond in sim[0].keys()])[mask_sim]
-    qty_sim = np.array(
-        [[getattr(x, quantity).mean * scale for i, x in enumerate(_sim.values()) if mask_sim[i]] for _sim in sim]
-    )
+    def _load_quantity(sim: list[Dataset], quantity: str):
+        mask = np.array([getattr(x, quantity) is not None for x in sim[0].values()])
+        pressure = np.array([opcond.background_pressure_torr for opcond in sim[0].keys()])[mask]
+        qty = np.array(
+            [[getattr(x, quantity).mean * scale for i, x in enumerate(_sim.values()) if mask[i]] for _sim in sim]
+        )
+        sortperm = np.argsort(pressure)
+        pressure = pressure[sortperm]
+        return pressure, qty, sortperm
+
+    pressure_sim, qty_sim, sortperm_sim = _load_quantity(sim, quantity)
 
     if len(qty_data) == 0 and len(qty_sim) == 0:
         return
-
-    sortperm_sim = np.argsort(pressure_sim)
-    pressure_sim = pressure_sim[sortperm_sim]
 
     fig, ax = plt.subplots(dpi=200, figsize=(7, 6))
     if lims is not None:
@@ -897,34 +1023,45 @@ def _plot_global_quantity(
     handles = []
     labels = []
 
-    if len(qty_data) > 0:
+    if qty_data.size > 0:
         handles.append(
-            ax.errorbar(pressure_data, qty_data_mean, yerr=2 * qty_data_std, color="black", fmt='o', markersize=5)
+            ax.errorbar(
+                pressure_data, qty_data_mean, yerr=2 * qty_data_std, color="black", fmt='o', markersize=5, zorder=10
+            )
         )
         labels.append("Data")
 
     median = None
-    if len(qty_sim) > 0:
+
+    if qty_sim.size > 0:
+        # Sort quantiles by pressure for plotting
         qt = np.quantile(qty_sim, QUANTILES, axis=0)
         median = {o: hallmd.data.Measurement(q / scale, np.float64(np.nan)) for (o, q) in zip(data.keys(), qt[2])}
 
-        # Sort quantiles by pressure for plotting
         qt = [q[sortperm_sim] for q in qt]
-        handles.append(_plot_median_and_uncertainty(ax, pressure_sim, qt))
-        labels.append("Model")
 
-        if map is not None:
-            pressure_map, qty_map = _extract_quantity(map, quantity)
-            qty_map_mean = np.array([x.mean * scale for x in qty_map])
-            ax.scatter(pressure_map, qty_map_mean, s=64, marker='x', color='red', label="Best sample", zorder=9)
+        h_unc, h_median = plot_median_and_uncertainty(ax, pressure_sim, qt, zorder=4)
+        handles.append((h_median, h_unc))
+        labels.append(f"Median and 90\\% CI{' (epstemic)' if secondary else ''}")
 
-    ax.legend(handles, labels, loc='upper left')
+        # Plot secondary sim (aleatoric uncertainty) behind primary sim
+        if secondary:
+            pressure_2, qty_2, sortperm_2 = _load_quantity(secondary, quantity)
+            qt_2 = np.quantile(qty_2, QUANTILES, axis=0)
+            qt_2 = [q[sortperm_2] for q in qt_2]
+
+            handle = plot_aleatoric(ax, pressure_2, qt, qt_2)
+            handles.append(handle)
+            labels.append("90\\% CI (epistemic + aleatoric)")
+
+    ax.legend(handles, labels)
     save_figure(fig, plot_path, f"{quantity}_pressure_bands")
 
     return median
 
 
 def _load_sim_results(ids, mcmc_path: Path) -> list[dict]:
+    start = _start_timer(f"Loading results from {str(mcmc_path)}")
     data = []
     for id in ids:
         amisc_path = mcmc_path / id
@@ -944,13 +1081,65 @@ def _load_sim_results(ids, mcmc_path: Path) -> list[dict]:
                 print(f"{amisc_path=}, {id=}")
             data.append(ds)
 
+    data = [d['output'] for d in data]
+    _stop_timer(start)
+
     return data
 
 
-def _plot_median_and_uncertainty(ax, x, qt):
-    h_uncertainty = ax.fill_between(x, qt[0], qt[-1], facecolor=COLORS["blue"], zorder=0, alpha=0.25)
-    h_median = ax.plot(x, qt[2], color=COLORS["darkblue"])
+def _merge_opconds(sim: list[dict], data: Dataset) -> list[dict]:
+    """
+    We changed the input mass flow rate for the H9 to fix a bug, but that means the sim mass flow rates no longer
+    match up with the data. This function fixes that by finding the conditions with the same pressures as the data.
+    """
+
+    sim_to_data = {}
+
+    for sim_opcond in sim[0].keys():
+        for data_opcond in data.keys():
+            if sim_opcond.background_pressure_torr == data_opcond.background_pressure_torr:
+                sim_to_data[sim_opcond] = data_opcond
+                break
+
+    return [{sim_to_data[k]: v for (k, v) in s.items()} for s in sim]
+
+
+def plot_median_and_uncertainty(
+    ax, x, qt, alpha=0.25, lightcolor=COLORS["blue"], darkcolor=COLORS["darkblue"], linestyle='-', zorder=2
+):
+    h_uncertainty = ax.fill_between(x, qt[0], qt[-1], facecolor=lightcolor, zorder=zorder, alpha=alpha)
+    h_median = ax.plot(x, qt[2], color=darkcolor, linestyle=linestyle, zorder=zorder + 1)
     return h_uncertainty, h_median[0]
+
+
+def plot_aleatoric(ax, x, qt_epi, qt_al, alpha=0.75, color=COLORS["lightred"], zorder=2, scale='linear'):
+    # Pad aleatoric + epistemic uncertainty out to be slightly greater than or equal to epistemic
+    # This is required as sometimes, due to sampling artifacts, the combined uncertainty may be less
+    # than the epistemic uncertainty alone
+
+    pad_frac = 0.025
+    if scale == 'linear':
+        pad_amt = pad_frac * np.max(qt_epi[-1] - qt_epi[0])
+    elif scale == 'log':
+        pad_amt = pad_frac * (qt_epi[-1] - qt_epi[0])
+    else:
+        raise ValueError("Invalid scale for plot_aleatoric. Pick linear or log.")
+
+    aleatoric_args = dict(facecolor=color, zorder=zorder, alpha=alpha)
+    pad_lo = qt_epi[0] - pad_amt
+    pad_hi = qt_epi[-1] + pad_amt
+    aleatoric_lo = qt_al[0]
+    aleatoric_hi = qt_al[-1]
+
+    lo_inds = pad_lo < aleatoric_lo
+    hi_inds = pad_hi > aleatoric_hi
+
+    aleatoric_lo[lo_inds] = pad_lo[lo_inds]
+    aleatoric_hi[hi_inds] = pad_hi[hi_inds]
+
+    ax.fill_between(x, qt_epi[-1], aleatoric_hi, *[], **aleatoric_args)
+    handle = ax.fill_between(x, aleatoric_lo, qt_epi[0], *[], **aleatoric_args)
+    return handle
 
 
 def _plot_traces(names, samples, dir: Path = Path(".")):
@@ -995,100 +1184,276 @@ def _plot_traces(names, samples, dir: Path = Path(".")):
     return
 
 
-def _plot_corner(
-    samples: np.ndarray,
-    var_names: list[str],
-    dir: Path = Path("."),
-    map: np.ndarray | None = None,
-    mean: np.ndarray | None = None,
-    median: np.ndarray | None = None,
-) -> tuple[Figure, Axes]:
-    fontsize = 12
-    num_vars = len(var_names)
-    size = 3 * num_vars
-    fig, axes = plt.subplots(num_vars, num_vars, figsize=(size, size))
+def make_componentwise_cornerplots(samples: dict[Variable, np.ndarray], system: System, output_dir: Path):
+    component_vars = split_vars_by_components(samples, system)
 
-    lims = [_determine_limits(samples[:, i]) for i in range(num_vars)]
+    # Plot individual corner plots per-component
+    for comp_name, var_dict in component_vars.items():
+        make_cornerplot(var_dict, output_dir, comp_name.casefold())
 
-    map_color = "red"
-    mean_color = "orange"
-    median_color = "pink"
 
-    for j, row in enumerate(axes):
-        for i, ax in enumerate(row):
-            if i > j:
-                ax.set_axis_off()
+def make_cornerplot(samples: dict[Variable, np.ndarray], output_dir: Path, plot_name: str = ""):
+    num_vars = len(samples.keys())
+    subfig_size = 2.0
+    rows = num_vars
+
+    fig, axes = plt.subplots(
+        rows,
+        rows,
+        dpi=200,
+        figsize=(rows * subfig_size, rows * subfig_size),
+        layout="constrained",
+    )
+
+    limits = [pad_limits((np.min(samples), np.max(samples)), 0.2) for samples in samples.values()]
+
+    for irow, rowvar in enumerate(samples.keys()):
+        for icol, colvar in enumerate(samples.keys()):
+            axis = axes[irow, icol]
+            if irow < icol:
+                axis.set_visible(False)
                 continue
-            elif i == j:
-                _ax_hist1d(ax, samples[:, i], lims[i])
-                ax.set_yticks([])
 
-                if mean is not None:
-                    ax.axvline(mean[i], color=mean_color, linewidth=2)
+            axis.grid(False)
 
-                if median is not None:
-                    ax.axvline(median[i], color=median_color, linewidth=2)
+            if irow == rows - 1:
+                axis.set_xlabel(colvar.tex)
+            else:
+                axis.set_xticklabels([])
 
-                if map is not None:
-                    ax.axvline(map[i], color=map_color, linewidth=2)
+            if icol == 0 and irow > 0:
+                axis.set_ylabel(rowvar.tex)
+            else:
+                axis.set_yticklabels([])
 
-                if j == num_vars - 1:
-                    ax.set_xlabel(var_names[i], fontsize=fontsize)
-                else:
-                    ax.set_xticklabels([])
+            axis.set_xlim(limits[icol])
 
-            elif i < j:
-                x = samples[:, i]
-                y = samples[:, j]
-                nbins_x = _num_bins(x, lims[i])
-                nbins_y = _num_bins(y, lims[j])
-                ax.hist2d(samples[:, i], samples[:, j], bins=[nbins_x, nbins_y], range=[lims[i], lims[j]])
+            if irow == icol:
+                # 1D histogram - kernel density estimate
+                _axis_hist_1D(axis, samples[colvar], limits[icol])
+                axis.set_yticks([])
+                axis.spines['top'].set_visible(False)
+                axis.spines['right'].set_visible(False)
+                axis.spines['left'].set_visible(False)
+                axis.set_ylim(bottom=0)
+                continue
+            else:
+                axis.hexbin(samples[colvar], samples[rowvar], gridsize=12, mincnt=1)
+                axis.set_ylim(limits[irow])
 
-                if mean is not None:
-                    ax.scatter([mean[i]], [mean[j]], color=mean_color)
+    if plot_name:
+        plot_name = "corner_" + plot_name
+    else:
+        plot_name = "corner"
 
-                if median is not None:
-                    ax.scatter([median[i]], [median[j]], color=median_color)
-
-                if map is not None:
-                    ax.scatter([map[i]], [map[j]], color=map_color)
-
-                if i == 0:
-                    ax.set_ylabel(var_names[j], fontsize=fontsize)
-                else:
-                    ax.set_yticklabels([])
-
-                if j == num_vars - 1:
-                    ax.set_xlabel(var_names[i], fontsize=fontsize)
-                else:
-                    ax.set_xticklabels([])
-
-            ax.tick_params(axis="x", rotation=-45)
-
-    plt.tight_layout()
-    fig.savefig(dir / "corner.png", dpi=100)
-    plt.close(fig)
-    return fig, axes
+    save_figure(fig, output_dir, plot_name, tight_layout=False)
 
 
-def _num_bins(samples: np.ndarray, lims: tuple[float, float]) -> int:
-    """Calculate optimal histogram bin count using Friedman-Draconis rule"""
-    q3 = np.percentile(samples, 75)
-    q1 = np.percentile(samples, 25)
-    iqr = q3 - q1
-
-    bin_width = 2 * iqr / np.cbrt(samples.size)
-    num_bins = np.ceil((lims[1] - lims[0]) / bin_width).astype(int)
-    return num_bins
+def _axis_hist_1D(axis: Axes, samples: np.ndarray, lims: tuple[float, float], N: int = 100):
+    kernel = scipy.stats.gaussian_kde(samples)
+    xvals = np.linspace(lims[0], lims[1], N)
+    probs = kernel(xvals)
+    axis.fill_between(xvals, np.zeros(N), probs, color=COLORS["lightblue"])
+    axis.plot(xvals, probs, linewidth=3, color=COLORS["blue"])
+    axis.set_xlim(lims)
 
 
-def _ax_hist1d(ax: Axes, samples: np.ndarray, xlims: tuple[float, float]) -> None:
-    ax.set_xlim(xlims)
-    nbins = _num_bins(samples, xlims)
-    ax.hist(samples, nbins, color="lightgrey", density=True)
+def split_vars_by_components(vars: dict[Variable, np.ndarray], system: System) -> dict[str, dict[Variable, np.ndarray]]:
+    return {
+        comp.name: {
+            v: samples
+            for (v, samples) in vars.items()
+            if v in comp.inputs and not (comp.name == "Thruster" and v.name == "T_e")
+        }
+        for comp in system.components
+    }
 
 
-def _determine_limits(x: np.ndarray) -> tuple[float, float]:
-    min = np.min(x)
-    max = np.max(x)
-    return min, max
+def compute_var_statistics(var: Variable, samples: np.ndarray):
+    quantiles = np.quantile(samples, QUANTILES)
+
+    transform_str = "None" if var.norm is None else f"{var.norm[0]}"
+
+    return {
+        "dist": f"{var.distribution}",
+        "transform": transform_str,
+        "min": np.min(samples),
+        "5%": quantiles[0],
+        "50%": quantiles[2],
+        "95%": quantiles[4],
+        "max": np.max(samples),
+        "std": np.std(samples),
+    }
+
+
+def rounded_number(x):
+    if type(x) is str:
+        if x == '':
+            x = 0
+    f = float(x)
+    if f.is_integer():
+        return int(f), True
+
+    if abs(f - round(f)) < 0.01:
+        return rounded_number(round(f))[0], True
+
+    if abs(f - round(f, ndigits=1)) < 0.001:
+        return round(f, ndigits=1), True
+    return f, False
+
+
+def format_number(x, check_pi=False):
+    f, was_rounded = rounded_number(x)
+    if was_rounded:
+        return f"{f}"
+
+    # check for multiples of pi
+    if check_pi:
+        if f > np.pi:
+            div = f / np.pi
+            if abs(div - round(div)) < 0.01:
+                return f"\\{round(div)}\\pi"
+
+        if f < np.pi:
+            # check for fractions of pi
+            fractions = [2, 3, 4, 6]
+            for frac in fractions:
+                if abs(np.pi / frac - f) < 0.01:
+                    return f"\\pi/{frac}"
+
+    return f"{f:.2f}"
+
+
+def compute_sample_statistics(samples: dict[Variable, np.ndarray], output_dir: Path):
+    output = {var.name: compute_var_statistics(var, _samples) for (var, _samples) in samples.items()}
+
+    with open(output_dir / "variable_stats.json", "w") as fd:
+        json.dump(output, fd)
+
+    cols = 8
+    col_str = f"X*{{{cols}}}{{l}}"
+    indent = "    "
+
+    def nth(n):
+        return f"${n}^{{\\text{{th}}}}$ pctile"
+
+    # Create latex table
+    latex_header = f"""\\begin{{tabularx}}{{\\textwidth}}{{{col_str}}}
+{indent}\\toprule
+{indent}\\multicolumn{{2}}{{l}}{{}} & \\multicolumn{{{cols - 2}}}{{l}}{{Posterior}} \\\\ \\cmidrule{{3-{cols}}}
+{indent}Variable & Prior & Min & {nth(5)} & {nth(50)} & {nth(95)} & Max & Std dev \\\\ \\midrule"""
+
+    notes = [
+        "Variables with the ($10^x$) notation indicate a log-uniform distribution.",
+        "The ($x$) notation indicates that the variable has been normalized by $x$.",
+    ]
+
+    note_str = "\\\\\n".join([indent + f"\\multicolumn{{{cols}}}{{l}}{{{note}}}" for note in notes])
+
+    latex_footer = f"{indent}\\bottomrule\n{note_str}\n\\end{{tabularx}}"
+
+    rows = []
+
+    for var, stats in zip(samples.keys(), output.values()):
+        var_str = f"{var.tex}"
+
+        dist = var.distribution
+
+        if isinstance(dist, distributions.LogUniform):
+            var_str += " ($10^{x}$)"
+
+        if isinstance(dist, distributions.Uniform) or isinstance(dist, distributions.LogUniform):
+            lo, hi = dist.dist_args
+            lo = format_number(var.normalize(lo), check_pi=True)
+            hi = format_number(var.normalize(hi), check_pi=True)
+            dist_str = f"$\\mathcal{{U}}({lo}, {hi})$"
+        else:
+            dist_str = ""
+
+        if var.norm is not None and isinstance(var.norm[0], transform.Linear):
+            exponent = format_number(np.log10(var.norm[0].transform_args[0]))
+            var_str += f" (\\num{{e{exponent}}})"
+
+        min_str = format_number(stats['min'])
+        max_str = format_number(stats['max'])
+        std_str = format_number(stats['std'])
+        pct_5 = format_number(stats['5%'])
+        pct_50 = format_number(stats['50%'])
+        pct_95 = format_number(stats['95%'])
+
+        cols = [var_str, dist_str, min_str, pct_5, pct_50, pct_95, max_str, std_str]
+        row_str = " & ".join(cols) + "\\\\"
+
+        rows.append(indent + row_str)
+
+    with open(output_dir / "variable_table.tex", "w") as fd:
+        print(latex_header, file=fd)
+        print("\n".join(rows), file=fd)
+        print(latex_footer, file=fd)
+
+
+def simple_pressure_shift(pressure, shift_length, slope=2.0, midpoint=25e-6):
+    ratio = pressure / midpoint
+    return -shift_length * (1 / (1 + np.exp(-slope * (ratio - 1))) - 1 / (1 + np.exp(slope)))
+
+
+def scaled_gaussian_bohm(coords, anom_scale, anom_barrier_scale, anom_center, anom_width, z_shift=0.0):
+    return anom_scale * (1 - anom_barrier_scale * np.exp(-0.5 * ((coords - z_shift - anom_center) / (anom_width)) ** 2))
+
+
+def plot_anom(samples: dict[Variable, np.ndarray], pressures: list[float], output_dir: Path):
+    var_name_dict = {v.name: s for (v, s) in samples.items()}
+    anom_scale = var_name_dict["anom_scale"]
+    anom_barrier_scale = var_name_dict["anom_barrier_scale"]
+    anom_center = var_name_dict["anom_center"]
+    anom_width = var_name_dict["anom_width"]
+    shift_length = var_name_dict["anom_shift_length"]
+
+    lightcolors = ["lightred", "lightgreen", "lightblue"]
+    darkcolors = ["red", "green", "darkblue"]
+    linestyles = ['-', '--', '-.']
+
+    if len(pressures) > 3:
+        p = pressures[:3]
+    else:
+        p = pressures
+
+    fig, axis = plt.subplots(figsize=(5, 4.5), dpi=200)
+    left = 0
+    right = 3
+    coords = np.linspace(left, right, 100)
+    axis.set_xlim(left, right)
+    axis.set_xlabel("Axial coordinate [channel lengths]")
+    axis.set_ylabel("$\\nu_{anom} / (\\omega_{ce} / 16)$")
+
+    handles = []
+    labels = []
+
+    for pressure, light, dark, style in zip(p, lightcolors, darkcolors, linestyles):
+        anoms = []
+
+        for i, (alpha, beta, z, L, dz) in enumerate(
+            zip(anom_scale, anom_barrier_scale, anom_center, anom_width, shift_length)
+        ):
+            z_shift = simple_pressure_shift(pressure, dz)
+            anoms.append(scaled_gaussian_bohm(coords, alpha, beta, z, L, z_shift=z_shift) * 16)
+
+        quantiles = np.quantile(np.array(anoms), QUANTILES, axis=0)
+
+        handles.append(
+            plot_median_and_uncertainty(
+                axis,
+                coords,
+                quantiles,
+                alpha=0.5,
+                lightcolor=COLORS[light],
+                darkcolor=COLORS[dark],
+                linestyle=style,
+            )
+        )
+
+        labels.append(f"{pressure / 1e-6:.1f} $\\mu$Torr")
+
+    axis.legend(handles, labels)
+    axis.set_ylim(bottom=0, top=2)
+    save_figure(fig, output_dir, "anom")

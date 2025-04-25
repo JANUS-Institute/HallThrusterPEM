@@ -22,14 +22,14 @@ components: !Component
         units: V
         nominal: 300
         domain: (200, 400)
-        distribution: Relative(1)
+        distribution: Relative(2)
       - name: T_e
         description: Electron temperature at cathode
         category: calibration
         tex: "$T_e$"
         units: eV
         nominal: 1.32721
-        distribution: U(1, 4)
+        distribution: U(1, 6)
       - name: V_vac
         description: Coupling voltage in vacuum
         category: calibration
@@ -43,7 +43,7 @@ components: !Component
         tex: "$P^*$"
         units: Torr
         nominal: 34.63406e-6
-        distribution: Uniform(10.0e-6, 100.0e-6)
+        distribution: Uniform(10.0e-6, 200.0e-6)
         norm: linear(1e6)
       - name: P_T
         description: Thruster to facility plasma density ratio
@@ -117,7 +117,7 @@ components: !Component
         tex: "$\\dot{m}_a$"
         units: kg/s
         nominal: 5.0e-6
-        distribution: Relative(1)
+        distribution: Relative(2)
         domain: (2.0e-6, 7.0e-6)
         norm: linear(1e6)
       - name: T_e
