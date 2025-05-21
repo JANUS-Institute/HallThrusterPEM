@@ -2,7 +2,7 @@ import os
 import shutil
 from argparse import Namespace
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Type
 
@@ -15,8 +15,9 @@ class ExecutionOptions:
     directory: Path
     max_workers: int
     fidelity: str | tuple | dict = (0, 0)
-    noise_std: float = 0.05
     sample_aleatoric: bool = False
+    noise_std: float = 0.05
+    qoi_uncertainties: dict[str, float] = field(default_factory=dict)
 
 
 def load_system_and_opts(args: Namespace) -> tuple[System, ExecutionOptions]:

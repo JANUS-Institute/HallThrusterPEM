@@ -21,9 +21,9 @@ from pem_mcmc.types import Array, Dataset, Inf, Value
 
 def _gauss_logpdf_1D(x: np.float64 | float, mean: np.float64 | float, std: np.float64 | float) -> float:
     """
-    Gaussian log-likelihood in 1D
+    Gaussian log-likelihood in 1D, minus any constant factors
     """
-    return -0.5 * (np.log(2 * np.pi * std**2) + (x - mean) ** 2 / std**2)
+    return float(-0.5 * (x - mean) ** 2 / std**2)
 
 
 def _relative_l2_norm(data: Array, observation: Array) -> float:
@@ -90,14 +90,15 @@ def _get_qoi_single_opcond(data: ThrusterData, observation: ThrusterData, field)
             return np.array([data_field.mean]), np.array([obs_field.mean])
 
 
-def _get_qoi_all_opconds(data: Dataset, observation: Dataset, field: str) -> Optional[tuple[Array, Array]]:
+def _get_qoi_all_opconds(data: Dataset, observation: Dataset, field: str) -> Optional[tuple[Array, Array, int]]:
     data_arrays = []
     obs_arrays = []
     """
     For a specified field in the `ThrusterData` class, extract all valid values of that field from both data and
     observation for all operating conditions where that field is present in both data and observation.
     If the field is not present in any operating condition, returns None.
-    Otherwise, returns a tuple of the (data vals, obs. vals) where both are 1D numpy arrays of the same size.
+    Otherwise, returns a tuple of the (data vals, obs. vals, num_observations) 
+    where data vals and obs. vals are numpy arrays of the same size and num_observations is an integer.
     """
 
     for _data, _obs in zip(data.values(), observation.values()):
@@ -110,12 +111,15 @@ def _get_qoi_all_opconds(data: Dataset, observation: Dataset, field: str) -> Opt
     if len(data_arrays) == 0 or len(obs_arrays) == 0:
         return None
 
+    assert len(data_arrays) == len(obs_arrays)
+    num_observations = len(data_arrays)
+
     data_array_cat = np.concat(data_arrays)
     obs_array_cat = np.concat(obs_arrays)
 
     assert data_array_cat.size == obs_array_cat.size
 
-    return data_array_cat, obs_array_cat
+    return data_array_cat, obs_array_cat, num_observations
 
 
 def _log_prior(system: System, params: dict[str, Value]) -> np.float64:
@@ -134,9 +138,10 @@ def _log_prior(system: System, params: dict[str, Value]) -> np.float64:
     return np.float64(logp)
 
 
-def likelihood_and_distances(data, result, std=0.05) -> tuple[float, dict[str, tuple[float, float]]]:
+def likelihood_and_distances(
+    data, result, qoi_uncertainties: dict[str, float], noise_std: float
+) -> tuple[float, dict[str, tuple[float, float]]]:
     component_stats: dict[str, tuple[float, float]] = {}
-
     L = 0.0
     for field in fields(ThrusterData):
         # Assemble a vector of all data points for a single operating condition
@@ -145,12 +150,12 @@ def likelihood_and_distances(data, result, std=0.05) -> tuple[float, dict[str, t
         if out is None:
             continue
 
-        data_arr, obs_arr = out
+        data_arr, obs_arr, num_obs = out
         distance = _relative_l2_norm(data_arr, obs_arr)
 
-        # Since the l2-norm is positive-definite, the distribution is a half-normal, so we
-        # need to multiply the normal pdf by 2 (or add ln(2) to the log-pdf)
-        likelihood = _gauss_logpdf_1D(distance, 0.0, std) + np.log(2)
+        std = qoi_uncertainties[fieldname] if fieldname in qoi_uncertainties else noise_std
+
+        likelihood = -0.5 * distance**2 / std**2
 
         component_stats[fieldname] = (distance, likelihood)
 
@@ -171,7 +176,7 @@ def _log_likelihood(
     if result is None:
         return -np.inf
 
-    L, component_stats = likelihood_and_distances(data, result, opts.noise_std)
+    L, component_stats = likelihood_and_distances(data, result, opts.qoi_uncertainties, opts.noise_std)
 
     field_names = [f.name for f in fields(ThrusterData)]
 
@@ -274,9 +279,7 @@ def _run_model(
         sweep_radii = system['Plume'].model_kwargs['sweep_radius']
 
         # Assemble output dict from operating conditions -> results
-        output_thrusterdata = hallmd.data.pem_to_thrusterdata(
-            operating_conditions, outputs, sweep_radii, use_corrected_thrust=True
-        )
+        output_thrusterdata = hallmd.data.pem_to_thrusterdata(operating_conditions, outputs, sweep_radii)
 
         if output_thrusterdata is not None:
             # Write outputs to file

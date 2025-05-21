@@ -101,7 +101,7 @@ AXIS_LIMITS = {
         "posterior": {
             "thrust": (160.0, 270.0),
             "current": (5.0, 20.0),
-            "vcc": (0.0, 20.0),
+            "vcc": (25.0, 35.0),
         },
         "test": {
             "thrust": (0.0, 300.0),
@@ -120,11 +120,17 @@ sort_order = [
     "V_vac",
     "P_T",
     "Pstar",
+    "a_1",
+    "a_2",
     "anom_scale",
     "anom_barrier_scale",
     "anom_center",
     "anom_width",
     "anom_shift_length",
+    "lt",
+    "dz",
+    "z0",
+    "p0",
     "u_n",
     "c_w",
     "f_n",
@@ -140,13 +146,21 @@ sort_order = [
 QUANTILES = [0.05, 0.25, 0.5, 0.75, 0.95]
 
 
-def try_sort_variables(vars: dict[Variable, np.ndarray], sort_order: list[Variable]) -> dict[Variable, np.ndarray]:
+def try_sort_variables(vars: dict, sort_order: list) -> dict:
     # Check that the keys are the same
     input_vars = set(vars.keys())
     if input_vars != set(sort_order):
         return vars
 
-    return {var: vars[var] for var in sort_order}
+    # find all vars that are in our master sort order list
+    sort_set = set(sort_order)
+    all_vars = set(vars.keys())
+
+    unsorted_list = [v for v in vars.keys() if v not in sort_set]
+    sorted_list = [v for v in sort_order if v in all_vars]
+    var_list = sorted_list + unsorted_list
+
+    return {var: vars[var] for var in var_list}
 
 
 def pad_limits(lims: tuple[float, float], pad: float) -> tuple[float, float]:
@@ -209,10 +223,14 @@ def analyze(
     num_accept = len(samples)
     tex_names = [system.inputs()[name].tex for name in variables]
 
-    sorted_vars = [system.inputs()[var] for var in sort_order]
-    variable_dict = try_sort_variables(
-        {system.inputs()[name]: samples[:, i] for (i, name) in enumerate(variables)}, sorted_vars
-    )
+    var_dict_raw = try_sort_variables({v: True for v in variables}, sort_order)
+    variable_dict: dict[Variable, np.ndarray] = {
+        system.inputs()[name]: samples[:, i] for (i, name) in enumerate(var_dict_raw.keys())
+    }
+    # sorted_vars = [system.inputs()[var] for var in sort_order]
+    # variable_dict = try_sort_variables(
+    #     {system.inputs()[name]: samples[:, i] for (i, name) in enumerate(variables)}, sorted_vars
+    # )
 
     if num_accept > 10:
         if save_restart:
@@ -287,10 +305,10 @@ def analyze(
 
         if calc_metrics:
             start = _start_timer("Calculating metrics")
-            metrics = {k: [] for k in likelihood_and_distances(data, outputs[0])[1]}
+            metrics = {k: [] for k in likelihood_and_distances(data, outputs[0], {}, 0.0)[1]}
 
             for output in outputs:
-                _dist = likelihood_and_distances(data, output)[1]
+                _dist = likelihood_and_distances(data, output, {}, 0.0)[1]
                 for k, (distance, _) in _dist.items():
                     metrics[k].append(distance)
 
@@ -397,7 +415,8 @@ def analyze(
                 assert metrics_out is not None
 
                 metrics_median = {
-                    k: distance for (k, (distance, _)) in likelihood_and_distances(data, median_dataset)[1].items()
+                    k: distance
+                    for (k, (distance, _)) in likelihood_and_distances(data, median_dataset, {}, 0.0)[1].items()
                 }
                 for k, v in metrics_median.items():
                     metrics_out[k]['median'] = v
@@ -1403,11 +1422,14 @@ def scaled_gaussian_bohm(coords, anom_scale, anom_barrier_scale, anom_center, an
 
 def plot_anom(samples: dict[Variable, np.ndarray], pressures: list[float], output_dir: Path):
     var_name_dict = {v.name: s for (v, s) in samples.items()}
-    anom_scale = var_name_dict["anom_scale"]
-    anom_barrier_scale = var_name_dict["anom_barrier_scale"]
-    anom_center = var_name_dict["anom_center"]
-    anom_width = var_name_dict["anom_width"]
-    shift_length = var_name_dict["anom_shift_length"]
+    try:
+        anom_scale = var_name_dict["anom_scale"]
+        anom_barrier_scale = var_name_dict["anom_barrier_scale"]
+        anom_center = var_name_dict["anom_center"]
+        anom_width = var_name_dict["anom_width"]
+        shift_length = var_name_dict["anom_shift_length"]
+    except KeyError:
+        return
 
     lightcolors = ["lightred", "lightgreen", "lightblue"]
     darkcolors = ["red", "green", "darkblue"]

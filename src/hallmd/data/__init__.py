@@ -350,13 +350,11 @@ def _amisc_output_is_valid(outputs: dict, num_conditions: int) -> bool:
     return True
 
 
-def _single_opcond_to_thrusterdata(
-    i: int, outputs: dict, sweep_radii: Any, use_corrected_thrust: bool = True
-) -> ThrusterData:
+def _single_opcond_to_thrusterdata(i: int, outputs: dict, sweep_radii: Any) -> ThrusterData:
     NaN = np.float64(np.nan)
 
     cathode_coupling_voltage_V = Measurement(outputs["V_cc"][i], NaN)
-    thrust_N = _pem_thrust(i, outputs, use_corrected_thrust)
+    thrust_N = _pem_thrust(i, outputs)
     discharge_current_A = Measurement(outputs["I_d"][i], NaN)
     ion_current_A = Measurement(outputs["I_B0"][i], NaN)
 
@@ -397,7 +395,7 @@ def _single_opcond_to_thrusterdata(
 
 
 def pem_to_thrusterdata(
-    operating_conditions: list[OperatingCondition], outputs: dict, sweep_radii: Array, use_corrected_thrust: bool = True
+    operating_conditions: list[OperatingCondition], outputs: dict, sweep_radii: Array
 ) -> Optional[dict[OperatingCondition, ThrusterData]]:
     """Given a list of operating conditions and an `outputs` dict from amisc,
     construct a `dict` mapping the operating conditions to `ThrusterData` objects.
@@ -406,8 +404,6 @@ def pem_to_thrusterdata(
     :param operating_conditions: A list of `OperatingConditions` at which the pem was run.
     :param outputs: the amisc output dict from the run
     :param sweep_radii: an array of radii at which ion current density data was taken
-    :param use_corrected_thrust: Whether to use the base thrust from HallThruster.jl or the thrust corrected by the
-           divergence angle computed in the plume model.
     """  # noqa: E501
 
     # Check to make sure all keys that we expect to be there are there
@@ -415,17 +411,18 @@ def pem_to_thrusterdata(
         return None
 
     output_dict = {
-        opcond: _single_opcond_to_thrusterdata(i, outputs, sweep_radii, use_corrected_thrust)
+        opcond: _single_opcond_to_thrusterdata(i, outputs, sweep_radii)
         for (i, opcond) in enumerate(operating_conditions)
     }
 
     return output_dict
 
 
-def _pem_thrust(i: int, outputs: dict, use_corrected_thrust: bool) -> Measurement:
+def _pem_thrust(i: int, outputs: dict) -> Measurement:
     """Helper to return the correct thrust measurement."""
     NaN = np.float64(np.nan)
-    if use_corrected_thrust:
+
+    if 'T_c' in outputs:
         thrust = outputs['T_c'][i]
         if not np.isscalar(thrust):
             # Take the last (furthest) thrust to be the "true" thrust

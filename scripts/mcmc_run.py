@@ -139,6 +139,13 @@ def main(args):
 
     # Determine thruster and load data
     thruster_name = system['Thruster'].model_kwargs['thruster']
+
+    # Assign experimental uncertainties for QoIs where default values are inadequate
+    if thruster_name.casefold() in {"spt-100", "spt100"}:
+        # Experimental uncertainty for SPT-100 V_cc and thrust are quite low
+        opts.qoi_uncertainties["cathode_coupling_voltage_V"] = 0.01
+        opts.qoi_uncertainties["thrust_N"] = 0.01
+
     thruster = hallmd.data.get_thruster(thruster_name)
     datasets = thruster.datasets_from_names(args.datasets)
     data = hallmd.data.load(datasets)
@@ -207,6 +214,7 @@ def main(args):
     max_samples: int = args.max_samples
     init_sample = sampler.initial_sample()
     best_logp = sampler.logpdf(init_sample)
+    print("initial log-likelihood = ", best_logp)
     mcmc.append_sample_row(logfile, 0, init_sample, best_logp, True)
     num_accept = 1
 
@@ -232,6 +240,7 @@ def main(args):
         print(
             f"sample: {i + start_index}/{max_samples}, logp: {logp:.3f}, best logp: {best_logp:.3f},",
             f"accepted: {accepted_bool}, p_accept: {num_accept / (i + 1 + start_index) * 100:.1f}%",
+            flush=True,
         )
 
         corner = i == max_samples or (i > 100 and (i % (args.output_interval * 10) == 0))
