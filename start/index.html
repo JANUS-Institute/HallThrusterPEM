@@ -441,9 +441,18 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#quickstart" class="md-nav__link">
+  <a href="#scripts-used-for-publications" class="md-nav__link">
     <span class="md-ellipsis">
-      📍 Quickstart
+      📍 Scripts used for publications
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#standalone-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      📍 Standalone usage
     </span>
   </a>
   
@@ -841,6 +850,10 @@
         
       
         
+          
+        
+      
+        
       
     
     
@@ -891,8 +904,33 @@
   
   
   
+    <li class="md-nav__item">
+      <a href="../reference/data/h9/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    <code class="doc-symbol doc-symbol-nav doc-symbol-package"></code> h9
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
     
     
+      
+        
+          
+        
       
         
           
@@ -922,7 +960,7 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_2_2" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_2_3" >
         
           
           
@@ -938,14 +976,14 @@
             </a>
             
               
-              <label class="md-nav__link " for="__nav_3_2_2" id="__nav_3_2_2_label" tabindex="0">
+              <label class="md-nav__link " for="__nav_3_2_3" id="__nav_3_2_3_label" tabindex="0">
                 <span class="md-nav__icon md-icon"></span>
               </label>
             
           </div>
         
-        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_3_2_2_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_3_2_2">
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_3_2_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_2_3">
             <span class="md-nav__icon md-icon"></span>
             <code class="doc-symbol doc-symbol-nav doc-symbol-package"></code> spt100
           </label>
@@ -965,6 +1003,27 @@
   
   <span class="md-ellipsis">
     <code class="doc-symbol doc-symbol-nav doc-symbol-package"></code> diamant2014
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/data/spt100/express2001/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    <code class="doc-symbol doc-symbol-nav doc-symbol-package"></code> express2001
   </span>
   
 
@@ -1320,9 +1379,18 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#quickstart" class="md-nav__link">
+  <a href="#scripts-used-for-publications" class="md-nav__link">
     <span class="md-ellipsis">
-      📍 Quickstart
+      📍 Scripts used for publications
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#standalone-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      📍 Standalone usage
     </span>
   </a>
   
@@ -1382,9 +1450,11 @@
 <img alt="build" src="https://img.shields.io/github/actions/workflow/status/JANUS-Institute/HallThrusterPEM/deploy.yml?logo=github" />
 <img alt="docs" src="https://img.shields.io/github/actions/workflow/status/JANUS-Institute/HallThrusterPEM/docs.yml?logo=materialformkdocs&amp;logoColor=%2523cccccc&amp;label=docs" />
 <img alt="tests" src="https://img.shields.io/github/actions/workflow/status/JANUS-Institute/HallThrusterPEM/tests.yml?logo=github&amp;logoColor=%2523cccccc&amp;label=tests" />
-<img alt="Code Coverage" src="https://img.shields.io/badge/coverage-88%25-yellowgreen?logo=codecov" />
+<img alt="Code Coverage" src="https://img.shields.io/badge/coverage-77%25-yellowgreen?logo=codecov" />
 <a href="https://rdcu.be/dVmim"><img alt="Journal article" src="https://img.shields.io/badge/DOI-10.1007/s44205--024--00079--w-blue" /></a></p>
-<p>Prototype of a predictive engineering model (<abbr title="Predictive Engineering Model">PEM</abbr>) of a Hall thruster. Integrates sub-models from multiple disciplines to simulate a Hall thruster operating in a vacuum chamber. Uses uncertainty quantification techniques to extrapolate model predictions to a space-like environment.</p>
+<p>A prototype of a predictive engineering model (<abbr title="Predictive Engineering Model">PEM</abbr>) of a Hall thruster.
+Integrates sub-models from multiple disciplines to simulate a Hall thruster operating in a vacuum chamber.
+Uses uncertainty quantification techniques to extrapolate model predictions to a space-like environment.</p>
 <h2 id="installation">⚙️ Installation</h2>
 <p>Ensure you are using Python 3.11 or later. You can install using <a href="https://github.com/pdm-project/pdm">pdm</a>:
 <div class="language-shell highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>pip<span class="w"> </span>install<span class="w"> </span>--user<span class="w"> </span>pdm
@@ -1392,44 +1462,41 @@
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nb">cd</span><span class="w"> </span>HallThrusterPEM
 </span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>pdm<span class="w"> </span>install<span class="w"> </span>--prod
 </span></code></pre></div></p>
-<p><code>hallmd</code> uses the <a href="https://github.com/UM-PEPL/HallThruster.jl"><code>HallThruster.jl</code></a> Julia package. Please see their docs for setting up Julia and installing. Alternatively, you may run the provided <a href="https://raw.githubusercontent.com/JANUS-Institute/HallThrusterPEM/refs/heads/main/scripts/install_hallthruster.py">install script</a>, which will install both Julia and <code>HallThruster.jl</code>.</p>
-<p>Assuming <code>python</code> is available on your path:</p>
-<div class="tabbed-set tabbed-alternate" data-tabs="1:2"><input checked="checked" id="linuxmac" name="__tabbed_1" type="radio" /><input id="windows" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="linuxmac">Linux/Mac</label><label for="windows">Windows</label></div>
-<div class="tabbed-content">
-<div class="tabbed-block">
-<div class="language-shell highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>curl<span class="w"> </span>-sSL<span class="w"> </span>https://raw.githubusercontent.com/JANUS-Institute/HallThrusterPEM/refs/heads/main/scripts/install_hallthruster.py<span class="w"> </span><span class="p">|</span><span class="w"> </span>python<span class="w"> </span>-
+<p><code>hallmd</code> uses the <a href="https://github.com/UM-PEPL/HallThruster.jl"><code>HallThruster.jl</code></a> Julia package.
+Please see their docs for setting up Julia and installing.
+Alternatively, you may run the provided <a href="https://raw.githubusercontent.com/JANUS-Institute/HallThrusterPEM/refs/heads/main/scripts/install_hallthruster.py">install script</a>, which will install both Julia and <code>HallThruster.jl</code>.
+By default, this will install Julia 1.11 and HallThruster.jl version 0.18.7.
+From the root directory, run the following command:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>pdm run scripts/install_hallthruster.py --julia-version=X.XX.X --hallthruster-version=V.VV.V
 </span></code></pre></div>
-</div>
-<div class="tabbed-block">
-<div class="language-shell highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>powershell<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;Invoke-WebRequest -Uri https://raw.githubusercontent.com/JANUS-Institute/HallThrusterPEM/refs/heads/main/scripts/install_hallthruster.py | python -&quot;</span>
-</span></code></pre></div>
-</div>
-</div>
-</div>
-<h2 id="quickstart">📍 Quickstart</h2>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">hallmd.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">hallthruster_jl</span>
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>
-</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>
-</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="n">config</span> <span class="o">=</span> <span class="p">{</span>
-</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    <span class="s1">&#39;discharge_voltage&#39;</span><span class="p">:</span> <span class="mi">300</span><span class="p">,</span>
-</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>    <span class="s1">&#39;anode_mass_flow_rate&#39;</span><span class="p">:</span> <span class="mf">5e-6</span><span class="p">,</span>
-</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>    <span class="s1">&#39;background_pressure_Torr&#39;</span><span class="p">:</span> <span class="mf">1e-5</span><span class="p">,</span>
-</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>    <span class="s1">&#39;propellant&#39;</span><span class="p">:</span> <span class="s1">&#39;Xenon&#39;</span><span class="p">,</span>
-</span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>    <span class="s1">&#39;domain&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mf">0.08</span><span class="p">]</span>
-</span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="p">}</span>
-</span><span id="__span-3-13"><a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>
-</span><span id="__span-3-14"><a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="n">outputs</span> <span class="o">=</span> <span class="n">hallthruster_jl</span><span class="p">(</span><span class="n">thruster</span><span class="o">=</span><span class="s1">&#39;SPT-100&#39;</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="n">config</span><span class="p">)</span>
-</span><span id="__span-3-15"><a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>
-</span><span id="__span-3-16"><a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a><span class="n">ion_velocity</span> <span class="o">=</span> <span class="n">outputs</span><span class="p">[</span><span class="s1">&#39;u_ion&#39;</span><span class="p">]</span>
-</span><span id="__span-3-17"><a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a><span class="n">grid</span> <span class="o">=</span> <span class="n">outputs</span><span class="p">[</span><span class="s1">&#39;u_ion_coords&#39;</span><span class="p">]</span>
-</span><span id="__span-3-18"><a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a>
-</span><span id="__span-3-19"><a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a><span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">()</span>
-</span><span id="__span-3-20"><a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a><span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">grid</span><span class="p">,</span> <span class="n">ion_velocity</span><span class="p">)</span>
-</span><span id="__span-3-21"><a id="__codelineno-3-21" name="__codelineno-3-21" href="#__codelineno-3-21"></a><span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s1">&#39;Axial location (m)&#39;</span><span class="p">)</span>
-</span><span id="__span-3-22"><a id="__codelineno-3-22" name="__codelineno-3-22" href="#__codelineno-3-22"></a><span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s1">&#39;Ion velocity (m/s)&#39;</span><span class="p">)</span>
-</span><span id="__span-3-23"><a id="__codelineno-3-23" name="__codelineno-3-23" href="#__codelineno-3-23"></a><span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+<p>This will create a fresh Julia environment called <code>hallthruster_V.VV.V</code> and install <code>HallThruster.jl</code> there.</p>
+<h2 id="scripts-used-for-publications">📍 Scripts used for publications</h2>
+<p>See the <a href="https://github.com/JANUS-Institute/HallThrusterPEM/blob/main/scripts">scripts</a> folder for workflows for data generation, parameter inference, and analysis using <code>hallmd</code>.
+This directory also contains information needed to replicate the results in our publications.</p>
+<h2 id="standalone-usage">📍 Standalone usage</h2>
+<p>Below, we demonstrate how to use <code>hallmd</code> to run HallThruster.jl on a simple config file.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">hallmd.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">hallthruster_jl</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="n">config</span> <span class="o">=</span> <span class="p">{</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="s1">&#39;discharge_voltage&#39;</span><span class="p">:</span> <span class="mi">300</span><span class="p">,</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="s1">&#39;anode_mass_flow_rate&#39;</span><span class="p">:</span> <span class="mf">5e-6</span><span class="p">,</span>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>    <span class="s1">&#39;background_pressure_Torr&#39;</span><span class="p">:</span> <span class="mf">1e-5</span><span class="p">,</span>
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    <span class="s1">&#39;propellant&#39;</span><span class="p">:</span> <span class="s1">&#39;Xenon&#39;</span><span class="p">,</span>
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>    <span class="s1">&#39;domain&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mf">0.08</span><span class="p">]</span>
+</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="p">}</span>
+</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>
+</span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="n">outputs</span> <span class="o">=</span> <span class="n">hallthruster_jl</span><span class="p">(</span><span class="n">thruster</span><span class="o">=</span><span class="s1">&#39;SPT-100&#39;</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="n">config</span><span class="p">)</span>
+</span><span id="__span-2-14"><a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>
+</span><span id="__span-2-15"><a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="n">ion_velocity</span> <span class="o">=</span> <span class="n">outputs</span><span class="p">[</span><span class="s1">&#39;u_ion&#39;</span><span class="p">]</span>
+</span><span id="__span-2-16"><a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="n">grid</span> <span class="o">=</span> <span class="n">outputs</span><span class="p">[</span><span class="s1">&#39;u_ion_coords&#39;</span><span class="p">]</span>
+</span><span id="__span-2-17"><a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>
+</span><span id="__span-2-18"><a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">()</span>
+</span><span id="__span-2-19"><a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">grid</span><span class="p">,</span> <span class="n">ion_velocity</span><span class="p">)</span>
+</span><span id="__span-2-20"><a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a><span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s1">&#39;Axial location (m)&#39;</span><span class="p">)</span>
+</span><span id="__span-2-21"><a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a><span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s1">&#39;Ion velocity (m/s)&#39;</span><span class="p">)</span>
+</span><span id="__span-2-22"><a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a><span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
 </span></code></pre></div>
 <h2 id="project-structure">🗂️ Project structure</h2>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>📁<span class="w"> </span>HallThrusterPEM
