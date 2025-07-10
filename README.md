@@ -90,4 +90,9 @@ See the [contribution](https://github.com/JANUS-Institute/HallThrusterPEM/blob/m
 ## 📖 Reference
 [[1](https://rdcu.be/dVmim)] Eckels, J. et al., "Hall thruster model improvement by multidisciplinary uncertainty quantification," _Journal of Electric Propulsion_, vol 3, no 19, September 2024.
 
+## Funding declaration
+
+Funding for this work was provided by NASA in part through the [Joint Advanced Propulsion Institute (JANUS)](https://januselectricpropulsion.com/), a NASA Space Technology Research Institute, under grant number 80NSSC21K1118, as well as in part through a NASA Space Technology Graduate Research Opportunity grant 80NSSC23K1181.
+This research was additionally supported in part through computational resources provided by [Advanced Research Computing](https://its.umich.edu/advanced-research-computing) at the University of Michigan.
+
 <sup><sub>Made with the [copier-numpy](https://github.com/eckelsjd/copier-numpy.git) template.</sub></sup>
