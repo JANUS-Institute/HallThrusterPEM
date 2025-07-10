@@ -1,16 +1,3 @@
-"""`mcmc.py`
-
-This script is used to run MCMC on the cathode-thruster-plume system.
-
-Requires a valid YAML config file specifying the system.
-The outputs are written to a folder called amisc_{TIMESTAMP}/mcmc if no output directory is specified.
-That folder in turn contains folders (numbered 000000 - num_samples) that hold the model outputs for each sample generated during MCMC.
-Additionally, each sample, its log-pdf, and whether it was accepted are written to a file called mcmc.csv in the main mcmc directory.
-
-For usage details and a full list of options , run 'pdm run scripts/run_mcmc.py --help'
-
-"""  # noqa: E501
-
 import argparse
 import os
 
@@ -20,7 +7,19 @@ from install_hallthruster import main as install_hallthruster
 
 import hallmd.data
 
-parser = argparse.ArgumentParser(description="MCMC scripts")
+desc_str = """`mcmc_run.py`
+
+This script is used to run MCMC on the cathode-thruster-plume system.
+
+Requires a valid YAML config file specifying the system.
+The outputs are written to a folder called amisc_{TIMESTAMP}/mcmc if no output directory is specified.
+That folder in turn contains folders (numbered 000000 - num_samples) that hold the model outputs for each sample generated during MCMC.
+Additionally, each sample, its log-pdf, and whether it was accepted are written to a file called mcmc.csv in the main mcmc directory.
+
+For usage details and a full list of options , run 'pdm run scripts/run_mcmc.py --help'
+"""  # noqa: E501
+
+parser = argparse.ArgumentParser(prog="mcmc_run.py", description=desc_str)
 
 parser.add_argument(
     "config_file",

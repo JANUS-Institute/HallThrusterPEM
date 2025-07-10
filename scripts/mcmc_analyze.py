@@ -12,7 +12,7 @@ Generates several types of plots and analysis in the base directory / `mcmc_anal
 - Ion velocity across pressures
 - Ion current density across pressures
 - Thrust vs pressure
-- Discharge current vs pressure
+- Discharge current vs pressue
 - Cathode coupling voltage vs pressure
 
 # Restarts and others

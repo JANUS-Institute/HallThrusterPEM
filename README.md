@@ -9,7 +9,9 @@
 ![Code Coverage](https://img.shields.io/badge/coverage-78%25-yellowgreen?logo=codecov)
 [![Journal article](https://img.shields.io/badge/DOI-10.1007/s44205--024--00079--w-blue)](https://rdcu.be/dVmim)
 
-Prototype of a predictive engineering model (PEM) of a Hall thruster. Integrates sub-models from multiple disciplines to simulate a Hall thruster operating in a vacuum chamber. Uses uncertainty quantification techniques to extrapolate model predictions to a space-like environment.
+A prototype of a predictive engineering model (PEM) of a Hall thruster.
+Integrates sub-models from multiple disciplines to simulate a Hall thruster operating in a vacuum chamber.
+Uses uncertainty quantification techniques to extrapolate model predictions to a space-like environment.
 
 ## ⚙️ Installation
 Ensure you are using Python 3.11 or later. You can install using [pdm](https://github.com/pdm-project/pdm):
@@ -20,26 +22,30 @@ cd HallThrusterPEM
 pdm install --prod
 ```
 
-`hallmd` uses the [`HallThruster.jl`](https://github.com/UM-PEPL/HallThruster.jl) Julia package. Please see their docs for setting up Julia and installing. Alternatively, you may run the provided [install script](https://raw.githubusercontent.com/JANUS-Institute/HallThrusterPEM/refs/heads/main/scripts/install_hallthruster.py), which will install both Julia and `HallThruster.jl`.
+`hallmd` uses the [`HallThruster.jl`](https://github.com/UM-PEPL/HallThruster.jl) Julia package.
+Please see their docs for setting up Julia and installing.
+Alternatively, you may run the provided [install script](https://raw.githubusercontent.com/JANUS-Institute/HallThrusterPEM/refs/heads/main/scripts/install_hallthruster.py), which will install both Julia and `HallThruster.jl`.
+By default, this will install Julia 1.11 and HallThruster.jl version 0.18.7.
+From the root directory, run the following command:
 
-Assuming `python` is available on your path:
+```
+pdm run scripts/install_hallthruster.py --julia-version=X.XX.X --hallthruster-version=V.VV.V
+```
 
-=== "Linux/Mac"
-    ```shell
-    curl -sSL https://raw.githubusercontent.com/JANUS-Institute/HallThrusterPEM/refs/heads/main/scripts/install_hallthruster.py | python -
-    ```
+This will create a fresh Julia environment called `hallthruster_V.VV.V` and install `HallThruster.jl` there.
 
-=== "Windows"
-    ```shell
-    powershell -c "Invoke-WebRequest -Uri https://raw.githubusercontent.com/JANUS-Institute/HallThrusterPEM/refs/heads/main/scripts/install_hallthruster.py | python -"
-    ```
+## 📍 Scripts used for publications
+See the [scripts](https://github.com/JANUS-Institute/HallThrusterPEM/blob/main/scripts) folder for workflows for data generation, parameter inference, and analysis using `hallmd`.
+This directory also contains information needed to replicate the results in our publications.
 
-## 📍 Quickstart
+## 📍 Standalone usage
+
+Below, we demonstrate how to use `hallmd` to run HallThruster.jl on a simple config file.
+
 ```python
 import matplotlib.pyplot as plt
 
 from hallmd.models import hallthruster_jl
-
 
 config = {
     'discharge_voltage': 300,
