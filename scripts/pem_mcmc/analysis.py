@@ -2,6 +2,7 @@ import json
 import math
 import os
 import pickle
+import shutil
 import time
 from dataclasses import dataclass
 from os import PathLike
@@ -33,7 +34,7 @@ RCPARAMS = {
     "font.family": "serif",
     "font.serif": ["Computer Modern Roman"],
     "font.size": 18,
-    "text.usetex": True,
+    "text.usetex": True if shutil.which('latex') else False,
     "xtick.minor.visible": True,
     "ytick.minor.visible": True,
     "legend.borderpad": 0.3,

@@ -16,6 +16,7 @@ import os
 
 import numpy as np
 import pem_mcmc as mcmc
+from install_hallthruster import main as install_hallthruster
 
 import hallmd.data
 
@@ -135,6 +136,17 @@ def _update_opts(opts, root_dir, sample_index):
 
 def main(args):
     system, opts = mcmc.load_system_and_opts(args)
+
+    # Check for correct Hallthruster.jl version and install it if not present
+    hallthruster_version = system.get_component("Thruster").model_kwargs["version"]
+    install_hallthruster(
+        julia_version=None,
+        hallthruster_version=hallthruster_version,
+        git_ref=None,
+        yes=True,
+        verbose=False,
+    )
+
     base = mcmc.get_nominal_inputs(system)
 
     # Determine thruster and load data
