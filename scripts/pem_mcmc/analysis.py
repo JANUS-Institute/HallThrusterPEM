@@ -32,17 +32,18 @@ RCPARAMS = {
     "errorbar.capsize": 0.0,
     "font.family": "serif",
     "font.serif": ["Computer Modern Roman"],
-    "font.size": 18,
+    "font.size": 20,
     "text.usetex": True,
     "xtick.minor.visible": True,
     "ytick.minor.visible": True,
-    "legend.borderpad": 0.3,
+    "legend.borderpad": 0.2,
     "legend.borderaxespad": 0.0,
     "legend.edgecolor": 'black',
     "legend.fancybox": False,
     "legend.framealpha": 1.0,
     "legend.handlelength": 2.0,
-    "legend.handletextpad": 0.4,
+    "legend.handletextpad": 0.3,
+    "lines.linewidth": 2.0,
 }
 plt.rcParams.update(RCPARAMS)
 
@@ -57,17 +58,17 @@ COLORS = {
     "brown": "#9a4f3cff",
     "darkbrown": "#6c382dff",
     "lightred": "#fc4f30ff",
-    "red": "#d62728ff",
-    "darkred": "#8c1617ff",
-    "lightorange": "#f8b722ff",
+    "red": "#bd1b1bff",
+    "darkred": "#660001ff",
+    "lightorange": "#e5ae38ff",
     "orange": "#dc8700ff",
     "darkorange": "#a3561cff",
-    "lightgreen": "#bcbd22ff",
-    "green": "#729f23ff",
-    "darkgreen": "#3e5d19ff",
+    "lightgreen": "#93c722ff",
+    "green": "#378a1bff",
+    "darkgreen": "#1e5716ff",
     "lightblue": "#c7ecffff",
-    "blue": "#2a90c2ff",
-    "darkblue": "#196599ff",
+    "blue": "#2684d5ff",
+    "darkblue": "#164b98ff",
     "lightpurple": "#e377c2ff",
     "purple": "#9467bdff",
     "darkpurple": "#6a438bff",
@@ -77,20 +78,22 @@ COLORS = {
 AXIS_LIMITS = {
     "SPT-100": {
         "prior": {
-            "thrust": (0.0, 120.0),
+            "thrust": (0.0, 140.0),
             "current": (0.0, 80.0),
             "vcc": (0.0, 70.0),
         },
         "posterior": {
-            "thrust": (70.0, 90.0),
+            "thrust": (70.0, 95.0),
             "current": (3.0, 6.0),
-            "vcc": (28.0, 38.0),
+            "vcc": (28.0, 36.0),
         },
         "test": {
             "thrust": (0.0, 130.0),
             "current": (0.0, 80.0),
             "vcc": (0.0, 60.0),
         },
+        "uion": (-3, 20),
+        "jion": (5e-2, 2e1),
     },
     "H9": {
         "prior": {
@@ -101,17 +104,19 @@ AXIS_LIMITS = {
         "posterior": {
             "thrust": (160.0, 270.0),
             "current": (5.0, 20.0),
-            "vcc": (25.0, 35.0),
+            "vcc": (20.0, 40.0),
         },
         "test": {
             "thrust": (0.0, 300.0),
             "current": (0.0, 100.0),
             "vcc": (0.0, 60.0),
         },
+        "uion": (-3, 25),
+        "jion": (5e-2, 3e1),
     },
 }
 
-data_kwargs = {'markersize': 3.5}
+data_kwargs = {'markersize': 4.0}
 
 # Sort order for pemv1 variables.
 # For other systems, we do not try and sort the variables
@@ -193,7 +198,15 @@ def analyze(
     limits="posterior",
     output_dir=None,
     secondary_simulation=None,
+    metric_plot_args=None,
+    field_plot_args=None,
 ):
+    if metric_plot_args is None:
+        metric_plot_args = {}
+
+    if field_plot_args is None:
+        field_plot_args = {}
+
     dir = Path(amisc_dir)
     mcmc_path = dir / "mcmc"
     logfile = mcmc_path / "mcmc.csv"
@@ -227,16 +240,24 @@ def analyze(
     variable_dict: dict[Variable, np.ndarray] = {
         system.inputs()[name]: samples[:, i] for (i, name) in enumerate(var_dict_raw.keys())
     }
-    # sorted_vars = [system.inputs()[var] for var in sort_order]
-    # variable_dict = try_sort_variables(
-    #     {system.inputs()[name]: samples[:, i] for (i, name) in enumerate(variables)}, sorted_vars
-    # )
+
+    median_sample_index = None
+
+    # median_type = "quantile"
+    median_type = "geometric"
 
     if num_accept > 10:
+        start = _start_timer("Computing map, mean, median, and covariance")
+        map = samples_raw[map_ind, :]
+        mean, median = _mean_and_median(samples)
+
+        if median_type == "quantile":
+            median = np.quantile(samples, 0.5, axis=0)
+
+        # Find real sample closest to median
+        median_sample_index = np.argmin(np.linalg.norm(samples - median, axis=1))
+
         if save_restart:
-            start = _start_timer("Computing map, mean, median, and covariance")
-            map = samples_raw[map_ind, :]
-            mean, median = _mean_and_median(samples)
             header = ",".join(variables)
             np.savetxt(output_dir / "map.csv", np.matrix(map), header=header, delimiter=',')
             np.savetxt(output_dir / "mean.csv", np.matrix(mean), header=header, delimiter=',')
@@ -253,7 +274,7 @@ def analyze(
             last = samples_raw[-1, :]
             np.savetxt(output_dir / "lastsample.csv", np.matrix(last), header=header, delimiter=",")
 
-            _stop_timer(start)
+        _stop_timer(start)
 
         if plot_traces:
             start = _start_timer("Plotting traces")
@@ -292,14 +313,14 @@ def analyze(
         if secondary_simulation is not None:
             secondary_dir = Path(secondary_simulation) / "mcmc"
             _, _, _, _, ids_2 = io.read_output_file(secondary_dir / "mcmc.csv")
-            results_secondary = _load_sim_results(np.array(ids_2), secondary_dir)
-            if device_name.casefold() == "h9":
-                results_secondary = _merge_opconds(results_secondary, data)
+            results_secondary = _load_sim_results(np.array(ids_2), secondary_dir, device_name, data)
 
         # Load results from primary simulation
-        outputs = _load_sim_results(np.array(ids)[sample_inds], mcmc_path)
-        if device_name.casefold() == "h9":
-            outputs = _merge_opconds(outputs, data)
+        outputs = _load_sim_results(np.array(ids)[sample_inds], mcmc_path, device_name, data)
+
+        # Load median results
+        if median_sample_index is not None:
+            median_sim = _load_sim_results([ids[median_sample_index]], mcmc_path, device_name, data)
 
         metrics_out = None
 
@@ -332,6 +353,8 @@ def analyze(
                 lims=thrust_lims,
                 xscale="log",
                 secondary=results_secondary,
+                case=limits,
+                **metric_plot_args,
             )
 
             analyze_global_quantity(data, outputs, output_dir, "thrust_N", scale=1000)
@@ -348,8 +371,9 @@ def analyze(
                 lims=current_lims,
                 xscale="log",
                 secondary=results_secondary,
+                case=limits,
+                **metric_plot_args,
             )
-
             analyze_global_quantity(data, outputs, output_dir, "discharge_current_A")
 
             _stop_timer(start)
@@ -364,6 +388,8 @@ def analyze(
                 lims=vcc_lims,
                 xscale="log",
                 secondary=results_secondary,
+                case=limits,
+                **metric_plot_args,
             )
 
             analyze_global_quantity(data, outputs, output_dir, "cathode_coupling_voltage_V")
@@ -381,6 +407,7 @@ def analyze(
                 yscalefactor=1 / 1000,
                 thruster=device_name,
                 secondary=results_secondary,
+                **field_plot_args,
             )
             _stop_timer(start)
 
@@ -396,11 +423,14 @@ def analyze(
                 output_dir,
                 xlabel="Angle [degrees]",
                 ylabel="Ion current density [A/m$^2$]",
+                thruster=device_name,
                 secondary=results_secondary,
+                **field_plot_args,
             )
             _stop_timer(start)
 
             if calc_metrics:
+                # Compute metrics for median predictions
                 median_dataset = {
                     opcond: hallmd.data.ThrusterData(
                         thrust_N=thrust_median[opcond] if thrust_median is not None else None,
@@ -418,8 +448,18 @@ def analyze(
                     k: distance
                     for (k, (distance, _)) in likelihood_and_distances(data, median_dataset, {}, 0.0)[1].items()
                 }
+
+                # Compute metrics for median point estimate
+                if median_sample_index is not None:
+                    metrics_median_point = {
+                        k: distance
+                        for (k, (distance, _)) in likelihood_and_distances(data, median_sim[0], {}, 0.0)[1].items()
+                    }
+
                 for k, v in metrics_median.items():
-                    metrics_out[k]['median'] = v
+                    metrics_out[k]['median'] = np.float64(v)
+                    if median_sample_index is not None:
+                        metrics_out[k]['median_point_estimate'] = np.float64(metrics_median_point[k])
 
         if calc_metrics:
             assert metrics_out is not None
@@ -496,7 +536,7 @@ def save_figure(
 
     paths = [Path(out_path) / (_plot_name_noext + "." + extension) for extension in extensions]
     for path in paths:
-        fig.savefig(path)
+        fig.savefig(path, bbox_inches='tight', pad_inches=0)
 
     plt.close(fig)
 
@@ -504,7 +544,16 @@ def save_figure(
 
 
 def _plot_ion_cur(
-    data: Dataset, sim: list[Dataset], plot_path: Path, xlabel: str, ylabel: str, secondary: list[Dataset] | None = None
+    data: Dataset,
+    sim: list[Dataset],
+    plot_path: Path,
+    thruster: str,
+    xlabel: str,
+    ylabel: str,
+    secondary: list[Dataset] | None = None,
+    include_ylabel=True,
+    include_legend=True,
+    include_yticklabels=True,
 ):
     qty_name = "ion_current_density"
     out_path = plot_path / qty_name
@@ -520,6 +569,8 @@ def _plot_ion_cur(
     colors = plt.get_cmap('turbo')
     xlims = (0, 90)
     yscale = 'log'
+
+    ylims = AXIS_LIMITS[thruster]["jion"]
 
     max_points = 40
 
@@ -550,6 +601,7 @@ def _plot_ion_cur(
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
         ax.set_xlim(xlims)
+        ax.set_ylim(ylims)
 
         # plot data for this operating condition at each radius
         handles_data = []
@@ -600,7 +652,7 @@ def _plot_ion_cur(
         else:
             plt.close(fig)
 
-    colors = ["red", "green", "blue"]
+    colors = ["red", "lightorange", "blue"]
     linestyles = ["solid", "dashed", "dashdot"]
     markerstyles = ["o", "v", "^"]
     opconds_ji = [o for o in opconds if data[o].ion_current_sweeps is not None]
@@ -617,6 +669,7 @@ def _plot_ion_cur(
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
         ax.set_xlim(xlims)
+        ax.set_ylim(ylims)
         plot_name = f"{qty_name}_r={sweep_radius:.2f}m.png"
 
         # plot data for this operating condition at each pressure
@@ -631,11 +684,18 @@ def _plot_ion_cur(
                 continue
 
             # make dedicated plot for each opcond
-            fig_solo, ax_solo = plt.subplots(dpi=200, figsize=(7, 6))
+            figwidth = 7
+            if not include_ylabel:
+                figwidth -= 0.5
+            if not include_yticklabels:
+                figwidth -= 0.5
+            fig_solo, ax_solo = plt.subplots(dpi=200, figsize=(figwidth, 6))
             ax_solo.set_yscale(yscale)
             ax_solo.set_xlabel(xlabel)
-            ax_solo.set_ylabel(ylabel)
+            if include_ylabel:
+                ax_solo.set_ylabel(ylabel)
             ax_solo.set_xlim(xlims)
+            ax_solo.set_ylim(ylims)
             pressure_str = f"${pressure_uTorr:.2f}$ $\\mu$Torr"
             subdir = out_path / f"p={pressure_uTorr:05.2f}uTorr"
             os.makedirs(subdir, exist_ok=True)
@@ -673,7 +733,10 @@ def _plot_ion_cur(
                         handles_solo.append(h_aleatoric)
                         labels_solo.append("90\\% CI (epistemic + aleatoric)")
 
-                    ax_solo.legend(handles_solo, labels_solo, loc='upper right')
+                    if include_legend:
+                        ax_solo.legend(handles_solo, labels_solo, loc='upper right')
+                    if not include_yticklabels:
+                        ax_solo.set_yticklabels([])
 
             save_figure(fig_solo, subdir, plot_name)
 
@@ -693,10 +756,14 @@ def _plot_ion_vel(
     yscalefactor: float,
     thruster: str,
     secondary: list[Dataset] | None = None,
+    include_ylabel=True,
+    include_yticklabels=True,
+    include_legend=True,
 ) -> tuple[dict[hallmd.data.OperatingCondition, hallmd.data.IonVelocityData], list[float]]:
     qty_name = "ion_velocity"
 
     xlim = (0.0, 2.5)
+    ylim = AXIS_LIMITS[thruster]["uion"]
 
     mask = np.array([getattr(x, qty_name) is not None for x in data.values()])
     opconds = [opcond for (i, opcond) in enumerate(data.keys()) if mask[i]]
@@ -734,11 +801,20 @@ def _plot_ion_vel(
         _data = data[opcond].ion_velocity
         pressure_uTorr = opcond.background_pressure_torr * 1e6
 
-        fig, ax = plt.subplots(dpi=200, figsize=(7, 6))
+        figwidth = 7
+        if not include_ylabel:
+            figwidth -= 0.5
+        if not include_yticklabels:
+            figwidth -= 0.5
+
+        fig, ax = plt.subplots(dpi=200, figsize=(figwidth, 6))
         ax.set_xlabel(xlabel)
-        ax.set_ylabel(ylabel)
+
+        if include_ylabel:
+            ax.set_ylabel(ylabel)
+
         ax.set_xlim(xlim)
-        ax.autoscale(enable=True, tight=True)
+        ax.set_ylim(ylim)
 
         handles = []
         labels = []
@@ -772,7 +848,12 @@ def _plot_ion_vel(
             labels.append("90\\% CI (epistemic + aleatoric)")
 
         plot_name = f"{qty_name}_p={pressure_uTorr:05.2f}uTorr"
-        ax.legend(handles, labels, loc='lower right')
+
+        if include_legend:
+            ax.legend(handles, labels, loc='lower right')
+
+        if not include_yticklabels:
+            ax.set_yticklabels([])
 
         save_figure(fig, out_path, plot_name)
 
@@ -783,6 +864,7 @@ def _plot_ion_vel(
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     ax.set_xlim(xlim)
+    ax.set_ylim(ylim)
 
     # Device-specific plotting settings
     match thruster:
@@ -801,7 +883,7 @@ def _plot_ion_vel(
         ax_inset.set_yticks([])
         axes.append(ax_inset)
 
-    colors = ["red", "green", "blue"]
+    colors = ["red", "lightorange", "blue"]
     linestyles = ["solid", "dashed", "dashdot"]
     markerstyles = ["o", "v", "^"]
     if len(opconds) > 3:
@@ -876,9 +958,6 @@ def _plot_ion_vel(
             ax_inset.spines[direction].set_linewidth(inset_width)
         pad = 0.02 * (ymax - ymin)
         ax_inset.set_ylim(ymin - pad, ymax + pad)
-
-    # handles.append(Line2D([0], [0], color="black", lw=2))
-    # labels.append("Median prediction")
 
     ax.legend(handles, labels, loc=legend_loc)
     save_figure(fig, out_path, plot_name)
@@ -1004,6 +1083,10 @@ def _plot_global_quantity(
     scale: float = 1,
     xscale: str = "linear",
     secondary: list[Dataset] | None = None,
+    include_ylabel=True,
+    include_legend=True,
+    include_yticklabels=True,
+    case="prior",
     lims=None,
 ):
     xlabel = "Background pressure [Torr]"
@@ -1027,11 +1110,21 @@ def _plot_global_quantity(
     if len(qty_data) == 0 and len(qty_sim) == 0:
         return
 
-    fig, ax = plt.subplots(dpi=200, figsize=(7, 6))
+    figwidth = 7
+    if not include_ylabel:
+        figwidth -= 0.5
+    if not include_yticklabels:
+        figwidth -= 0.5
+
+    fig, ax = plt.subplots(dpi=200, figsize=(figwidth, 6))
+
     if lims is not None:
         ax.set_ylim(lims)
+
     ax.set_xlabel(xlabel)
-    ax.set_ylabel(full_name)
+
+    if include_ylabel:
+        ax.set_ylabel(full_name)
 
     if xscale == "linear":
         ax.set_xlim(0, np.max(pressure_sim) * 1.05)
@@ -1073,13 +1166,20 @@ def _plot_global_quantity(
             handles.append(handle)
             labels.append("90\\% CI (epistemic + aleatoric)")
 
-    ax.legend(handles, labels)
-    save_figure(fig, plot_path, f"{quantity}_pressure_bands")
+    if include_legend:
+        ax.legend(handles, labels, loc='upper right')
+
+    if not include_yticklabels:
+        ax.set_yticklabels([])
+
+    save_figure(fig, plot_path, f"{quantity}_pressure_bands_{case}")
 
     return median
 
 
-def _load_sim_results(ids, mcmc_path: Path) -> list[dict]:
+def _load_sim_results(
+    ids, mcmc_path: Path, device_name: str = "spt-100", data_exp: Dataset | None = None
+) -> list[dict]:
     start = _start_timer(f"Loading results from {str(mcmc_path)}")
     data = []
     for id in ids:
@@ -1102,6 +1202,9 @@ def _load_sim_results(ids, mcmc_path: Path) -> list[dict]:
 
     data = [d['output'] for d in data]
     _stop_timer(start)
+
+    if device_name.casefold() == "h9" and data_exp is not None:
+        data = _merge_opconds(data, data_exp)
 
     return data
 
@@ -1440,13 +1543,13 @@ def plot_anom(samples: dict[Variable, np.ndarray], pressures: list[float], outpu
     else:
         p = pressures
 
-    fig, axis = plt.subplots(figsize=(5, 4.5), dpi=200)
+    fig, axis = plt.subplots(figsize=(7, 6), dpi=200)
     left = 0
     right = 3
     coords = np.linspace(left, right, 100)
     axis.set_xlim(left, right)
     axis.set_xlabel("Axial coordinate [channel lengths]")
-    axis.set_ylabel("$\\nu_{anom} / (\\omega_{ce} / 16)$")
+    axis.set_ylabel("Anomalous collision frequency (norm.)")
 
     handles = []
     labels = []
@@ -1477,5 +1580,5 @@ def plot_anom(samples: dict[Variable, np.ndarray], pressures: list[float], outpu
         labels.append(f"{pressure / 1e-6:.1f} $\\mu$Torr")
 
     axis.legend(handles, labels)
-    axis.set_ylim(bottom=0, top=2)
+    axis.set_ylim(bottom=0, top=3)
     save_figure(fig, output_dir, "anom")

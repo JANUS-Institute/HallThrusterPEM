@@ -93,11 +93,11 @@ components: !Component
       adaptive: true
       dt: 1.0e-9        # overwritten by model_fidelity[0]
       min_dt: 1.0e-10
-      max_dt: 1.0e-7
+      max_dt: 1.0e-6
       grid:
         type: EvenGrid
         num_cells: 100   # overwritten by model_fidelity[0]
-      duration: 0.002   # s
+      duration: 0.001   # s
       num_save: 1000
       verbose: false
     postprocess:

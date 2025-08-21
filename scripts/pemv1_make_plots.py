@@ -27,6 +27,8 @@ parser.add_argument("-o", "--output", type=str, default=".")
 parser.add_argument("-p", "--plots", action='append', type=lambda s: s.split(','))
 parser.add_argument("-l", "--loglevel", type=int, default=logger.level)
 parser.add_argument("--reanalyze", action="store_true")
+parser.add_argument("--use-point-estimate", action="store_true")
+parser.add_argument("--recompute-metrics", action="store_true")
 parser.add_argument("--range", type=str, choices=["prior", "posterior", "test"], default="posterior")
 
 parser.add_argument("--prior-train", type=str)
@@ -133,53 +135,58 @@ def main(args: argparse.Namespace):
     else:
         assert False
 
-    if args.reanalyze:
-        mcmc_analysis.analyze(
-            amisc_dir=post_train_epistemic,
-            datasets=training_datasets,
-            # plot_corner=True,
-            # plot_bands=True,
-            # calc_metrics=True,
-            subsample=1000,
-            burn_fraction=0.7,
-            output_dir=thruster_dir / "post_train_epistemic",
-            secondary_simulation=post_train_aleatoric,
-            limits=args.range,
-        )
+    recompute_metrics = args.recompute_metrics
+    field_args = dict(
+        include_legend=False,
+        include_ylabel=False,
+        include_yticklabels=False,
+    )
 
-        mcmc_analysis.analyze(
-            amisc_dir=post_train_aleatoric,
-            datasets=training_datasets,
-            output_dir=thruster_dir / "post_train_aleatoric",
-            # plot_bands=True,
-            # calc_metrics=True,
-            limits=args.range,
-        )
+    if args.reanalyze:
+        for limits in ["prior", "posterior"]:
+            print(f"{limits=}")
+            mcmc_analysis.analyze(
+                amisc_dir=post_train_epistemic,
+                datasets=training_datasets,
+                plot_corner=recompute_metrics,
+                plot_bands=recompute_metrics,
+                calc_metrics=recompute_metrics,
+                subsample=1000,
+                burn_fraction=0.7,
+                output_dir=thruster_dir / "post_train_epistemic",
+                secondary_simulation=post_train_aleatoric,
+                limits=limits,
+                metric_plot_args=dict(
+                    include_legend=True, include_ylabel=True, include_yticklabels=(limits == "posterior")
+                ),
+                field_plot_args=field_args,
+            )
 
         mcmc_analysis.analyze(
             amisc_dir=prior_train,
             datasets=training_datasets,
             output_dir=thruster_dir / "prior_train",
-            # plot_bands=True,
-            # calc_metrics=True,
-            limits=args.range,
+            plot_bands=recompute_metrics,
+            calc_metrics=recompute_metrics,
+            secondary_simulation=prior_train,
+            limits="prior",
         )
 
         mcmc_analysis.analyze(
             amisc_dir=prior_test,
             datasets=test_datasets,
             output_dir=thruster_dir / "prior_test",
-            # plot_bands=True,
-            # calc_metrics=True,
-            limits=args.range,
+            plot_bands=recompute_metrics,
+            calc_metrics=recompute_metrics,
+            limits="prior",
         )
 
         mcmc_analysis.analyze(
             amisc_dir=post_test,
             datasets=test_datasets,
             output_dir=thruster_dir / "post_test",
-            # plot_bands=True,
-            # calc_metrics=True,
+            plot_bands=recompute_metrics,
+            calc_metrics=recompute_metrics,
             limits=args.range,
         )
 
@@ -194,19 +201,24 @@ def main(args: argparse.Namespace):
         _make_prediction_plots(prior_train_local, post_train_local, predict_dir, logger, "train", thruster)
 
     if "metrics" in plot_types:
-        _make_metric_tables(prior_test_local, post_test_local, thruster_dir, logger, "test", thruster)
-        _make_metric_tables(prior_train_local, post_train_local, thruster_dir, logger, "train", thruster)
+        _make_metric_tables(
+            prior_test_local, post_test_local, thruster_dir, logger, "test", thruster, args.use_point_estimate
+        )
+        _make_metric_tables(
+            prior_train_local, post_train_local, thruster_dir, logger, "train", thruster, args.use_point_estimate
+        )
 
-    consolidate_plots(
-        prior_test_local,
-        post_test_local,
-        prior_train_local,
-        post_train_local,
-        thruster,
-        Path("results_consolidated"),
-        output_dir,
-        args.range,
-    )
+    for range in ("prior", "posterior"):
+        consolidate_plots(
+            prior_test_local,
+            post_test_local,
+            prior_train_local,
+            post_train_local,
+            thruster,
+            Path("results_consolidated"),
+            output_dir,
+            range,
+        )
 
 
 def consolidate_plots(
@@ -267,7 +279,7 @@ def consolidate_plots(
 
         # Plots vs background pressure
         for metric in metrics:
-            plot = v / f"{metric}_pressure_bands.pdf"
+            plot = v / f"{metric}_pressure_bands_{range}.pdf"
             if plot.is_file():
                 shutil.copy(plot, case_out / f"{metric}_{range}.pdf")
 
@@ -282,7 +294,7 @@ def consolidate_plots(
         jion_dir = v / "ion_current_density"
         if jion_dir.is_dir():
             jion_radius = "1.32m" if thruster == "h9" else "1.00m"
-            jion_pressure = "26.10uTorr" if thruster == "h9" else "15.80uTorr"
+            jion_pressure = "13.40uTorr" if thruster == "h9" else "15.80uTorr"
 
             allradii = jion_dir / f"ion_current_density_p={jion_pressure}.pdf"
             if allradii.is_file():
@@ -347,7 +359,15 @@ metrics = dict(
 )
 
 
-def _make_metric_tables(prior_dir: Path, post_dir: Path, output_dir: Path, logger: Logger, case: str, thruster: str):
+def _make_metric_tables(
+    prior_dir: Path,
+    post_dir: Path,
+    output_dir: Path,
+    logger: Logger,
+    case: str,
+    thruster: str,
+    use_point_estimate: bool = False,
+):
     # Load metric files
     with open(prior_dir / "metrics.json", "r") as fd:
         prior_metrics = json.load(fd)
@@ -388,7 +408,7 @@ def _make_metric_tables(prior_dir: Path, post_dir: Path, output_dir: Path, logge
         return formatted
 
     def metric_row(prev, name, metrics, error=0.025, color=False, showerror=True):
-        mu_50 = metrics.get('median')
+        mu_50 = metrics.get('median_point_estimate') if use_point_estimate else metrics.get('median')
         mean = metrics.get('mean')
         std = metrics.get('std')
 
@@ -530,7 +550,7 @@ def _make_anom_diagram(output_dir: Path, logger: Logger) -> list[Path]:
     # Draw scale for dz_anom
     y_dz = 0.8 * lo
     ax.annotate("", xytext=(z - dz, y_dz), xy=(z, y_dz), arrowprops=arrowprops)
-    ax.text(z - 0.5 * dz, 0.9 * y_dz, "$\\Delta z_{anom}$", ha='center', va='top')
+    ax.text(z - 0.5 * dz, 0.9 * y_dz, "$\\Delta z (p_B)$", ha='center', va='top')
 
     # Label alpha_anom
     ax.text(3, alpha * 1.04, "$\\alpha_{anom}$", horizontalalignment='right')
@@ -574,7 +594,7 @@ def _plot_multiple_datasets(
         x_err = _data.x_err[inds]
 
         y_median = _data.y_median[inds]
-        y_err = (_data.y_err_lo[inds], _data.y_err_hi[inds])
+        y_err = (y_median - _data.y_err_lo[inds], _data.y_err_hi[inds] - y_median)
 
         h_err = ax.errorbar(
             x_mean,
@@ -664,6 +684,7 @@ def try_plot_prediction(
 ) -> list[Path]:
     data_prior = mcmc_analysis.load_global_quantity(prior, quantity)
     data_posterior = mcmc_analysis.load_global_quantity(posterior, quantity)
+
     if data_prior is None or data_posterior is None:
         return []
 
