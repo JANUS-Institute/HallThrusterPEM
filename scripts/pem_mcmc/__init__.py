@@ -7,13 +7,14 @@ from pem_mcmc.analysis import analyze
 from pem_mcmc.io import append_sample_row, load_system, read_output_file
 from pem_mcmc.metrics import likelihood_and_distances, log_posterior
 from pem_mcmc.options import ExecutionOptions, load_system_and_opts
-from pem_mcmc.samplers import DRAMSampler, PreviousRunSampler, PriorSampler
+from pem_mcmc.samplers import DRAMSampler, PreviousRunSampler, PriorSampler, FixedSampler
 from pem_mcmc.types import Value
 
 __all__ = [
     "DRAMSampler",
     "PreviousRunSampler",
     "PriorSampler",
+    "FixedSampler",
     "get_nominal_inputs",
     "load_system_and_opts",
     "append_sample_row",

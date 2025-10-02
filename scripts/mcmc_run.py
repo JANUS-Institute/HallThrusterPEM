@@ -1,13 +1,4 @@
-import argparse
-import os
-
-import numpy as np
-import pem_mcmc as mcmc
-from install_hallthruster import main as install_hallthruster
-
-import hallmd.data
-
-desc_str = """`mcmc_run.py`
+"""`mcmc.py`
 
 This script is used to run MCMC on the cathode-thruster-plume system.
 
@@ -17,9 +8,18 @@ That folder in turn contains folders (numbered 000000 - num_samples) that hold t
 Additionally, each sample, its log-pdf, and whether it was accepted are written to a file called mcmc.csv in the main mcmc directory.
 
 For usage details and a full list of options , run 'pdm run scripts/run_mcmc.py --help'
+
 """  # noqa: E501
 
-parser = argparse.ArgumentParser(prog="mcmc_run.py", description=desc_str)
+import argparse
+import os
+
+import numpy as np
+import pem_mcmc as mcmc
+
+import hallmd.data
+
+parser = argparse.ArgumentParser(description="MCMC scripts")
 
 parser.add_argument(
     "config_file",
@@ -99,13 +99,14 @@ parser.add_argument(
 parser.add_argument(
     "--sampler",
     type=str,
-    choices=["dram", "prior", "prev-run"],
+    choices=["dram", "prior", "prev-run", "fixed"],
     default="dram",
     help="""
     The type of sampler to use
     - `dram`: the delayed-rejection adaptive metropolis sampler
     - `prior`: sample from the variable prior distributions only
     - `prev-run`: draw randomly (with replacement) from the samples of a previous run.
+    - `fixed` : evaluates only the initial sample
 
     The `prev-run` sampler requires the --prev argument to be passed.
     """,
@@ -135,17 +136,6 @@ def _update_opts(opts, root_dir, sample_index):
 
 def main(args):
     system, opts = mcmc.load_system_and_opts(args)
-
-    # Check for correct Hallthruster.jl version and install it if not present
-    hallthruster_version = system.get_component("Thruster").model_kwargs["version"]
-    install_hallthruster(
-        julia_version=None,
-        hallthruster_version=hallthruster_version,
-        git_ref=None,
-        yes=True,
-        verbose=False,
-    )
-
     base = mcmc.get_nominal_inputs(system)
 
     # Determine thruster and load data
@@ -156,7 +146,7 @@ def main(args):
     operating_conditions = list(data)
 
     # Load operating conditions into input dict
-    operating_params = ["P_b", "V_a", "mdot_a"]
+    operating_params = ["P_b", "V_a", "mdot_a", "B_hat"]
     for param in operating_params:
         long_name = hallmd.data.opcond_keys[param.casefold()]
         inputs_unnorm = np.array([getattr(cond, long_name) for cond in data.keys()])
@@ -211,6 +201,9 @@ def main(args):
             sampler = mcmc.PreviousRunSampler(
                 params_to_calibrate, data, system, base, opts, prev_run_file=args.prev, burn_fraction=0.5
             )
+        case "fixed":
+            sampler = mcmc.FixedSampler(
+                params_to_calibrate, data, system, base, opts, args.init_sample)
         case _:
             raise ValueError("Unreachable")
 

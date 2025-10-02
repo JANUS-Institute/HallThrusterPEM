@@ -22,6 +22,7 @@
     "f_n": ["config", "neutral_ingestion_multiplier"],
 	"c_w": ["config", "wall_loss_model", "loss_scale"],
     "ncharge": ["config", "ncharge"],
+    "B_hat": ["config", "magnetic_field_scale"],
     "num_cells": ["simulation", "grid", "num_cells"],
     "dt": ["simulation", "dt"],
     "I_B0": ["output", "average", "ion_current"],
