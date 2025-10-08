@@ -312,7 +312,7 @@ class OperatingCondition:
     :ivar discharge_voltage_v: the discharge voltage in Volts.
     :ivar anode_mass_flow_rate_kg_s: the anode mass flow rate in kg/s.
     :ivar magnetic_field_scale: a factor by which to scale magnetic field from file, optional and assumed unity if not provided.
-    """
+    """ # noqa: E501
 
     background_pressure_torr: float
     discharge_voltage_v: float
@@ -515,7 +515,7 @@ def _load_single_file(file: PathLike) -> dict[OperatingCondition, ThrusterData]:
     if mdot_a is None:
         mdot_t = table.get("total flow rate (mg/s)")
         if mdot_t is not None and (cathode_flow_fraction := table.get("cathode flow fraction")) is not None:
-            anode_flow_fraction = 1/(1+cathode_flow_fraction) #1 - cathode_flow_fraction #erroneous definition maybe built in for SPT-100/h9 results; references I've encountered the cathode flow fraction is a percentage of the anode, not total, flow
+            anode_flow_fraction = 1/(1+cathode_flow_fraction) #1 - cathode_flow_fraction #erroneous definition maybe built in for SPT-100/h9 results; references I've encountered the cathode flow fraction is a percentage of the anode, not total, flow # noqa: E501
             mdot_a = mdot_t * anode_flow_fraction
         elif mdot_t is not None and (anode_flow_ratio := table.get("anode-cathode flow ratio")) is not None:
             anode_flow_fraction = anode_flow_ratio / (anode_flow_ratio + 1)
@@ -547,10 +547,10 @@ def _load_single_file(file: PathLike) -> dict[OperatingCondition, ThrusterData]:
         I_mag = table.get('magnet current (a)') #try to read coil current
         I_star = table.get('nominal magnet current (a)') #try to read nominal coil current
         if I_mag is not None and I_star is not None: #if both are included
-            B_hat = I_mag / I_star #linearly scale B field by actual vs nominal coil current (ignores potential nonlinearity/saturation)
+            B_hat = I_mag / I_star #linearly scale B field by actual vs nominal coil current (ignores potential nonlinearity/saturation) # noqa: E501
         else: #if not provided in any way
             pass #do nothing (B_hat will remain None, which will be interpreted later)
-            #this effectively makes the magnetic field scale an optional parameter and is trying to promote backwards compatibility
+            #this effectively makes the magnetic field scale an optional parameter and is trying to promote backwards compatibility # noqa: E501
 
     num_rows = len(table[keys[0]])
     row = 0
