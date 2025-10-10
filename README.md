@@ -37,7 +37,7 @@ curl -sSL https://raw.githubusercontent.com/JANUS-Institute/HallThrusterPEM/refs
 powershell -c "Invoke-WebRequest -Uri https://raw.githubusercontent.com/JANUS-Institute/HallThrusterPEM/refs/heads/main/scripts/install_hallthruster.py | python -"
 ```
 This will create a fresh Julia environment called `hallthruster_<VERSION>` (where `<VERSION>` is the latest version of HallThruster.jl) and install `HallThruster.jl` there.
-You can also use `pdm` to run this workflow ans specify a specific julia and HallThruster.jl version.
+You can also use `pdm` to run this workflow and specify a specific julia and HallThruster.jl version.
 
 ```shell
 pdm run scripts/install_hallthruster.py --julia-version=X.XX.X --hallthruster-version=V.VV.V
