@@ -46,9 +46,7 @@ def test_thrusterdata():
         "eta_a": np.zeros(len(operating_conditions)),
     }
 
-    out = hallmd.data.pem_to_thrusterdata(
-        operating_conditions, pem_dict, sweep_radii=np.array(radii), use_corrected_thrust=False
-    )
+    out = hallmd.data.pem_to_thrusterdata(operating_conditions, pem_dict, sweep_radii=np.array(radii))
 
     for i, (opcond, tdata) in enumerate(out.items()):
         assert opcond == operating_conditions[i]
