@@ -322,7 +322,8 @@ def analyze(
         if median_sample_index is not None:
             median_sim = _load_sim_results([ids[median_sample_index]], mcmc_path, device_name, data)
 
-        metrics_out = None
+        metric_summary_stats = None
+        metrics = None
 
         if calc_metrics:
             start = _start_timer("Calculating metrics")
@@ -333,7 +334,7 @@ def analyze(
                 for k, (distance, _) in _dist.items():
                     metrics[k].append(distance)
 
-            metrics_out = {k: {"mean": np.mean(v), "std": np.std(v)} for (k, v) in metrics.items()}
+            metric_summary_stats = {k: {"mean": np.mean(v), "std": np.std(v)} for (k, v) in metrics.items()}
 
             _stop_timer(start)
 
@@ -442,7 +443,7 @@ def analyze(
                     for opcond in data
                 }
 
-                assert metrics_out is not None
+                assert metric_summary_stats is not None
 
                 metrics_median = {
                     k: distance
@@ -457,15 +458,20 @@ def analyze(
                     }
 
                 for k, v in metrics_median.items():
-                    metrics_out[k]['median'] = np.float64(v)
+                    metric_summary_stats[k]['median'] = np.float64(v)
                     if median_sample_index is not None:
-                        metrics_out[k]['median_point_estimate'] = np.float64(metrics_median_point[k])
+                        metric_summary_stats[k]['median_point_estimate'] = np.float64(metrics_median_point[k])
 
         if calc_metrics:
-            assert metrics_out is not None
+            assert metric_summary_stats is not None
             metric_file = output_dir / "metrics.json"
             with open(metric_file, "w") as fd:
-                json.dump(metrics_out, fd, indent=4)
+                json.dump(metric_summary_stats, fd, indent=4)
+
+            assert metrics is not None
+            metric_file = output_dir / "metrics_raw.json"
+            with open(metric_file, "w") as fd:
+                json.dump(metrics, fd, indent=4)
 
     plt.close('all')
 

@@ -127,7 +127,7 @@ class PriorSampler(Sampler):
 
 class PreviousRunSampler(Sampler):
     """
-    Samples (with replacement) from a previous MCMC run.
+    Samples from a previous MCMC run.
     """
 
     def __init__(
@@ -141,36 +141,46 @@ class PreviousRunSampler(Sampler):
         burn_fraction: float = 0.5,
         init_sample_file: PathLike | None = None,
         init_cov_file: PathLike | None = None,
+        in_order=False,
     ):
         super().__init__(variables, data, system, base_vars, opts, init_sample_file, init_cov_file)
         _vars, _samples, _, accepted, _ = io.read_output_file(prev_run_file)
 
         # Figure out the first index we should sample.
-        self.start_index = math.floor(burn_fraction * len(_samples))
+        if in_order:
+            self.index = 0
+        else:
+            self.index = math.floor(burn_fraction * len(_samples))
+        self.in_order = in_order
 
         # associate variable names with columns and remove burned samples
         _samples = np.array(_samples)
-        col_dict = {system.inputs()[v]: _samples[self.start_index :, i] for (i, v) in enumerate(_vars)}
+        col_dict = {system.inputs()[v]: _samples[self.index :, i] for (i, v) in enumerate(_vars)}
 
         # reorder to match input varible list.
         # this will error if variable lists don't match
         self.samples = np.array([col_dict[v] for v in self.variables]).T
-        self.accepted = accepted[self.start_index :]
+        self.accepted = accepted[self.index :]
+        self._init_sample = self.samples[0, :]
 
     def __iter__(self):
         return self
 
     def sample_index(self):
-        return random.randint(0, self.samples.shape[0] - 1)
+        if self.in_order:
+            # Return next index
+            return self.index + 1
+        else:
+            # Return random index
+            return random.randint(0, self.samples.shape[0] - 1)
 
     def __next__(self):
         # draw until we get an accepted sample
-        index = self.sample_index()
+        self.index = self.sample_index()
+        while not self.accepted[self.index]:
+            self.index = self.sample_index()
 
-        while not self.accepted[index]:
-            index = self.sample_index()
-
-        sample = self.samples[index, :]
+        sample = self.samples[self.index, :]
         logp = self.logpdf(sample)
         return sample, logp, np.isfinite(logp)
 

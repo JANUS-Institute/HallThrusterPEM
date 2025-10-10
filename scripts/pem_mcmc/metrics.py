@@ -143,11 +143,36 @@ def likelihood_and_distances(
 ) -> tuple[float, dict[str, tuple[float, float]]]:
     component_stats: dict[str, tuple[float, float]] = {}
     L = 0.0
+
+    # opcond = list(result.keys())[0]
+    # sim = result[opcond]
+    # var_stats = {}
+    # var_stats["cathode_coupling_voltage_V"] = sim.cathode_coupling_voltage_V.mean
+    # var_stats["discharge_current_A"] = sim.discharge_current_A.mean
+    # var_stats["thrust_N"] = sim.thrust_N.mean
+    #
+    # uion_x = sim.ion_velocity.axial_distance_m
+    # uion_y = sim.ion_velocity.velocity_m_s.mean
+    # Lch = 0.038 if np.max(uion_x) > 0.1 else 0.025
+    # var_stats["ion_velocity"] = np.interp(Lch, uion_x, uion_y)
+    #
+    # jion = sim.ion_current_sweeps[0]
+    # jmax = np.max(jion.current_density_A_m2.mean)
+    # var_stats["ion_current_sweeps"] = jmax
+    #
+    # component_stats = {k: (v, 0.0) for (k, v) in var_stats.items()}
+
     for field in fields(ThrusterData):
         # Assemble a vector of all data points for a single operating condition
         fieldname = field.name
         out = _get_qoi_all_opconds(data, result, fieldname)
         if out is None:
+            if fieldname == "thrust_N":
+                out = _get_qoi_all_opconds(result, result, fieldname)
+                assert out is not None
+                obs_arr = out[1]
+                distance = np.sqrt(np.sum(obs_arr**2))
+                component_stats[fieldname] = (distance, 0.0)
             continue
 
         data_arr, obs_arr, num_obs = out

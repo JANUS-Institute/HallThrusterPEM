@@ -121,10 +121,18 @@ parser.add_argument(
 )
 
 parser.add_argument(
+    "--prev-in-order",
+    action="store_true",
+    help="If using the prev-run sampler, this makes it so samples are drawn in order rather than randomly.",
+)
+
+parser.add_argument(
     "--sample-aleatoric",
     action='store_true',
     help="Sample aleatoric varibles from distributions in config file instead of using fixed values.",
 )
+
+parser.add_argument("--dont-plot", action='store_true', help="Disable plotting and analysis.")
 
 
 def _update_opts(opts, root_dir, sample_index):
@@ -205,7 +213,14 @@ def main(args):
             sampler = mcmc.PriorSampler(params_to_calibrate, data, system, base, opts)
         case "prev-run":
             sampler = mcmc.PreviousRunSampler(
-                params_to_calibrate, data, system, base, opts, prev_run_file=args.prev, burn_fraction=0.5
+                params_to_calibrate,
+                data,
+                system,
+                base,
+                opts,
+                prev_run_file=args.prev,
+                burn_fraction=0.5,
+                in_order=args.prev_in_order,
             )
         case _:
             raise ValueError("Unreachable")
@@ -245,7 +260,7 @@ def main(args):
 
         corner = i == max_samples or (i > 100 and (i % (args.output_interval * 10) == 0))
 
-        if (i == max_samples) or (i % args.output_interval == 0):
+        if not (args.dont_plot) and ((i == max_samples) or (i % args.output_interval == 0)):
             mcmc.analyze(
                 root_dir.parent,
                 args.datasets,

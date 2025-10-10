@@ -9,37 +9,52 @@ from amisc import System
 from pem_mcmc.types import Array, Number
 
 
-def load_system(directory: Path) -> System:
+def load_system(directory: Path | str) -> System:
     """
-    Given a directory, find the first yaml file in that directory and load the amisc system from that file.
+    Given a directory or file, find the first yaml file in that directory and load the amisc system from that file.
+    If given a file, load that directly.
     """
-    dir_contents = os.listdir(directory)
-    for file_or_dir in dir_contents:
-        # Skip directories
-        if os.path.isdir(file_or_dir):
-            continue
+    path = None
+    directory = Path(directory)
 
-        # Skip files without .yml or .yaml extensions
-        file = Path(file_or_dir)
-        ext = file.suffix.casefold()
-        if ext not in {".yml", ".yaml"}:
-            continue
+    if directory.is_dir():
+        for file_or_dir in os.listdir(directory):
+            # Skip directories
+            if os.path.isdir(file_or_dir):
+                continue
 
-        # Load the system from the file
-        return System.load_from_file(directory / file)
+            # Skip files without .yml or .yaml extensions
+            file = Path(file_or_dir)
+            ext = file.suffix.casefold()
+            if ext not in {".yml", ".yaml"}:
+                continue
 
-    # If we're here, we didn't find anything and should error.
-    raise ValueError(f"Could not find a yaml file in directory {directory}.")
+            # Load the system from the file
+            path = directory / file
+            break
+    else:
+        path = directory
+
+    if path is None:
+        # If we're here, we didn't find anything and should error.
+        raise ValueError(f"Could not find a yaml file in directory {directory}.")
+
+    return System.load_from_file(path)
+
+
+def write_sample_row_fd(fd, sample_index: int, sample: Array, logp: Number, accepted: bool, delimiter: str = ','):
+    """Append a row of MCMC diagnostic data to an open logfile descriptor"""
+    id_str = f"{sample_index:06d}"
+    row = [id_str] + [f"{s}" for s in sample] + [f"{logp}", f"{accepted}"]
+    print(delimiter.join(row), file=fd)
 
 
 def append_sample_row(
     logfile: PathLike, sample_index: int, sample: Array, logp: Number, accepted: bool, delimiter: str = ','
 ):
     """Append a row of MCMC diagnostic data for the given `logfile`"""
-    id_str = f"{sample_index:06d}"
     with open(logfile, "a") as fd:
-        row = [id_str] + [f"{s}" for s in sample] + [f"{logp}", f"{accepted}"]
-        print(delimiter.join(row), file=fd)
+        write_sample_row_fd(fd, sample_index, sample, logp, accepted, delimiter)
 
 
 def read_dlm(file: PathLike, delimiter: str | None = ',', comments='#') -> dict[str, Array]:
