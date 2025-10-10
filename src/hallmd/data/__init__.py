@@ -299,6 +299,7 @@ opcond_keys: dict[str, str] = {
     "p_b": "background_pressure_torr",
     "v_a": "discharge_voltage_v",
     "mdot_a": "anode_mass_flow_rate_kg_s",
+    "b_hat": "magnetic_field_scale",
 }
 """Forward mapping between operating condition short and long names."""
 
@@ -310,11 +311,13 @@ class OperatingCondition:
     :ivar background_pressure_torr: the background pressure in Torr.
     :ivar discharge_voltage_v: the discharge voltage in Volts.
     :ivar anode_mass_flow_rate_kg_s: the anode mass flow rate in kg/s.
-    """
+    :ivar magnetic_field_scale: a factor by which to scale magnetic field from file, optional and assumed unity if not provided.
+    """ # noqa: E501
 
     background_pressure_torr: float
     discharge_voltage_v: float
     anode_mass_flow_rate_kg_s: float
+    magnetic_field_scale: float = 1.0 #assume field is nominal if unspecified
 
 
 # ====================================================================================================================
@@ -350,11 +353,13 @@ def _amisc_output_is_valid(outputs: dict, num_conditions: int) -> bool:
     return True
 
 
-def _single_opcond_to_thrusterdata(i: int, outputs: dict, sweep_radii: Any) -> ThrusterData:
+def _single_opcond_to_thrusterdata(
+    i: int, outputs: dict, sweep_radii: Any, use_corrected_thrust: bool = True
+) -> ThrusterData:
     NaN = np.float64(np.nan)
 
     cathode_coupling_voltage_V = Measurement(outputs["V_cc"][i], NaN)
-    thrust_N = _pem_thrust(i, outputs)
+    thrust_N = _pem_thrust(i, outputs, use_corrected_thrust)
     discharge_current_A = Measurement(outputs["I_d"][i], NaN)
     ion_current_A = Measurement(outputs["I_B0"][i], NaN)
 
@@ -395,7 +400,7 @@ def _single_opcond_to_thrusterdata(i: int, outputs: dict, sweep_radii: Any) -> T
 
 
 def pem_to_thrusterdata(
-    operating_conditions: list[OperatingCondition], outputs: dict, sweep_radii: Array
+    operating_conditions: list[OperatingCondition], outputs: dict, sweep_radii: Array, use_corrected_thrust: bool = True
 ) -> Optional[dict[OperatingCondition, ThrusterData]]:
     """Given a list of operating conditions and an `outputs` dict from amisc,
     construct a `dict` mapping the operating conditions to `ThrusterData` objects.
@@ -404,6 +409,8 @@ def pem_to_thrusterdata(
     :param operating_conditions: A list of `OperatingConditions` at which the pem was run.
     :param outputs: the amisc output dict from the run
     :param sweep_radii: an array of radii at which ion current density data was taken
+    :param use_corrected_thrust: Whether to use the base thrust from HallThruster.jl or the thrust corrected by the
+           divergence angle computed in the plume model.
     """  # noqa: E501
 
     # Check to make sure all keys that we expect to be there are there
@@ -411,18 +418,17 @@ def pem_to_thrusterdata(
         return None
 
     output_dict = {
-        opcond: _single_opcond_to_thrusterdata(i, outputs, sweep_radii)
+        opcond: _single_opcond_to_thrusterdata(i, outputs, sweep_radii, use_corrected_thrust)
         for (i, opcond) in enumerate(operating_conditions)
     }
 
     return output_dict
 
 
-def _pem_thrust(i: int, outputs: dict) -> Measurement:
+def _pem_thrust(i: int, outputs: dict, use_corrected_thrust: bool) -> Measurement:
     """Helper to return the correct thrust measurement."""
     NaN = np.float64(np.nan)
-
-    if 'T_c' in outputs:
+    if use_corrected_thrust:
         thrust = outputs['T_c'][i]
         if not np.isscalar(thrust):
             # Take the last (furthest) thrust to be the "true" thrust
@@ -484,6 +490,8 @@ def _read_measurement(
         std = abs_err * scale / 2
     elif (rel_err := table.get(_rel_uncertainty_key(key))) is not None:
         std = rel_err * mean / 2
+        
+    std = np.abs(std) #hot fix for negative data that is computed relatively
 
     if end is None:
         end = val.size
@@ -507,7 +515,7 @@ def _load_single_file(file: PathLike) -> dict[OperatingCondition, ThrusterData]:
     if mdot_a is None:
         mdot_t = table.get("total flow rate (mg/s)")
         if mdot_t is not None and (cathode_flow_fraction := table.get("cathode flow fraction")) is not None:
-            anode_flow_fraction = 1 - cathode_flow_fraction
+            anode_flow_fraction = 1/(1+cathode_flow_fraction) #1 - cathode_flow_fraction #erroneous definition maybe built in for SPT-100/h9 results; references I've encountered the cathode flow fraction is a percentage of the anode, not total, flow # noqa: E501
             mdot_a = mdot_t * anode_flow_fraction
         elif mdot_t is not None and (anode_flow_ratio := table.get("anode-cathode flow ratio")) is not None:
             anode_flow_fraction = anode_flow_ratio / (anode_flow_ratio + 1)
@@ -532,16 +540,34 @@ def _load_single_file(file: PathLike) -> dict[OperatingCondition, ThrusterData]:
             f"{file}: No discharge voltage provided."
             + " Expected a key called `discharge voltage (v)` or `anode voltage (v)`."
         )
+    
+    # Get magnetic field scale
+    B_hat = table.get("magnetic field scale") #try to read directly
+    if B_hat is None: #if there is none directly provided
+        I_mag = table.get('magnet current (a)') #try to read coil current
+        I_star = table.get('nominal magnet current (a)') #try to read nominal coil current
+        if I_mag is not None and I_star is not None: #if both are included
+            B_hat = I_mag / I_star #linearly scale B field by actual vs nominal coil current (ignores potential nonlinearity/saturation) # noqa: E501
+        else: #if not provided in any way
+            pass #do nothing (B_hat will remain None, which will be interpreted later)
+            #this effectively makes the magnetic field scale an optional parameter and is trying to promote backwards compatibility # noqa: E501
 
     num_rows = len(table[keys[0]])
     row = 0
     opcond_start = 0
-    opcond = OperatingCondition(P_B[0], V_a[0], mdot_a[0])
+    if B_hat is not None: #if magnetic field scaling is specified
+        opcond = OperatingCondition(P_B[0], V_a[0], mdot_a[0], B_hat[0])
+    else: #if unspecified, leave as defau
+        opcond = OperatingCondition(P_B[0], V_a[0], mdot_a[0])
+        
 
     while True:
         next_opcond = opcond
         if row < num_rows:
-            next_opcond = OperatingCondition(P_B[row], V_a[row], mdot_a[row])
+            if B_hat is not None: #if magnetic field scaling is specified
+                next_opcond = OperatingCondition(P_B[row], V_a[row], mdot_a[row], B_hat[row])
+            else: #if unspecified, leave as defau
+                next_opcond = OperatingCondition(P_B[row], V_a[row], mdot_a[row])
             if next_opcond == opcond:
                 row += 1
                 continue

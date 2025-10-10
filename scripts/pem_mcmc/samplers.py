@@ -218,3 +218,31 @@ class DRAMSampler(Sampler):
 
     def __iter__(self):
         return iter(self.sampler)
+
+
+class FixedSampler(Sampler):
+    """
+    'Sampler' that just draws from a fixed sample (its 'initial'). Used simply
+    as a hack to evaluate the PEM for a single set of parameters.
+    """
+
+    def __init__(
+        self,
+        variables,
+        data,
+        system,
+        base_vars,
+        opts,
+        init_sample_file: PathLike | None = None,
+    ):
+        super().__init__(variables, data, system, base_vars, opts, init_sample_file)
+
+    def __next__(self):
+        # "draw" the same, initial sample
+
+        sample = self._init_sample
+        logp = self.logpdf(sample)
+        return sample, logp, np.isfinite(logp)
+
+    def __iter__(self):
+        return self

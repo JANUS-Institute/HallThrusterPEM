@@ -22,8 +22,6 @@ class SPT100(ThrusterDataset):
                     data_list += _macdonald2019()
                 case "express2001":
                     data_list += _express2001()
-                case "express2001_300V":
-                    data_list += _express2001_300V()
                 case _:
                     raise ValueError(f"Invalid dataset {dataset} selected.")
 
@@ -76,16 +74,5 @@ def _express2001() -> list[Path]:
     from . import express2001
 
     dir = resources.files(express2001)
-    with resources.as_file(dir / "data.csv") as path:
-        return [path]
-
-
-def _express2001_300V() -> list[Path]:
-    """See https://ntrs.nasa.gov/api/citations/20020014412/downloads/20020014412.pdf"""
-    # A version of the express2001 dataset with a 300 V on-orbit discharge voltage
-    # Used for a sensitivity study of the on-orbit predictions to the voltage.
-    from . import express2001_300V
-
-    dir = resources.files(express2001_300V)
     with resources.as_file(dir / "data.csv") as path:
         return [path]
