@@ -14,8 +14,11 @@ from hallmd.models.thruster import (
     _convert_to_pem,
     hallthruster_jl,
 )
+from scripts.install_hallthruster import main as install_hallthruster
 
 SHOW_PLOTS = False
+
+install_hallthruster("1.11", HALLTHRUSTER_VERSION_DEFAULT, None, True, False)
 
 
 def test_julia_conversion():

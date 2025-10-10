@@ -6,7 +6,8 @@
 ![build](https://img.shields.io/github/actions/workflow/status/JANUS-Institute/HallThrusterPEM/deploy.yml?logo=github)
 ![docs](https://img.shields.io/github/actions/workflow/status/JANUS-Institute/HallThrusterPEM/docs.yml?logo=materialformkdocs&logoColor=%2523cccccc&label=docs)
 ![tests](https://img.shields.io/github/actions/workflow/status/JANUS-Institute/HallThrusterPEM/tests.yml?logo=github&logoColor=%2523cccccc&label=tests)
-![Code Coverage](https://img.shields.io/badge/coverage-76%25-yellowgreen?logo=codecov)
+![Code Coverage](https://img.shields.io/badge/coverage-77%25-yellowgreen?logo=codecov)
+>>>>>>> upstream/main
 [![Journal article](https://img.shields.io/badge/DOI-10.1007/s44205--024--00079--w-blue)](https://rdcu.be/dVmim)
 
 Prototype of a predictive engineering model (PEM) of a Hall thruster. Integrates sub-models from multiple disciplines to simulate a Hall thruster operating in a vacuum chamber. Uses uncertainty quantification techniques to extrapolate model predictions to a space-like environment.
@@ -83,5 +84,10 @@ See the [contribution](https://github.com/JANUS-Institute/HallThrusterPEM/blob/m
 
 ## 📖 Reference
 [[1](https://rdcu.be/dVmim)] Eckels, J. et al., "Hall thruster model improvement by multidisciplinary uncertainty quantification," _Journal of Electric Propulsion_, vol 3, no 19, September 2024.
+
+## Funding declaration
+
+Funding for this work was provided by NASA in part through the [Joint Advanced Propulsion Institute (JANUS)](https://januselectricpropulsion.com/), a NASA Space Technology Research Institute, under grant number 80NSSC21K1118, as well as in part through a NASA Space Technology Graduate Research Opportunity grant 80NSSC23K1181.
+This research was additionally supported in part through computational resources provided by [Advanced Research Computing](https://its.umich.edu/advanced-research-computing) at the University of Michigan.
 
 <sup><sub>Made with the [copier-numpy](https://github.com/eckelsjd/copier-numpy.git) template.</sub></sup>
