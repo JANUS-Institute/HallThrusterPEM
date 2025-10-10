@@ -25,14 +25,23 @@ pdm install --prod
 `hallmd` uses the [`HallThruster.jl`](https://github.com/UM-PEPL/HallThruster.jl) Julia package.
 Please see their docs for setting up Julia and installing.
 Alternatively, you may run the provided [install script](https://raw.githubusercontent.com/JANUS-Institute/HallThrusterPEM/refs/heads/main/scripts/install_hallthruster.py), which will install both Julia and `HallThruster.jl`.
-By default, this will install Julia 1.11 and HallThruster.jl version 0.18.7.
-From the root directory, run the following command:
+From the root directory, run the following command (assuming `python` is available on your path)
 
+### Linux/Mac
+```shell
+curl -sSL https://raw.githubusercontent.com/JANUS-Institute/HallThrusterPEM/refs/heads/main/scripts/install_hallthruster.py | python -
 ```
+
+### Windows
+```shell
+powershell -c "Invoke-WebRequest -Uri https://raw.githubusercontent.com/JANUS-Institute/HallThrusterPEM/refs/heads/main/scripts/install_hallthruster.py | python -"
+```
+This will create a fresh Julia environment called `hallthruster_<VERSION>` (where `<VERSION>` is the latest version of HallThruster.jl) and install `HallThruster.jl` there.
+You can also use `pdm` to run this workflow and specify a specific julia and HallThruster.jl version.
+
+```shell
 pdm run scripts/install_hallthruster.py --julia-version=X.XX.X --hallthruster-version=V.VV.V
 ```
-
-This will create a fresh Julia environment called `hallthruster_V.VV.V` and install `HallThruster.jl` there.
 
 ## 📍 Scripts used for publications
 See the [scripts](https://github.com/JANUS-Institute/HallThrusterPEM/blob/main/scripts) folder for workflows for data generation, parameter inference, and analysis using `hallmd`.
@@ -73,6 +82,8 @@ HallThrusterPEM
     docs/
     scripts/           # Scripts for building predictive engineering models (PEMs)
         pem_v0/        # PEM v0 coupling of cathode -> thruster -> plume
+        pem_v1/        # PEM v1, same coupling but updated models and parameterization
+        pem_mcmc/      # Internal package for MCMC inference
     src/hallmd         # Python package source code root
         models/        # Python wrappers for sub-models
         data/          # Experimental data
@@ -94,5 +105,8 @@ See the [contribution](https://github.com/JANUS-Institute/HallThrusterPEM/blob/m
 
 Funding for this work was provided by NASA in part through the [Joint Advanced Propulsion Institute (JANUS)](https://januselectricpropulsion.com/), a NASA Space Technology Research Institute, under grant number 80NSSC21K1118, as well as in part through a NASA Space Technology Graduate Research Opportunity grant 80NSSC23K1181.
 This research was additionally supported in part through computational resources provided by [Advanced Research Computing](https://its.umich.edu/advanced-research-computing) at the University of Michigan.
+
+## 📖 References
+[[1](https://rdcu.be/dVmim)] Eckels, J. et al., "Hall thruster model improvement by multidisciplinary uncertainty quantification," _Journal of Electric Propulsion_, vol 3, no 19, September 2024.
 
 <sup><sub>Made with the [copier-numpy](https://github.com/eckelsjd/copier-numpy.git) template.</sub></sup>

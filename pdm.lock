@@ -5,7 +5,7 @@
 groups = ["default", "dev", "doc", "mpi", "scripts", "test"]
 strategy = ["inherit_metadata"]
 lock_version = "4.5.0"
-content_hash = "sha256:58927abcf2ce29fcf0eaccbc4d3270b181ce7cc66a7ed4584ccdf85896eec389"
+content_hash = "sha256:084a69bdc69fbd93e34c222cccfc7b9df87ffdcb1544931df5d2597ddef51c12"
 
 [[metadata.targets]]
 requires_python = ">=3.11"
@@ -933,7 +933,7 @@ version = "0.0.0"
 git = "https://github.com/archermarx/MCMCIterators"
 revision = "b98c7ba1631092187605f91d0b12bf0645e9a95d"
 summary = "Markov Chain Monte Carlo Iterators"
-groups = ["scripts"]
+groups = ["default", "scripts"]
 
 [[package]]
 name = "mergedeep"
