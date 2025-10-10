@@ -19,13 +19,6 @@ from pem_mcmc.options import ExecutionOptions
 from pem_mcmc.types import Array, Dataset, Inf, Value
 
 
-def _gauss_logpdf_1D(x: np.float64 | float, mean: np.float64 | float, std: np.float64 | float) -> float:
-    """
-    Gaussian log-likelihood in 1D, minus any constant factors
-    """
-    return float(-0.5 * (x - mean) ** 2 / std**2)
-
-
 def _relative_l2_norm(data: Array, observation: Array) -> float:
     """
     Compute the L2-normed distance between a data array and observation array,
@@ -144,24 +137,6 @@ def likelihood_and_distances(
     component_stats: dict[str, tuple[float, float]] = {}
     L = 0.0
 
-    # opcond = list(result.keys())[0]
-    # sim = result[opcond]
-    # var_stats = {}
-    # var_stats["cathode_coupling_voltage_V"] = sim.cathode_coupling_voltage_V.mean
-    # var_stats["discharge_current_A"] = sim.discharge_current_A.mean
-    # var_stats["thrust_N"] = sim.thrust_N.mean
-    #
-    # uion_x = sim.ion_velocity.axial_distance_m
-    # uion_y = sim.ion_velocity.velocity_m_s.mean
-    # Lch = 0.038 if np.max(uion_x) > 0.1 else 0.025
-    # var_stats["ion_velocity"] = np.interp(Lch, uion_x, uion_y)
-    #
-    # jion = sim.ion_current_sweeps[0]
-    # jmax = np.max(jion.current_density_A_m2.mean)
-    # var_stats["ion_current_sweeps"] = jmax
-    #
-    # component_stats = {k: (v, 0.0) for (k, v) in var_stats.items()}
-
     for field in fields(ThrusterData):
         # Assemble a vector of all data points for a single operating condition
         fieldname = field.name
@@ -180,6 +155,7 @@ def likelihood_and_distances(
 
         std = qoi_uncertainties[fieldname] if fieldname in qoi_uncertainties else noise_std
 
+        # Gaussian log-pdf, minus constant factors of std
         likelihood = -0.5 * distance**2 / std**2
 
         component_stats[fieldname] = (distance, likelihood)
