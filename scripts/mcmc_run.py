@@ -19,7 +19,7 @@ import pem_mcmc as mcmc
 
 import hallmd.data
 
-parser = argparse.ArgumentParser(description="MCMC scripts")
+parser = argparse.ArgumentParser(description="MCMC running script")
 
 parser.add_argument(
     "config_file",
@@ -99,13 +99,14 @@ parser.add_argument(
 parser.add_argument(
     "--sampler",
     type=str,
-    choices=["dram", "prior", "prev-run"],
+    choices=["dram", "prior", "prev-run", "fixed"],
     default="dram",
     help="""
     The type of sampler to use
-    - `dram`: the delayed-rejection adaptive metropolis sampler
-    - `prior`: sample from the variable prior distributions only
+    - `dram`: the delayed-rejection adaptive metropolis sampler.
+    - `prior`: sample from the variable prior distributions only.
     - `prev-run`: draw randomly (with replacement) from the samples of a previous run.
+    - `fixed` : evaluates only the initial sample.
 
     The `prev-run` sampler requires the --prev argument to be passed.
     """,
@@ -160,7 +161,7 @@ def main(args):
     operating_conditions = list(data)
 
     # Load operating conditions into input dict
-    operating_params = ["P_b", "V_a", "mdot_a"]
+    operating_params = ["P_b", "V_a", "mdot_a", "B_hat"]
     for param in operating_params:
         long_name = hallmd.data.opcond_keys[param.casefold()]
         inputs_unnorm = np.array([getattr(cond, long_name) for cond in data.keys()])
@@ -222,6 +223,8 @@ def main(args):
                 burn_fraction=0.5,
                 in_order=args.prev_in_order,
             )
+        case "fixed":
+            sampler = mcmc.FixedSampler(params_to_calibrate, data, system, base, opts, args.init_sample)
         case _:
             raise ValueError("Unreachable")
 
