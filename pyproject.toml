@@ -11,9 +11,10 @@ authors = [
     {name = "Benjamin Jorns", email = "bjorns@umich.edu"}
 ]
 dependencies = [
+    "amisc",
     "numpy>=2.0",
+    "pem-core",
     "scipy>=1.14",
-    "amisc>=0.7.3",
 ]
 requires-python = ">=3.11"
 readme = "README.md"
@@ -33,7 +34,7 @@ scripts = [
     "uqtils>=0.4.2",
     "h5py>=3.10.0",
     "matplotlib>=3.9",
-    "MCMCIterators @ git+https://github.com/archermarx/MCMCIterators",
+    "MCMCIterators @ git+https://github.com/goroda/MCMCIterators",
 ]
 
 [project.urls]
@@ -73,6 +74,10 @@ annotated_tag = true
 post_bump_hooks = ["git push --follow-tags"]
 changelog_start_rev = "v0.2.0"
 
+[tool.uv.sources]
+amisc = { path = "../amisc", editable = true }
+pem-core = { path = "../pem_core", editable = true }
+
 [tool.pdm.scripts]
 bump = "cz bump {args}"
 test = "pytest --cov=hallmd --cov-report html:htmlcov tests"
@@ -87,6 +92,8 @@ dev = [
     "pre-commit>=3.8",
     "commitizen>=3.29",
     "nbstripout>=0.7.1",
+    "pytest>=9.0.2",
+    "pytest-cov>=7.0.0",
 ]
 test = [
     "pytest>=7.4",
