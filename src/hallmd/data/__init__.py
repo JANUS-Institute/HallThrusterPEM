@@ -128,6 +128,7 @@ from typing import Any, Generic, Optional, Sequence, TypeAlias, TypeVar
 
 import numpy as np
 import numpy.typing as npt
+from pem_core.types import *
 
 __all__ = [
     'ThrusterDataset',
@@ -140,7 +141,6 @@ __all__ = [
 ]
 
 Array: TypeAlias = npt.NDArray[np.floating[Any]]
-PathLike: TypeAlias = str | Path
 T = TypeVar("T", np.float64, Array)
 
 
@@ -400,7 +400,7 @@ def _single_opcond_to_thrusterdata(
 
 
 def pem_to_thrusterdata(
-    operating_conditions: list[OperatingCondition], outputs: dict, sweep_radii: Array, use_corrected_thrust: bool = True
+    operating_conditions: list[OperatingCondition], outputs: Dataset, sweep_radii: Array, use_corrected_thrust: bool = True
 ) -> Optional[dict[OperatingCondition, ThrusterData]]:
     """Given a list of operating conditions and an `outputs` dict from amisc,
     construct a `dict` mapping the operating conditions to `ThrusterData` objects.

@@ -1,13 +1,11 @@
 import math
 import os
-from os import PathLike
 from pathlib import Path
 
 import numpy as np
 from amisc import System
 
-from pem_mcmc.types import Array, Number
-
+from pem_core.types import Array, PathLike
 
 def load_system(directory: Path) -> System:
     """
@@ -30,16 +28,6 @@ def load_system(directory: Path) -> System:
 
     # If we're here, we didn't find anything and should error.
     raise ValueError(f"Could not find a yaml file in directory {directory}.")
-
-
-def append_sample_row(
-    logfile: PathLike, sample_index: int, sample: Array, logp: Number, accepted: bool, delimiter: str = ','
-):
-    """Append a row of MCMC diagnostic data for the given `logfile`"""
-    id_str = f"{sample_index:06d}"
-    with open(logfile, "a") as fd:
-        row = [id_str] + [f"{s}" for s in sample] + [f"{logp}", f"{accepted}"]
-        print(delimiter.join(row), file=fd)
 
 
 def read_dlm(file: PathLike, delimiter: str | None = ',', comments='#') -> dict[str, Array]:

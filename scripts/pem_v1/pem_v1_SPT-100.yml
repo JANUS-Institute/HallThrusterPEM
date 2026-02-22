@@ -62,7 +62,7 @@ components: !Component
         domain: (0, 60)
   - name: Thruster
     model: !!python/name:hallmd.models.thruster.hallthruster_jl
-    version: 0.18.5
+    version: 0.18.7
     thruster: SPT-100
     config:
       discharge_voltage: 300             # overwritten by V_a
@@ -106,7 +106,7 @@ components: !Component
       verbose: false
     postprocess:
       average_start_time: 0.0005  # s
-    model_fidelity: (2, 2)
+    model_fidelity: (1, 1)
     data_fidelity: (2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2)
     inputs: !Variable
       - name: P_b

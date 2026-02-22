@@ -21,7 +21,7 @@ from scipy.spatial.distance import cdist, euclidean
 import hallmd.data
 import hallmd.utils
 import pem_mcmc.io as io
-from pem_mcmc.metrics import likelihood_and_distances
+#from pem_mcmc.metrics import likelihood_and_distances
 from pem_mcmc.types import Dataset
 
 # Common styling for all plots
@@ -32,7 +32,7 @@ RCPARAMS = {
     "axes.grid": True,
     "errorbar.capsize": 0.0,
     "font.family": "serif",
-    "font.serif": ["Computer Modern Roman"],
+    "font.serif": ["Computer Modern Roman", "cm", "Cambria", "dejavuserif"],
     "font.size": 18,
     "text.usetex": True if shutil.which('latex') else False,
     "xtick.minor.visible": True,
@@ -287,17 +287,18 @@ def analyze(
         metrics_out = None
 
         if calc_metrics:
-            start = _start_timer("Calculating metrics")
-            metrics = {k: [] for k in likelihood_and_distances(data, outputs[0])[1]}
+            # start = _start_timer("Calculating metrics")
+            # metrics = {k: [] for k in likelihood_and_distances(data, outputs[0])[1]}
 
-            for output in outputs:
-                _dist = likelihood_and_distances(data, output)[1]
-                for k, (distance, _) in _dist.items():
-                    metrics[k].append(distance)
+            # for output in outputs:
+            #     _dist = likelihood_and_distances(data, output)[1]
+            #     for k, (distance, _) in _dist.items():
+            #         metrics[k].append(distance)
 
-            metrics_out = {k: {"mean": np.mean(v), "std": np.std(v)} for (k, v) in metrics.items()}
+            # metrics_out = {k: {"mean": np.mean(v), "std": np.std(v)} for (k, v) in metrics.items()}
 
-            _stop_timer(start)
+            # _stop_timer(start)
+            pass
 
         if plot_bands:
             thrust_lims = AXIS_LIMITS[device_name][limits]["thrust"]
@@ -384,30 +385,32 @@ def analyze(
             _stop_timer(start)
 
             if calc_metrics:
-                median_dataset = {
-                    opcond: hallmd.data.ThrusterData(
-                        thrust_N=thrust_median[opcond] if thrust_median is not None else None,
-                        discharge_current_A=current_median[opcond] if current_median is not None else None,
-                        cathode_coupling_voltage_V=vcc_median[opcond] if vcc_median is not None else None,
-                        ion_velocity=uion_median[opcond] if uion_median else None,
-                        ion_current_sweeps=jion_median[opcond] if jion_median else None,
-                    )
-                    for opcond in data
-                }
+                # median_dataset = {
+                #     opcond: hallmd.data.ThrusterData(
+                #         thrust_N=thrust_median[opcond] if thrust_median is not None else None,
+                #         discharge_current_A=current_median[opcond] if current_median is not None else None,
+                #         cathode_coupling_voltage_V=vcc_median[opcond] if vcc_median is not None else None,
+                #         ion_velocity=uion_median[opcond] if uion_median else None,
+                #         ion_current_sweeps=jion_median[opcond] if jion_median else None,
+                #     )
+                #     for opcond in data
+                # }
 
-                assert metrics_out is not None
+                # assert metrics_out is not None
 
-                metrics_median = {
-                    k: distance for (k, (distance, _)) in likelihood_and_distances(data, median_dataset)[1].items()
-                }
-                for k, v in metrics_median.items():
-                    metrics_out[k]['median'] = v
+                # metrics_median = {
+                #     k: distance for (k, (distance, _)) in likelihood_and_distances(data, median_dataset)[1].items()
+                # }
+                # for k, v in metrics_median.items():
+                #     metrics_out[k]['median'] = v
+                pass
 
         if calc_metrics:
-            assert metrics_out is not None
-            metric_file = output_dir / "metrics.json"
-            with open(metric_file, "w") as fd:
-                json.dump(metrics_out, fd, indent=4)
+            # assert metrics_out is not None
+            # metric_file = output_dir / "metrics.json"
+            # with open(metric_file, "w") as fd:
+            #     json.dump(metrics_out, fd, indent=4)
+            pass
 
     plt.close('all')
 

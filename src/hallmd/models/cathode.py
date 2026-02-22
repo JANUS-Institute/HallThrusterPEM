@@ -7,7 +7,7 @@ Includes:
 import numpy as np
 from amisc.typing import Dataset
 
-from hallmd.utils import TORR_2_PA
+from pem_core.constants import TORR_2_PA
 
 __all__ = ['cathode_coupling']
 

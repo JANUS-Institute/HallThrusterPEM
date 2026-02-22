@@ -10,8 +10,7 @@ from amisc.typing import Dataset
 from amisc.utils import get_logger
 from scipy.integrate import simpson
 from scipy.special import erfi
-
-from hallmd.utils import TORR_2_PA
+from pem_core.constants import TORR_2_PA
 
 __all__ = ['current_density']
 
