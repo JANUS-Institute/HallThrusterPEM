@@ -11,41 +11,38 @@ For usage details and a full list of options , run 'pdm run scripts/run_mcmc.py 
 
 """  # noqa: E501
 
+#%%
 import argparse
 from argparse import Namespace
 import copy
 import json
-import math
 import os
 import pickle
-import random
 import shutil
 import sys
 import traceback
-from dataclasses import fields, dataclass
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Type, Any
+from typing import Type, cast, Callable
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 
 import numpy as np
+import xarray as xr
 
 import amisc.distribution as distributions
 
-import hallmd.data
-from hallmd.data import OperatingCondition, ThrusterData
-
-import pem_mcmc as mcmc
-from pem_mcmc.types import Dataset
-
 from pem_core import PEM
-from pem_core.types import Array, ArrayLike, PathLike, Variable
-from pem_core.workflows.mcmc import _relative_gaussian_likelihood, _log_posterior
-from MCMCIterators.samplers import DelayedRejectionAdaptiveMetropolis
+from pem_core.data import UNITS, load_multiple_datasets, DataEntry, DataInstance, DataField
+from pem_core.types import Array, ArrayLike, PathLike
+from pem_core.workflows.mcmc import _relative_gaussian_likelihood
+import pem_core.workflows.mcmc as mcmc
+
+from analyze_mcmc import analyze
 
 parser = argparse.ArgumentParser(description="Run MCMC calibration for the Hall thruster PEM.")
 
 parser.add_argument(
-    "config_file",
+    "config",
     type=str,
     help="the path to the `amisc` YAML config file with model and input/output variable information.",
 )
@@ -53,19 +50,20 @@ parser.add_argument(
 parser.add_argument(
     "--executor",
     type=str,
+    choices=["process", "thread"],
     default="process",
-    help="the parallel executor for running MCMC samples. Options are `thread` or `process`. Default (`process`).",
+    help="the parallel executor for running MCMC samples.",
 )
 
 parser.add_argument(
-    "--max_workers",
+    "--max-workers",
     type=int,
     default=None,
     help="the maximum number of workers to use for parallel processing. Defaults to using maxnumber of available CPUs.",
 )
 
 parser.add_argument(
-    "--max_samples",
+    "--max-samples",
     type=int,
     default=1,
     help="The maximum number of samples to generate using MCMC",
@@ -84,7 +82,7 @@ parser.add_argument(
 )
 
 parser.add_argument(
-    "--output_interval",
+    "--output-interval",
     type=int,
     default=100,
     help="How frequently plots are generated",
@@ -105,16 +103,16 @@ parser.add_argument(
     help="Standard deviation of the Gaussian noise in the likelihood calculation",
 )
 
-parser.add_argument("--output_dir", type=str, default=None, help="Directory into which output files are written")
+parser.add_argument("--output-dir", type=str, default=None, help="Directory into which output files are written")
 
 parser.add_argument(
-    "--init_sample",
+    "--init-sample",
     type=str,
     help="""CSV file containing initial sample. Only used with the `dram` sampler.""",
 )
 
 parser.add_argument(
-    "--init_cov",
+    "--init-cov",
     type=str,
     help="""CSV file containing initial covariance matrix. Only used with the `dram` sampler.""",
 )
@@ -150,209 +148,7 @@ parser.add_argument(
     help="Sample aleatoric varibles from distributions in config file instead of using fixed values.",
 )
 
-
-class Sampler:
-    variables: list[Variable]
-    base_vars: dict[Variable, Any]
-    init_sample_file: PathLike | None
-    init_cov_file: PathLike | None
-    system: PEM
-
-    def __init__(
-        self,
-        variables,
-        data,
-        system,
-        base_vars,
-        opts,
-        log_likelihood,
-        init_sample_file: PathLike | None = None,
-        init_cov_file: PathLike | None = None,
-    ):
-        self.variables = variables
-        self.data = data
-        self.system = system
-        self.base_vars = base_vars
-        self.opts = opts
-        self.init_sample_file = init_sample_file
-        self.init_cov_file = init_cov_file
-        self.logpdf = lambda x: _log_posterior(system, dict(zip(variables, x)), log_likelihood)
-        self._init_sample = None
-        self._init_cov = None
-
-    def cov(self):
-        return self.initial_cov()
-
-    def initial_sample(self):
-        if self._init_sample is None:
-            # Read initial sample from file or create it from the base variables dict
-            if self.init_sample_file is None:
-                self._init_sample = np.array([self.base_vars[p] for p in self.variables])
-            else:
-                index_map = {p.name: i for (i, p) in enumerate(self.variables)}
-                self._init_sample = np.zeros(len(self.variables))
-                var_dict = mcmc.read_dlm(self.init_sample_file)
-                for k, v in var_dict.items():
-                    i = index_map[k]
-                    self._init_sample[i] = v[0]
-
-        return self._init_sample
-
-    def initial_cov(self):
-        if self._init_cov is None:
-            index_map = {p.name: i for (i, p) in enumerate(self.variables)}
-            if self.init_cov_file is None:
-                variances = np.ones(len(self.variables))
-
-                # Use variable distributions to estimate covariance
-                for i, p in enumerate(self.variables):
-                    dist = self.system.inputs()[p].distribution
-                    if isinstance(dist, distributions.Uniform) or isinstance(dist, distributions.LogUniform):
-                        lb, ub = dist.dist_args
-                        std: float = (ub - lb) / 4
-                    elif isinstance(dist, distributions.Normal):
-                        std: float = dist.dist_args[1]
-                    elif isinstance(dist, distributions.LogNormal):
-                        std: float = dist.base ** dist.dist_args[1]
-                    else:
-                        raise ValueError(
-                            f"Unsupported distribution {dist}. Currently only `Uniform`, `LogUniform`, `Normal` and `LogNormal` are supported."  # noqa: E501
-                        )
-                    # TODO: fix this typing issue
-                    variances[i] = self.system.inputs()[p].normalize(std) ** 2  # type: ignore
-                self._init_cov = np.diag(variances)
-            else:
-                # Construct covariance from file
-                # We support the variables being in a different order so we build the covariance up from the index map.
-                cov_dict = mcmc.read_dlm(self.init_cov_file)
-                N = len(self.variables)
-                self._init_cov = np.zeros((N, N))
-                for i, (key1, column) in enumerate(cov_dict.items()):
-                    i1 = index_map[key1]
-                    for j, (var, key2) in enumerate(zip(column, cov_dict.keys())):
-                        i2 = index_map[key2]
-                        self._init_cov[i1, i2] = var
-
-            # Verify that the covariance matrix is positive-definite before proceeding.
-            # This throws an exception if not.
-            np.linalg.cholesky(self._init_cov)
-            self.init_cov = np.linalg.cholesky(self._init_cov)
-        return self._init_cov
-
-
-class PriorSampler(Sampler):
-    """
-    Samples from prior distribution, run model, and evaluates posterior probability
-    """
-
-    def __init__(
-        self,
-        variables,
-        data,
-        system,
-        base_vars,
-        opts,
-        log_likelihood,
-        init_sample_file: PathLike | None = None,
-        init_cov_file: PathLike | None = None,
-    ):
-        super().__init__(variables, data, system, base_vars, opts, log_likelihood, init_sample_file, init_cov_file)
-
-    def __iter__(self):
-        return self
-
-    def __next__(self):
-        # TODO: fix this typing issue
-        sample = np.array([var.normalize(var.distribution.sample((1,)))[0] for var in self.variables]) # type: ignore
-        logp = self.logpdf(sample)
-        return sample, logp, np.isfinite(logp)
-
-
-class PreviousRunSampler(Sampler):
-    """
-    Samples (with replacement) from a previous MCMC run.
-    """
-
-    def __init__(
-        self,
-        variables,
-        data,
-        system,
-        base_vars,
-        opts,
-        log_likelihood,
-        prev_run_file: PathLike,
-        init_sample_file: PathLike | None = None,
-        init_cov_file: PathLike | None = None,
-        burn_fraction: float = 0.5,
-    ):
-        super().__init__(variables, data, system, base_vars, opts, log_likelihood,init_sample_file, init_cov_file)
-        _vars, _samples, _, accepted, _ = mcmc.read_output_file(prev_run_file)
-
-        # Figure out the first index we should sample.
-        self.start_index = math.floor(burn_fraction * len(_samples))
-
-        # associate variable names with columns and remove burned samples
-        _samples = np.array(_samples)
-        col_dict = {system.inputs()[v]: _samples[self.start_index :, i] for (i, v) in enumerate(_vars)}
-
-        # reorder to match input varible list.
-        # this will error if variable lists don't match
-        self.samples = np.array([col_dict[v] for v in self.variables]).T
-        self.accepted = accepted[self.start_index :]
-
-    def __iter__(self):
-        return self
-
-    def sample_index(self):
-        return random.randint(0, self.samples.shape[0] - 1)
-
-    def __next__(self):
-        # draw until we get an accepted sample
-        index = self.sample_index()
-
-        while not self.accepted[index]:
-            index = self.sample_index()
-
-        sample = self.samples[index, :]
-        logp = self.logpdf(sample)
-        return sample, logp, np.isfinite(logp)
-
-
-class DRAMSampler(Sampler):
-    """
-    Samples using delayed rejection adaptive metropolis
-    """
-    def __init__(
-        self,
-        variables,
-        data,
-        system,
-        base_vars,
-        opts,
-        log_likelihood,
-        init_sample_file: PathLike | None = None,
-        init_cov_file: PathLike | None = None,
-    ):
-        super().__init__(variables, data, system, base_vars, opts, log_likelihood, init_sample_file, init_cov_file)
-
-        self.sampler = DelayedRejectionAdaptiveMetropolis(
-            self.logpdf,
-            self.initial_sample(),
-            self.initial_cov(),
-            adapt_start=10,
-            eps=1e-6,
-            sd=None,
-            interval=1,
-            level_scale=1e-1,
-        )
-
-    # TODO: fix this typing issue
-    def cov(self):  # type: ignore
-        return self.sampler.cov_chol
-
-    def __iter__(self):
-        return iter(self.sampler)
+#%%
 
 @dataclass
 class ExecutionOptions:
@@ -364,16 +160,16 @@ class ExecutionOptions:
     sample_aleatoric: bool = False
     print_likelihood: bool = True
 
-def load_system_and_opts(args: Namespace) -> tuple[PEM, ExecutionOptions]:
-    config = args.config_file
-    system = PEM.from_file(config, output_dir=args.output_dir)
-    system.set_logger(stdout=True)
+def load_pem_and_opts(args: Namespace) -> tuple[PEM, ExecutionOptions]:
+    config = args.config
+    pem = PEM.from_file(config, output_dir=args.output_dir)
+    pem.set_logger(stdout=True)
 
-    assert system.root_dir is not None, "System root directory must be set. This should have been done in PEM.from_yaml()."
+    assert pem.root_dir is not None, "PEM root directory must be set. This should have been done in PEM.from_yaml()."
 
     # Copy config file into output dir
-    if Path(config).name not in os.listdir(system.root_dir):
-        shutil.copy(config, system.root_dir)
+    if Path(config).name not in os.listdir(pem.root_dir):
+        shutil.copy(config, pem.root_dir)
 
     match args.executor.lower():
         case "thread":
@@ -386,136 +182,73 @@ def load_system_and_opts(args: Namespace) -> tuple[PEM, ExecutionOptions]:
     opts = ExecutionOptions(
         executor,
         max_workers=args.max_workers,
-        directory=system.root_dir / "mcmc",
+        directory=pem.root_dir / "mcmc",
         fidelity=(0, args.ncharge - 1),
         sample_aleatoric=args.sample_aleatoric,
         noise_std=args.noise_std,
     )
 
-    os.mkdir(opts.directory)
+    os.makedirs(opts.directory, exist_ok=True)
 
-    return system, opts
-
-def _get_qoi_single_opcond(data: ThrusterData, observation: ThrusterData, field) -> tuple[Array, Array] | None:
-    """
-    For a specified field in the `ThrusterData` class, extract the value of that field.
-    If the field is not present in both the data and observation, returns None.
-    Otherwise, returns a tuple of the (data vals, obs. vals) where both are 1D numpy arrays of the same size.
-    """
-
-    data_field = getattr(data, field)
-    obs_field = getattr(observation, field)
-
-    if (data_field is None) or (obs_field is None):
-        return None
-
-    match field:
-        case "ion_velocity":
-            data_coords = data_field.axial_distance_m
-            data_u = data_field.velocity_m_s.mean
-
-            obs_coords = obs_field.axial_distance_m
-            obs_u = obs_field.velocity_m_s.mean
-
-            if obs_coords is None or obs_u is None:
-                return None
-
-            obs_u_itp = np.interp(data_coords, obs_coords, obs_u)
-
-            return data_u, obs_u_itp
-
-        case "ion_current_sweeps":
-            data_j = []
-            obs_j = []
-
-            for data_sweep, obs_sweep in zip(data_field, obs_field):
-                data_coords = data_sweep.angles_rad
-                data_sweep_j = data_sweep.current_density_A_m2.mean
-
-                obs_coords = obs_sweep.angles_rad
-                obs_sweep_j = obs_sweep.current_density_A_m2.mean
-
-                if obs_coords is None or obs_sweep_j is None:
-                    return None
-
-                obs_j_itp = np.interp(data_coords, obs_coords, obs_sweep_j)
-                data_j.append(data_sweep_j)
-                obs_j.append(obs_j_itp)
-
-            data_j = np.concat(data_j)
-            obs_j = np.concat(obs_j)
-
-            return data_j, obs_j
-
-        case _:
-            return np.array([data_field.mean]), np.array([obs_field.mean])
-        
-def append_sample_row(
-    logfile: PathLike, sample_index: int, sample: Array, logp: float, accepted: bool, delimiter: str = ','
-):
-    """Append a row of MCMC diagnostic data for the given `logfile`"""
-    id_str = f"{sample_index:06d}"
-    with open(logfile, "a") as fd:
-        row = [id_str] + [f"{s}" for s in sample] + [f"{logp}", f"{accepted}"]
-        print(delimiter.join(row), file=fd)
-
-
-def _get_qoi_all_opconds(data: Dataset, observation: Dataset, field: str) -> tuple[Array, Array] | None:
-    data_arrays = []
-    obs_arrays = []
-    """
-    For a specified field in the `ThrusterData` class, extract all valid values of that field from both data and
-    observation for all operating conditions where that field is present in both data and observation.
-    If the field is not present in any operating condition, returns None.
-    Otherwise, returns a tuple of the (data vals, obs. vals) where both are 1D numpy arrays of the same size.
-    """
-
-    for _data, _obs in zip(data.values(), observation.values()):
-        out = _get_qoi_single_opcond(_data, _obs, field)
-        if out is not None:
-            data_arr, obs_arr = out
-            obs_arrays.append(obs_arr)
-            data_arrays.append(data_arr)
-
-    if len(data_arrays) == 0 or len(obs_arrays) == 0:
-        return None
-
-    data_array_cat = np.concat(data_arrays)
-    obs_array_cat = np.concat(obs_arrays)
-
-    assert data_array_cat.size == obs_array_cat.size
-
-    return data_array_cat, obs_array_cat
+    return pem, opts
 
 def _log_likelihood(
-    data: Dataset,
+    data: list[DataEntry],
     base_params: dict[str, ArrayLike],
     opts: ExecutionOptions,
 ) -> Callable[[PEM, dict[str, ArrayLike]], float]:
     
     def _likelihood_func(system: PEM, params: dict[str, ArrayLike]) -> float:
-        result = _run_model(params, system, list(data.keys()), base_params, opts)
+        opconds = [d.operating_condition for d in data]
+        sim_results = _run_model(params, system, opconds, base_params, opts)
 
-        if result is None:
+        if sim_results is None:
             return -np.inf
         
         # Extract likelihood and L-2 distances for each component of the QoI (e.g. thrust, ion velocity, etc.)
         component_stats = {}
 
-        L = 0.0
-        for field in fields(ThrusterData):
-                    # Assemble a vector of all data points for a single operating condition
-            if (out := _get_qoi_all_opconds(data, result, field.name)) is None:
-                continue
+        # Interpolate sim results to data coordinates
+        sim_itp = [interp_sim_to_data(_sim.data, _data.data) for (_sim, _data) in zip(sim_results, data)]
 
-            data_arr, obs_arr = out
-            distance, likelihood = _relative_gaussian_likelihood(data_arr, obs_arr, opts.noise_std)
-            component_stats[field.name] = (distance, likelihood)
+        # Extract data per-field into 1-D vectors
+        sim_vectors = {}
+        data_vectors = {}
+        data_errs = {}
+
+        L = 0.0
+
+        field_names = set()
+        for _data in data:
+            field_names.update(list(_data.data.keys()))
+        field_names = list(field_names)
+
+        for field_name in field_names:
+            sim_vectors[field_name] = []
+            data_vectors[field_name] = []
+            data_errs[field_name] = []
+
+            for _sim, _data in zip(sim_itp, data):
+                if field_name not in _data.data:
+                    continue
+                data_field = _data.data[field_name]
+                sim_field = _sim[field_name]
+
+                sim_vectors[field_name].append(sim_field.val.values.flatten())
+                data_vectors[field_name].append(data_field.val.values.flatten())
+
+                if data_field.err is not None:
+                    data_errs[field_name].append(data_field.err.values.flatten())
+
+            sim_vec = np.concatenate(sim_vectors[field_name])
+            data_vec = np.concatenate(data_vectors[field_name])
+            distance, likelihood = _relative_gaussian_likelihood(data_vec, sim_vec, opts.noise_std)        
+
+            component_stats[field_name] = (distance, likelihood)
             L += likelihood
 
         # print table to output
         if opts.print_likelihood:
-            field_names = [f.name for f in fields(ThrusterData)]
             name_len = max(len(n) for n in field_names) + 1
             indent = "  "
 
@@ -535,6 +268,32 @@ def _log_likelihood(
         return L
 
     return _likelihood_func
+
+def interp_sim_to_data(sim: DataInstance, data: DataInstance) -> DataInstance:
+    """
+    Create a new DataInstance containing all of the fields of data, but the sim data interpolated to the data coords
+    """
+    itp: DataInstance = {}
+
+    for field_name, data_field in data.items():
+        da_sim = sim[field_name].val
+        da_data = data_field.val
+        dims_to_interp = {dim: da_data[dim] for dim in da_data.dims if da_data.sizes[dim] > 1}
+    
+        da_itp = da_sim.interp(dims_to_interp)
+        itp[field_name] = DataField(val=da_itp, err=None, unit=data_field.unit)
+
+    return itp
+
+        
+def append_sample_row(
+    logfile: PathLike, sample_index: int, sample: Array, logp: float, accepted: bool, delimiter: str = ','
+):
+    """Append a row of MCMC diagnostic data for the given `logfile`"""
+    id_str = f"{sample_index:06d}"
+    with open(logfile, "a") as fd:
+        row = [id_str] + [f"{s}" for s in sample] + [f"{logp}", f"{accepted}"]
+        print(delimiter.join(row), file=fd)
 
 def _consolidate_outputs(path: Path):
     """
@@ -576,14 +335,56 @@ def _consolidate_outputs(path: Path):
     if thruster_path.is_dir():
         shutil.rmtree(thruster_path)
 
+def pem_to_xarray(
+        operating_conditions: list[dict[str, float]],
+        outputs: dict, sweep_radii: np.ndarray,
+        use_corrected_thrust: bool = True
+    ) -> list[DataEntry]:
+
+    data_entries: list[DataEntry] = []
+
+    for (i, opcond) in enumerate(operating_conditions):
+
+        if use_corrected_thrust:
+            # With multiple radii, we have multiple thrust. Pick the last one as sweep_radii are sorted
+            thrust = xr.DataArray(np.atleast_1d(outputs['T_c'][i])[-1])
+        else:
+            thrust = xr.DataArray(outputs['T'][i])
+
+        Id = xr.DataArray(outputs['I_d'][i])
+        Vcc = xr.DataArray(outputs['V_cc'][i])
+
+        z = outputs['u_ion_coords'][i]
+        uion = outputs['u_ion'][i]
+        uion_arr = xr.DataArray(uion, coords=[z], dims=["z"])
+
+        theta = outputs['j_ion_coords'][i]
+        r = sweep_radii
+        jion = np.atleast_3d(outputs['j_ion'])[i, :, :].T
+        jion_arr = xr.DataArray(jion, coords=[r, theta], dims=["r", "theta"])
+
+        instance: DataInstance = {
+            "discharge current": DataField(val=Id, unit="A"),
+            "cathode coupling voltage": DataField(val=Vcc, unit="V"),
+            "thrust": DataField(val=thrust, unit="N"),
+            "ion velocity": DataField(val=uion_arr, unit="m/s"),
+            "ion current density": DataField(val=jion_arr, unit="A/m^2"),
+        }
+
+        entry = DataEntry(operating_condition=opcond, data=instance)
+        data_entries.append(entry)
+
+    return data_entries
 
 def _run_model(
     params: dict[str, ArrayLike],
     system: PEM,
-    operating_conditions: list[OperatingCondition],
+    operating_conditions: list[dict[str, float]],
     base_params: dict[str, ArrayLike],
     opts: ExecutionOptions,
-) -> Dataset | None:
+) -> list[DataEntry] | None:
+    
+    # Start with nominal values for all parameters, and then update with the current sample values.
     sample_dict = copy.deepcopy(base_params)
     for key, val in params.items():
         sample_dict[key] = val
@@ -606,19 +407,19 @@ def _run_model(
             )
 
         # Get plume sweep radii
-        sweep_radii = system['Plume'].model_kwargs['sweep_radius']
+        if "Plume" in [c.name for c in system.components]:
+            sweep_radii = system['Plume'].model_kwargs['sweep_radius']
+        else:
+            sweep_radii = np.array([1.0])
 
-        # Assemble output dict from operating conditions -> results
-        output_thrusterdata = hallmd.data.pem_to_thrusterdata(
-            operating_conditions, outputs, sweep_radii, use_corrected_thrust=True
-        )
+        output_thrusterdata = pem_to_xarray(operating_conditions, cast(dict, outputs), sweep_radii, use_corrected_thrust=True)
 
         if output_thrusterdata is not None:
             # Write outputs to file
             with open(opts.directory / "pem.pkl", "wb") as fd:
                 pickle.dump({"input": sample_dict, "output": output_thrusterdata}, fd)
 
-        output = output_thrusterdata
+            output = output_thrusterdata
 
     except Exception as e:
         print("Error detected. Failing input printed below")
@@ -658,44 +459,153 @@ def _update_opts(opts, root_dir, sample_index):
     opts.directory = root_dir / id_str
     os.mkdir(opts.directory)
 
+UNITS.define("Torr = 133.322368 pascal = Torr")
 
+operating_vars = {
+    "discharge voltage": {
+        "unit": UNITS.volts,
+    },
+    "anode mass flow rate": {
+        "unit": UNITS.kg / UNITS.second,
+    },
+    "background pressure": {
+        "unit": UNITS.torr,
+        "default": 0.0,
+    },
+    "magnetic field scale": {
+        "unit": UNITS.dimensionless,
+        "default": 1.0,
+    },
+}
+
+coords = {
+    "z": UNITS.meter,
+    "r": UNITS.meter,
+    "theta": UNITS.rad,
+}
+
+qois = {
+    "cathode coupling voltage": {
+        "unit": UNITS.volts,
+    },
+    "discharge current": {
+        "unit": UNITS.ampere,
+    },
+    "thrust": {
+        "unit": UNITS.newton,
+    },
+    "ion velocity": {
+        "unit": UNITS.meter / UNITS.second,
+        "coords": ("z",),
+    },
+    "ion current density": {
+        "unit": UNITS.ampere / UNITS.meter**2,
+        "coords": ("r", "theta"),
+    },
+}
+
+FLOW_RATE_KEY = "anode mass flow rate"
+
+rename_map = {
+    "anode voltage" : "discharge voltage",
+    "anode current" : "discharge current",
+    "anode flow rate" : FLOW_RATE_KEY,
+    "axial distance from anode": "z",
+    "axial position from anode": "z",
+    "axial ion velocity": "ion velocity",
+    "angular position from thruster centerline": "theta",
+    "radial position from thruster exit": "r",
+}
+
+var_names = {
+    "discharge voltage": "V_a",
+    "anode mass flow rate": "mdot_a",
+    "background pressure": "P_b",
+    "magnetic field scale": "B_hat",
+}
+
+#%%
+
+N = 10
+HOME = Path(__file__).parent.parent.resolve()
+DATA = HOME / "src/hallmd/data/spt100"
+DIAMANT_AEROSPACE  =f"{DATA}/diamant2014/data_aerospace.csv"
+DIAMANT_L3 = f"{DATA}/diamant2014/data_L3.csv"
+TENENBAUM = f"{DATA}/macdonald2019/data.csv"
+
+ARGS = [
+    str(HOME/ "scripts/pem_v1/pem_v1_SPT-100.yml"),
+    f"--max-samples={N}",
+    f"--datasets", DIAMANT_L3,
+    f"--output-interval={N}",
+    f"--output-dir={HOME}/outputs",
+    "--ncharge=1",
+    "--noise-std=0.025",
+    "--executor=thread",
+]
+
+# # if __name__ == "__main__":
+
+#     # def main(args):
+# args = parser.parse_args(ARGS)
+#%%
 def main(args):
-    pem, opts = load_system_and_opts(args)
+    # Load PEM from YAML file and determine nominal and calibration parameters
+    pem, opts = load_pem_and_opts(args)
+    component_names = set([c.name for c in pem.components])
     base = pem.get_nominal_inputs(norm=True)
     params_to_calibrate = pem.get_inputs_by_category("calibration", sort="name")
 
-    # Determine thruster and load data
-    thruster_name = pem['Thruster'].model_kwargs['thruster']
-    thruster = hallmd.data.get_thruster(thruster_name)
-    datasets = thruster.datasets_from_names(args.datasets)
-    data = hallmd.data.load(datasets)
-    operating_conditions = list(data)
+    print(args.datasets)
 
-    # Load operating conditions into input dict
-    operating_params = ["P_b", "V_a", "mdot_a", "B_hat"]
-    for param in operating_params:
-        long_name = hallmd.data.opcond_keys[param.casefold()]
-        inputs_unnorm = np.array([getattr(cond, long_name) for cond in data.keys()])
+    # Load data from files
+    data = load_multiple_datasets(args.datasets, operating_vars, qois, coords, rename_map=rename_map)
+    operating_conditions = [d.operating_condition for d in data]
 
-        if param == "B_hat" and param not in pem.inputs():
-            base["B_hat"] = np.float64(1.0)
-        else:
-            p = pem.inputs()[param]
-            base[param] = p.normalize(inputs_unnorm) # type: ignore
+    # Load operating conditions into input dictionary
+    for (long_name, param) in var_names.items():
+        if param not in pem.inputs():
+            base[param] = 1.0
+            continue
+
+        inputs_unnorm = np.array([cond[long_name] for cond in operating_conditions])
+        p = pem.inputs()[param]
+        base[param] = p.normalize(inputs_unnorm) # type: ignore
+
+    # Remove data where theta < 0 for ion current density
+    for d in data:
+        if 'ion current density' not in d.data:
+            continue
+        jion_val = d.data['ion current density'].val
+        jion_val = jion_val.sel(theta=slice(0, np.pi/2))
+
+        jion_err = d.data['ion current density'].err
+        if jion_err is not None:
+            jion_err = jion_err.sel(theta=slice(0, np.pi/2))
+
+        d.data['ion current density'].val = jion_val
+        d.data['ion current density'].err = jion_err
 
     # Set plume sweep radii based on data.
-    # If there are no sweep radii in the data, we predict the current density
-    # at a distance of 1 meter only.
-    sweep_radii = []
-    for d in data.values():
-        if d.ion_current_sweeps is None:
-            continue
-        sweep_radii += [s.radius_m for s in d.ion_current_sweeps]
-    if sweep_radii:
-        sweep_radii = np.sort(np.unique(sweep_radii))
-        pem['Plume'].model_kwargs['sweep_radius'] = np.array(sweep_radii)
-    else:
-        pem['Plume'].model_kwargs['sweep_radius'] = np.array([1.0])
+    # If there is no ion current density in the data, we just set the sweep radius to 1.0 (i.e. no sweeping). This allows us to still run MCMC on cases where there is no ion current density data without having to change the model config.
+    if "Plume" in component_names:
+        sweep_radii = []
+        for entry in data:
+            entry_data = entry.data
+            if "ion current density" not in entry_data:
+                continue
+
+            ji_coords = entry_data["ion current density"].val.coords
+            if ji_coords is None or "r" not in ji_coords:
+                continue
+
+            sweep_radii.extend(ji_coords["r"].values)
+
+        if sweep_radii:
+            sweep_radii = np.sort(np.unique(sweep_radii))
+            pem['Plume'].model_kwargs['sweep_radius'] = np.array(sweep_radii).astype(float)
+        else:
+            pem['Plume'].model_kwargs['sweep_radius'] = np.array([1.0])
 
     print(f"params_to_calibrate: {[p.name for p in params_to_calibrate]}")
     print(f"Number of operating conditions: {len(operating_conditions)}")
@@ -714,7 +624,7 @@ def main(args):
     # Set up samplers
     match args.sampler:
         case "dram":
-            sampler = DRAMSampler(
+            sampler = mcmc.DRAMSampler(
                 params_to_calibrate,
                 data,
                 pem,
@@ -725,9 +635,9 @@ def main(args):
                 init_cov_file=args.init_cov,
             )
         case "prior":
-            sampler = PriorSampler(params_to_calibrate, data, pem, base, opts, _log_likelihood(data, base, opts))
+            sampler = mcmc.PriorSampler(params_to_calibrate, data, pem, base, opts, _log_likelihood(data, base, opts))
         case "prev-run":
-            sampler = PreviousRunSampler(
+            sampler = mcmc.PreviousRunSampler(
                 params_to_calibrate, data, pem, base, opts,
                 prev_run_file=args.prev, burn_fraction=0.5, log_likelihood=_log_likelihood(data, base, opts)
             )
@@ -741,7 +651,7 @@ def main(args):
     append_sample_row(logfile, 0, init_sample, best_logp, True)
     num_accept = 1
 
-    if isinstance(sampler, DRAMSampler):
+    if isinstance(sampler, mcmc.DRAMSampler):
         burn_fraction = 0.5
         num_subsample = 1000
     else:
@@ -749,10 +659,10 @@ def main(args):
         num_subsample = None
 
     # Main sampler loop
-    start_index = 1
-    _update_opts(opts, root_dir, start_index)
+    _update_opts(opts, root_dir, 1)
     for i, (sample, logp, accepted_bool) in enumerate(sampler):
-        append_sample_row(logfile, start_index + i, sample, logp, accepted_bool)
+        ind = i + 1
+        append_sample_row(logfile, ind, sample, logp, accepted_bool)
 
         if logp > best_logp:
             best_logp = logp
@@ -761,14 +671,14 @@ def main(args):
             num_accept += 1
 
         print(
-            f"sample: {i + start_index}/{max_samples}, logp: {logp:.3f}, best logp: {best_logp:.3f},",
-            f"accepted: {accepted_bool}, p_accept: {num_accept / (i + 1 + start_index) * 100:.1f}%",
+            f"sample: {ind}/{max_samples}, logp: {logp:.3f}, best logp: {best_logp:.3f},",
+            f"accepted: {accepted_bool}, p_accept: {num_accept / (ind) * 100:.1f}%",
         )
 
-        corner = i == max_samples or (i > 100 and (i % (args.output_interval * 10) == 0))
+        corner = ind == max_samples or (i > 100 and (i % (args.output_interval * 10) == 0))
 
-        if (i == max_samples) or (i % args.output_interval == 0):
-            mcmc.analyze(
+        if (ind == max_samples) or (i % args.output_interval == 0):
+            analyze(
                 root_dir.parent,
                 args.datasets,
                 plot_corner=corner,
@@ -781,10 +691,10 @@ def main(args):
                 burn_fraction=burn_fraction,
             )
 
-        if i >= max_samples:
+        if ind >= max_samples:
             break
 
-        _update_opts(opts, root_dir, i + 1 + start_index)
+        _update_opts(opts, root_dir, ind+1)
 
 if __name__ == "__main__":
     args = parser.parse_args()

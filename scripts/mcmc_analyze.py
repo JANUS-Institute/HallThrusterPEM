@@ -26,7 +26,7 @@ For usage details and a full list of options , run 'pdm run scripts/mcmc_analysi
 import argparse
 from pathlib import Path
 
-import pem_mcmc as mcmc
+import analyze_mcmc
 
 parser = argparse.ArgumentParser("MCMC analysis")
 
@@ -64,7 +64,7 @@ parser.add_argument(
 
 
 def main(args):
-    mcmc.analyze(
+    analyze_mcmc.analyze(
         Path(args.path),
         args.datasets,
         plot_corner=args.plot_corner,

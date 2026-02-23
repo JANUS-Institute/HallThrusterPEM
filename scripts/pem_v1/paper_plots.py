@@ -10,12 +10,12 @@ from typing import Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pem_mcmc.analysis as mcmc_analysis
-import pem_mcmc.io as io
+import HallThrusterPEM.scripts.analyze_mcmc as mcmc_analysis
 from matplotlib.axes import Axes
-from pem_mcmc.analysis import COLORS, RCPARAMS, GlobalQuantityData
+from HallThrusterPEM.scripts.analyze_mcmc import COLORS, RCPARAMS, GlobalQuantityData
 
 import hallmd.data
+from pem_core import PEM
 
 plt.rcParams.update(RCPARAMS)
 THRUSTERS = ["h9", "spt-100"]
@@ -46,7 +46,7 @@ QUANTITY_NAMES = {
 def get_thruster_name(args: argparse.Namespace, logger: Logger) -> str | None:
     dirs = [args.prior_train, args.prior_test, args.post_train_epistemic, args.post_train_aleatoric, args.post_test]
 
-    systems = [io.load_system(Path(d)) for d in dirs if d is not None]
+    systems = [PEM.from_directory(Path(d)) for d in dirs if d is not None]
 
     if systems:
         thrusters = [system['Thruster'].model_kwargs['thruster'].casefold() for system in systems]

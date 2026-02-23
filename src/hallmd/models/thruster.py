@@ -323,6 +323,7 @@ def run_hallthruster_jl(
     # Dump input to temporary file
     fd = tempfile.NamedTemporaryFile(**tempfile_args)
     input_file = fd.name
+
     json.dump(_json_dict, fd, ensure_ascii=False, indent=4)
     fd.close()
 
@@ -347,10 +348,13 @@ def run_hallthruster_jl(
             )
 
     try:
-        subprocess.run(cmd, **kwargs)
+        output = subprocess.run(cmd, stderr=subprocess.STDOUT, **kwargs)
     finally:
         # Delete temporary input file
         os.unlink(input_file)
+
+    if output.returncode != 0:
+        raise ChildProcessError(f"HallThruster.jl exited with nonzero error code:\n{output.stdout}")
 
     # Load output data
     with open(output_file, "r") as fp:

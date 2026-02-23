@@ -20,11 +20,16 @@ from scipy.spatial.distance import cdist, euclidean
 
 import hallmd.data
 import hallmd.utils
-import pem_mcmc.io as io
-#from pem_mcmc.metrics import likelihood_and_distances
-from pem_mcmc.types import Dataset
+from hallmd.data import Array, OperatingCondition, ThrusterData
+Dataset  = dict[OperatingCondition, ThrusterData]
+
+from pem_core import PEM
+import pem_core.workflows.mcmc as mcmc
 
 # Common styling for all plots
+USE_TEX = True if shutil.which('latex') else False
+PERCENT = r"\%" if USE_TEX else "%"
+
 RCPARAMS = {
     "axes.formatter.use_mathtext": True,
     "axes.titleweight": "bold",
@@ -34,7 +39,7 @@ RCPARAMS = {
     "font.family": "serif",
     "font.serif": ["Computer Modern Roman", "cm", "Cambria", "dejavuserif"],
     "font.size": 18,
-    "text.usetex": True if shutil.which('latex') else False,
+    "text.usetex": USE_TEX,
     "xtick.minor.visible": True,
     "ytick.minor.visible": True,
     "legend.borderpad": 0.3,
@@ -195,11 +200,13 @@ def analyze(
 
     analysis_start = time.time()
 
-    system = io.load_system(dir)
-    device_name = system['Thruster'].model_kwargs['thruster']
+    system = PEM.from_directory(dir)
+    device_name = "SPT-100"
+    # device_name = system['Thruster'].model_kwargs['thruster']
     device = hallmd.utils.load_device(device_name)
+    component_names = set([c.name for c in system.components])
 
-    variables, samples, logposts, accepted, ids = io.read_output_file(logfile)
+    variables, samples, logposts, accepted, ids = mcmc.read_output_file(logfile)
     num_burn = math.floor(burn_fraction * len(samples))
 
     samples_raw = samples
@@ -209,8 +216,7 @@ def analyze(
 
     num_accept = len(samples)
     tex_names = [system.inputs()[name].tex for name in variables]
-
-    sorted_vars = [system.inputs()[var] for var in sort_order]
+    sorted_vars = [system.inputs()[var] for var in sort_order if var in system.inputs()]
     variable_dict = try_sort_variables(
         {system.inputs()[name]: samples[:, i] for (i, name) in enumerate(variables)}, sorted_vars
     )
@@ -274,7 +280,7 @@ def analyze(
         results_secondary = None
         if secondary_simulation is not None:
             secondary_dir = Path(secondary_simulation) / "mcmc"
-            _, _, _, _, ids_2 = io.read_output_file(secondary_dir / "mcmc.csv")
+            _, _, _, _, ids_2 = mcmc.read_output_file(secondary_dir / "mcmc.csv")
             results_secondary = _load_sim_results(np.array(ids_2), secondary_dir)
             if device_name.casefold() == "h9":
                 results_secondary = _merge_opconds(results_secondary, data)
@@ -305,83 +311,85 @@ def analyze(
             current_lims = AXIS_LIMITS[device_name][limits]["current"]
             vcc_lims = AXIS_LIMITS[device_name][limits]["vcc"]
 
-            start = _start_timer("Plotting thrust")
-            thrust_median = _plot_global_quantity(
-                data,
-                outputs,
-                output_dir,
-                "thrust_N",
-                "Thrust [mN]",
-                scale=1000,
-                lims=thrust_lims,
-                xscale="log",
-                secondary=results_secondary,
-            )
+            if "Thruster" in component_names:
+                start = _start_timer("Plotting thrust")
+                thrust_median = _plot_global_quantity(
+                    data,
+                    outputs,
+                    output_dir,
+                    "thrust_N",
+                    "Thrust [mN]",
+                    scale=1000,
+                    lims=thrust_lims,
+                    xscale="log",
+                    secondary=results_secondary,
+                )
 
-            analyze_global_quantity(data, outputs, output_dir, "thrust_N", scale=1000)
+                analyze_global_quantity(data, outputs, output_dir, "thrust_N", scale=1000)
 
-            _stop_timer(start)
-
-            start = _start_timer("Plotting current")
-            current_median = _plot_global_quantity(
-                data,
-                outputs,
-                output_dir,
-                "discharge_current_A",
-                "Discharge current [A]",
-                lims=current_lims,
-                xscale="log",
-                secondary=results_secondary,
-            )
-
-            analyze_global_quantity(data, outputs, output_dir, "discharge_current_A")
-
-            _stop_timer(start)
-
-            start = _start_timer("Plotting cathode coupling voltage")
-            vcc_median = _plot_global_quantity(
-                data,
-                outputs,
-                output_dir,
-                "cathode_coupling_voltage_V",
-                "Cathode coupling voltage [V]",
-                lims=vcc_lims,
-                xscale="log",
-                secondary=results_secondary,
-            )
-
-            analyze_global_quantity(data, outputs, output_dir, "cathode_coupling_voltage_V")
-            _stop_timer(start)
-
-            start = _start_timer("Plotting ion velocity")
-
-            uion_median, uion_pressures = _plot_ion_vel(
-                data,
-                outputs,
-                output_dir,
-                xlabel="Axial coordinate [channel lengths]",
-                ylabel="Ion velocity [km/s]",
-                xscalefactor=1 / channel_length,
-                yscalefactor=1 / 1000,
-                thruster=device_name,
-                secondary=results_secondary,
-            )
-            _stop_timer(start)
-
-            if uion_median:
-                start = _start_timer("Plotting anom. transport")
-                plot_anom(variable_dict, uion_pressures, output_dir)
                 _stop_timer(start)
 
-            start = _start_timer("Plotting ion current density")
-            jion_median = _plot_ion_cur(
-                data,
-                outputs,
-                output_dir,
-                xlabel="Angle [degrees]",
-                ylabel="Ion current density [A/m$^2$]",
-                secondary=results_secondary,
-            )
+                start = _start_timer("Plotting current")
+                current_median = _plot_global_quantity(
+                    data,
+                    outputs,
+                    output_dir,
+                    "discharge_current_A",
+                    "Discharge current [A]",
+                    lims=current_lims,
+                    xscale="log",
+                    secondary=results_secondary,
+                )
+
+                analyze_global_quantity(data, outputs, output_dir, "discharge_current_A")
+
+                _stop_timer(start)
+
+                start = _start_timer("Plotting ion velocity")
+
+                uion_median, uion_pressures = _plot_ion_vel(
+                    data,
+                    outputs,
+                    output_dir,
+                    xlabel="Axial coordinate [channel lengths]",
+                    ylabel="Ion velocity [km/s]",
+                    xscalefactor=1 / channel_length,
+                    yscalefactor=1 / 1000,
+                    thruster=device_name,
+                    secondary=results_secondary,
+                )
+                _stop_timer(start)
+
+                if uion_median:
+                    start = _start_timer("Plotting anom. transport")
+                    plot_anom(variable_dict, uion_pressures, output_dir)
+                    _stop_timer(start)
+
+                start = _start_timer("Plotting ion current density")
+                jion_median = _plot_ion_cur(
+                    data,
+                    outputs,
+                    output_dir,
+                    xlabel="Angle [degrees]",
+                    ylabel="Ion current density [A/m$^2$]",
+                    secondary=results_secondary,
+                )
+
+            if "Cathode" in component_names:
+                start = _start_timer("Plotting cathode coupling voltage")
+                vcc_median = _plot_global_quantity(
+                    data,
+                    outputs,
+                    output_dir,
+                    "cathode_coupling_voltage_V",
+                    "Cathode coupling voltage [V]",
+                    lims=vcc_lims,
+                    xscale="log",
+                    secondary=results_secondary,
+                )
+                analyze_global_quantity(data, outputs, output_dir, "cathode_coupling_voltage_V")
+                _stop_timer(start)
+
             _stop_timer(start)
 
             if calc_metrics:
@@ -648,7 +656,7 @@ def _plot_ion_cur(
                     h_model = plot_median_and_uncertainty(axis, angles_sim, qt)
 
                     handles_solo = [h_data, h_model]
-                    label_model = f"Median + 90\\% CI{'epistemic' if secondary else ''}"
+                    label_model = f"Median + 90{PERCENT} CI{' (epistemic)' if secondary else ''}"
                     labels_solo = ["Data", label_model]
 
                     # Plot secondary sim behind primary sim
@@ -656,7 +664,7 @@ def _plot_ion_cur(
                         qt_2 = secondary_quantiles[opcond][i]
                         h_aleatoric = plot_aleatoric(axis, angles_sim, qt, qt_2, scale='log')
                         handles_solo.append(h_aleatoric)
-                        labels_solo.append("90\\% CI (epistemic + aleatoric)")
+                        labels_solo.append(f"90{PERCENT} CI (epistemic + aleatoric)")
 
                     ax_solo.legend(handles_solo, labels_solo, loc='upper right')
 
@@ -747,14 +755,14 @@ def _plot_ion_vel(
 
         # Plot median and 90% credible intervals
         handles.append(plot_median_and_uncertainty(ax, x_sim, qt))
-        labels += [f"Median and 90\\% CI{' (epistemic)' if secondary else ''}"]
+        labels += [f"Median and 90{PERCENT} CI{' (epistemic)' if secondary else ''}"]
 
         # Plot secondary sim behind primary sim
         if secondary:
             x2, qt_2 = _load_data(secondary, opcond)
             handle = plot_aleatoric(ax, x2, qt, qt_2)
             handles.append(handle)
-            labels.append("90\\% CI (epistemic + aleatoric)")
+            labels.append(f"90{PERCENT} CI (epistemic + aleatoric)")
 
         plot_name = f"{qty_name}_p={pressure_uTorr:05.2f}uTorr"
         ax.legend(handles, labels, loc='lower right')
@@ -1046,7 +1054,7 @@ def _plot_global_quantity(
 
         h_unc, h_median = plot_median_and_uncertainty(ax, pressure_sim, qt, zorder=4)
         handles.append((h_median, h_unc))
-        labels.append(f"Median and 90\\% CI{' (epstemic)' if secondary else ''}")
+        labels.append(f"Median and 90{PERCENT} CI{' (epistemic)' if secondary else ''}")
 
         # Plot secondary sim (aleatoric uncertainty) behind primary sim
         if secondary:
@@ -1056,7 +1064,7 @@ def _plot_global_quantity(
 
             handle = plot_aleatoric(ax, pressure_2, qt, qt_2)
             handles.append(handle)
-            labels.append("90\\% CI (epistemic + aleatoric)")
+            labels.append(f"90{PERCENT} CI (epistemic + aleatoric)")
 
     ax.legend(handles, labels)
     save_figure(fig, plot_path, f"{quantity}_pressure_bands")
@@ -1161,7 +1169,7 @@ def _plot_traces(names, samples, dir: Path = Path(".")):
     subfig_width = 8
     fig_kw = {"figsize": (subfig_width * num_cols, subfig_height * num_rows), "dpi": 200}
 
-    fig, axes = plt.subplots(num_rows, num_cols, **fig_kw, sharex='col')
+    fig, axes = plt.subplots(num_rows, num_cols, **fig_kw, sharex='col', squeeze=False)
 
     perm = [i for i, _ in sorted(enumerate(names), key=lambda x: x[1])]
 
