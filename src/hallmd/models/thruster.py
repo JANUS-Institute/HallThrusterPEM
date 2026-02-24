@@ -30,7 +30,7 @@ import typing
 import numpy as np
 from amisc.typing import Dataset
 
-from hallmd.utils import AVOGADRO_CONSTANT, FUNDAMENTAL_CHARGE, MOLECULAR_WEIGHTS, load_device
+from hallmd.utils import AVOGADRO_CONSTANT, FUNDAMENTAL_CHARGE, MOLECULAR_WEIGHTS, load_thruster
 
 __all__ = ["run_hallthruster_jl", "hallthruster_jl", "get_jl_env", "PEM_TO_JULIA", "JL_BINARY"]
 
@@ -220,7 +220,8 @@ def _format_hallthruster_jl_input(
 
     # Necessary to load thruster specs separately from the config (to protect sensitive data)
     if isinstance(thruster, str):
-        thruster = load_device(thruster)
+        thruster = load_thruster(thruster)
+
     if thruster is not None:
         json_config["config"]["thruster"] = thruster  # override
 

@@ -63,7 +63,7 @@ components: !Component
   - name: Thruster
     model: !!python/name:hallmd.models.thruster.hallthruster_jl
     version: 0.18.7
-    thruster: SPT-100
+    thruster: "devices/SPT-100"
     config:
       discharge_voltage: 300             # overwritten by V_a
       anode_mass_flow_rate: 5.0e-6       # overwritten by mdot_a

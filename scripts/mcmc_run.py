@@ -21,6 +21,7 @@ import pickle
 import shutil
 import sys
 import traceback
+import itertools
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Type, cast, Callable
@@ -32,12 +33,10 @@ import xarray as xr
 import amisc.distribution as distributions
 
 from pem_core import PEM
-from pem_core.data import UNITS, load_multiple_datasets, DataEntry, DataInstance, DataField
-from pem_core.types import Array, ArrayLike, PathLike
-from pem_core.workflows.mcmc import _relative_gaussian_likelihood
-import pem_core.workflows.mcmc as mcmc
-
-from analyze_mcmc import analyze
+from pem_core.data import UNITS, load_multiple_datasets, DataEntry, DataInstance, DataField, interpolate_data_instance
+from pem_core.types import ArrayLike
+from pem_core.sampling import _relative_gaussian_likelihood
+import pem_core.sampling as sampling
 
 parser = argparse.ArgumentParser(description="Run MCMC calibration for the Hall thruster PEM.")
 
@@ -149,7 +148,6 @@ parser.add_argument(
 )
 
 #%%
-
 @dataclass
 class ExecutionOptions:
     executor: Type
@@ -189,15 +187,184 @@ def load_pem_and_opts(args: Namespace) -> tuple[PEM, ExecutionOptions]:
     )
 
     os.makedirs(opts.directory, exist_ok=True)
-
     return pem, opts
+
+def _sample_aleatoric(sample_dict, system):
+    """
+    Sample the aleatoric variables using nomral distributions, rather than the uniform distributions that amisc uses for Relative
+    """
+    aleatoric_vars = ["P_b", "V_a", "mdot_a"]
+    for var in aleatoric_vars:
+        nominal = sample_dict[var]
+        input = system.inputs()[var]
+        dist = input.distribution
+        assert isinstance(dist, distributions.Relative)
+
+        # we assume the error specified in the config file is 1 standard deviation
+        percent = dist.dist_args[0] / 100
+
+        for i in range(np.atleast_1d(nominal).size):
+            nom = input.denormalize(nominal[i])
+            sample = nom * (1 + percent * np.random.randn())
+            nominal[i] = input.normalize(sample)
+
+        sample_dict[var] = nominal
+    return sample_dict
+
+def _update_opts(opts, root_dir, sample_index):
+    id_str = f"{sample_index:06d}"
+    opts.directory = root_dir / id_str
+    os.mkdir(opts.directory)
+
+def pem_to_xarray(
+        operating_conditions: list[dict[str, float]],
+        outputs: dict, sweep_radii: np.ndarray,
+        use_corrected_thrust: bool = True
+    ) -> list[DataEntry]:
+
+    """
+    Convert the outputs of the Hall thruster PEM to xarrays to be compared to data
+    """
+    data_entries: list[DataEntry] = []
+
+    for (i, opcond) in enumerate(operating_conditions):
+
+        if use_corrected_thrust:
+            # With multiple radii, we have multiple thrust. Pick the last one as sweep_radii are sorted
+            thrust = xr.DataArray(np.atleast_1d(outputs['T_c'][i])[-1])
+        else:
+            thrust = xr.DataArray(outputs['T'][i])
+
+        Id = xr.DataArray(outputs['I_d'][i])
+        Vcc = xr.DataArray(outputs['V_cc'][i])
+
+        z = outputs['u_ion_coords'][i]
+        uion = outputs['u_ion'][i]
+        uion_arr = xr.DataArray(uion, coords=[z], dims=["z"])
+
+        theta = outputs['j_ion_coords'][i]
+        r = sweep_radii
+        jion = np.atleast_3d(outputs['j_ion'])[i, :, :].T
+        jion_arr = xr.DataArray(jion, coords=[r, theta], dims=["r", "theta"])
+
+        instance: DataInstance = {
+            "discharge current": DataField(val=Id, unit="A"),
+            "cathode coupling voltage": DataField(val=Vcc, unit="V"),
+            "thrust": DataField(val=thrust, unit="N"),
+            "ion velocity": DataField(val=uion_arr, unit="m/s"),
+            "ion current density": DataField(val=jion_arr, unit="A/m^2"),
+        }
+
+        entry = DataEntry(operating_condition=opcond, data=instance)
+        data_entries.append(entry)
+
+    return data_entries
+
+def _consolidate_outputs(path: Path):
+    """
+    By default, amisc creates a directory with Thruster, Cathode, and Plume folders. The latter two are empty, but the
+    former has individual files for each individual Hall thruster simulation. This creates a ton of individual files
+    that can quickly deplete the maximum allowance of the Great Lakes scratch partition. This script deletes the empty
+    folders, consolidates all output files into a single file, and deletes the individual files. Additionally, for
+    failed runs the containing folder may be empty, so we delete it.
+    """
+
+    # Check if folder is empty
+    if not os.listdir(path):
+        shutil.rmtree(path)
+
+    cathode_path = path / "Cathode"
+    plume_path = path / "Plume"
+    thruster_path = path / "Thruster"
+
+    if thruster_path.is_dir():
+        jsons = [f for f in thruster_path.iterdir() if f.suffix == ".json"]
+
+        # Read JSON files and consolidate them into a single file
+        json_contents = []
+        for json_file in jsons:
+            with open(json_file, "r") as fd:
+                contents = json.load(fd)
+                json_contents.append(contents)
+
+        with open(path / "thruster.json", "w") as fd:
+            json.dump(json_contents, fd)
+
+    # Delete unneeded files
+    if cathode_path.is_dir():
+        cathode_path.rmdir()
+
+    if plume_path.is_dir():
+        plume_path.rmdir()
+
+    if thruster_path.is_dir():
+        shutil.rmtree(thruster_path)
+
+def _run_model(
+    params: dict[str, ArrayLike],
+    system: PEM,
+    operating_conditions: list[dict[str, float]],
+    base_params: dict[str, ArrayLike],
+    opts: ExecutionOptions,
+) -> list[DataEntry] | None:
+    """
+    Run the Hall thruster PEM at a list of operating conditions for a set of calibration params (params), leaving the remaining parameters equal to the values in `base_params`
+    """
+    # Start with nominal values for all parameters, and then update with the current sample values.
+    sample_dict = copy.deepcopy(base_params)
+    for key, val in params.items():
+        sample_dict[key] = val
+
+    # Add aleatoric variables if requested
+    if opts.sample_aleatoric:
+        sample_dict = _sample_aleatoric(sample_dict, system)
+
+    output = None
+
+    # Run model
+    with opts.executor(max_workers=opts.max_workers) as exec:
+        outputs = system.predict(
+            sample_dict,
+            use_model=opts.fidelity,
+            model_dir=opts.directory,
+            executor=exec,
+            verbose=False,
+        )
+
+    if "errors" in outputs:
+        # Rethrow error
+        raise ChildProcessError(outputs["errors"][0]['error'])
+
+    # Get plume sweep radii
+    if "Plume" in [c.name for c in system.components]:
+        sweep_radii = system['Plume'].model_kwargs['sweep_radius']
+    else:
+        sweep_radii = np.array([1.0])
+
+
+    output_thrusterdata = pem_to_xarray(operating_conditions, cast(dict, outputs), sweep_radii, use_corrected_thrust=True)
+
+    if output_thrusterdata is not None:
+        # Write outputs to file
+        with open(opts.directory / "pem.pkl", "wb") as fd:
+            pickle.dump({"input": sample_dict, "output": output_thrusterdata}, fd)
+
+        output = output_thrusterdata
+
+    # Consolidate output files
+    _consolidate_outputs(opts.directory)
+
+    return output
 
 def _log_likelihood(
     data: list[DataEntry],
     base_params: dict[str, ArrayLike],
     opts: ExecutionOptions,
 ) -> Callable[[PEM, dict[str, ArrayLike]], float]:
-    
+    """
+    Return a log-likelihood function comparing simulation outputs to data
+    The likelihood function has signature likeliood(pem, params) -> float
+    """
     def _likelihood_func(system: PEM, params: dict[str, ArrayLike]) -> float:
         opconds = [d.operating_condition for d in data]
         sim_results = _run_model(params, system, opconds, base_params, opts)
@@ -209,7 +376,7 @@ def _log_likelihood(
         component_stats = {}
 
         # Interpolate sim results to data coordinates
-        sim_itp = [interp_sim_to_data(_sim.data, _data.data) for (_sim, _data) in zip(sim_results, data)]
+        sim_itp = [interpolate_data_instance(_sim.data, _data.data) for (_sim, _data) in zip(sim_results, data)]
 
         # Extract data per-field into 1-D vectors
         sim_vectors = {}
@@ -269,195 +436,6 @@ def _log_likelihood(
 
     return _likelihood_func
 
-def interp_sim_to_data(sim: DataInstance, data: DataInstance) -> DataInstance:
-    """
-    Create a new DataInstance containing all of the fields of data, but the sim data interpolated to the data coords
-    """
-    itp: DataInstance = {}
-
-    for field_name, data_field in data.items():
-        da_sim = sim[field_name].val
-        da_data = data_field.val
-        dims_to_interp = {dim: da_data[dim] for dim in da_data.dims if da_data.sizes[dim] > 1}
-    
-        da_itp = da_sim.interp(dims_to_interp)
-        itp[field_name] = DataField(val=da_itp, err=None, unit=data_field.unit)
-
-    return itp
-
-        
-def append_sample_row(
-    logfile: PathLike, sample_index: int, sample: Array, logp: float, accepted: bool, delimiter: str = ','
-):
-    """Append a row of MCMC diagnostic data for the given `logfile`"""
-    id_str = f"{sample_index:06d}"
-    with open(logfile, "a") as fd:
-        row = [id_str] + [f"{s}" for s in sample] + [f"{logp}", f"{accepted}"]
-        print(delimiter.join(row), file=fd)
-
-def _consolidate_outputs(path: Path):
-    """
-    By default, amisc creates a directory with Thruster, Cathode, and Plume folders. The latter two are empty, but the
-    former has individual files for each individual Hall thruster simulation. This creates a ton of individual files
-    that can quickly deplete the maximum allowance of the Great Lakes scratch partition. This script deletes the empty
-    folders, consolidates all output files into a single file, and deletes the individual files. Additionally, for
-    failed runs the containing folder may be empty, so we delete it.
-    """
-
-    # Check if folder is empty
-    if not os.listdir(path):
-        shutil.rmtree(path)
-
-    cathode_path = path / "Cathode"
-    plume_path = path / "Plume"
-    thruster_path = path / "Thruster"
-
-    if thruster_path.is_dir():
-        jsons = [f for f in thruster_path.iterdir() if f.suffix == ".json"]
-
-        # Read JSON files and consolidate them into a single file
-        json_contents = []
-        for json_file in jsons:
-            with open(json_file, "r") as fd:
-                contents = json.load(fd)
-                json_contents.append(contents)
-
-        with open(path / "thruster.json", "w") as fd:
-            json.dump(json_contents, fd)
-
-    # Delete unneeded files
-    if cathode_path.is_dir():
-        cathode_path.rmdir()
-
-    if plume_path.is_dir():
-        plume_path.rmdir()
-
-    if thruster_path.is_dir():
-        shutil.rmtree(thruster_path)
-
-def pem_to_xarray(
-        operating_conditions: list[dict[str, float]],
-        outputs: dict, sweep_radii: np.ndarray,
-        use_corrected_thrust: bool = True
-    ) -> list[DataEntry]:
-
-    data_entries: list[DataEntry] = []
-
-    for (i, opcond) in enumerate(operating_conditions):
-
-        if use_corrected_thrust:
-            # With multiple radii, we have multiple thrust. Pick the last one as sweep_radii are sorted
-            thrust = xr.DataArray(np.atleast_1d(outputs['T_c'][i])[-1])
-        else:
-            thrust = xr.DataArray(outputs['T'][i])
-
-        Id = xr.DataArray(outputs['I_d'][i])
-        Vcc = xr.DataArray(outputs['V_cc'][i])
-
-        z = outputs['u_ion_coords'][i]
-        uion = outputs['u_ion'][i]
-        uion_arr = xr.DataArray(uion, coords=[z], dims=["z"])
-
-        theta = outputs['j_ion_coords'][i]
-        r = sweep_radii
-        jion = np.atleast_3d(outputs['j_ion'])[i, :, :].T
-        jion_arr = xr.DataArray(jion, coords=[r, theta], dims=["r", "theta"])
-
-        instance: DataInstance = {
-            "discharge current": DataField(val=Id, unit="A"),
-            "cathode coupling voltage": DataField(val=Vcc, unit="V"),
-            "thrust": DataField(val=thrust, unit="N"),
-            "ion velocity": DataField(val=uion_arr, unit="m/s"),
-            "ion current density": DataField(val=jion_arr, unit="A/m^2"),
-        }
-
-        entry = DataEntry(operating_condition=opcond, data=instance)
-        data_entries.append(entry)
-
-    return data_entries
-
-def _run_model(
-    params: dict[str, ArrayLike],
-    system: PEM,
-    operating_conditions: list[dict[str, float]],
-    base_params: dict[str, ArrayLike],
-    opts: ExecutionOptions,
-) -> list[DataEntry] | None:
-    
-    # Start with nominal values for all parameters, and then update with the current sample values.
-    sample_dict = copy.deepcopy(base_params)
-    for key, val in params.items():
-        sample_dict[key] = val
-
-    # Add aleatoric variables if requested
-    if opts.sample_aleatoric:
-        sample_dict = _sample_aleatoric(sample_dict, system)
-
-    output = None
-
-    try:
-        # Run model
-        with opts.executor(max_workers=opts.max_workers) as exec:
-            outputs = system.predict(
-                sample_dict,
-                use_model=opts.fidelity,
-                model_dir=opts.directory,
-                executor=exec,
-                verbose=False,
-            )
-
-        # Get plume sweep radii
-        if "Plume" in [c.name for c in system.components]:
-            sweep_radii = system['Plume'].model_kwargs['sweep_radius']
-        else:
-            sweep_radii = np.array([1.0])
-
-        output_thrusterdata = pem_to_xarray(operating_conditions, cast(dict, outputs), sweep_radii, use_corrected_thrust=True)
-
-        if output_thrusterdata is not None:
-            # Write outputs to file
-            with open(opts.directory / "pem.pkl", "wb") as fd:
-                pickle.dump({"input": sample_dict, "output": output_thrusterdata}, fd)
-
-            output = output_thrusterdata
-
-    except Exception as e:
-        print("Error detected. Failing input printed below")
-        print(f"{sample_dict}")
-        print(e)
-        traceback.print_exc(file=sys.stdout)
-
-    # Consolidate output files
-    _consolidate_outputs(opts.directory)
-
-    return output
-
-def _sample_aleatoric(sample_dict, system):
-    # We sample from normal distributions, as these are more reflective of the experimental uncertainty than
-    # the uniform distributions that amisc uses for Relative.
-    aleatoric_vars = ["P_b", "V_a", "mdot_a"]
-    for var in aleatoric_vars:
-        nominal = sample_dict[var]
-        input = system.inputs()[var]
-        dist = input.distribution
-        assert isinstance(dist, distributions.Relative)
-
-        # we assume the error specified in the config file is 1 standard deviation
-        percent = dist.dist_args[0] / 100
-
-        for i in range(np.atleast_1d(nominal).size):
-            nom = input.denormalize(nominal[i])
-            sample = nom * (1 + percent * np.random.randn())
-            nominal[i] = input.normalize(sample)
-
-        sample_dict[var] = nominal
-    return sample_dict
-
-
-def _update_opts(opts, root_dir, sample_index):
-    id_str = f"{sample_index:06d}"
-    opts.directory = root_dir / id_str
-    os.mkdir(opts.directory)
 
 UNITS.define("Torr = 133.322368 pascal = Torr")
 
@@ -524,31 +502,6 @@ var_names = {
     "magnetic field scale": "B_hat",
 }
 
-#%%
-
-N = 10
-HOME = Path(__file__).parent.parent.resolve()
-DATA = HOME / "src/hallmd/data/spt100"
-DIAMANT_AEROSPACE  =f"{DATA}/diamant2014/data_aerospace.csv"
-DIAMANT_L3 = f"{DATA}/diamant2014/data_L3.csv"
-TENENBAUM = f"{DATA}/macdonald2019/data.csv"
-
-ARGS = [
-    str(HOME/ "scripts/pem_v1/pem_v1_SPT-100.yml"),
-    f"--max-samples={N}",
-    f"--datasets", DIAMANT_L3,
-    f"--output-interval={N}",
-    f"--output-dir={HOME}/outputs",
-    "--ncharge=1",
-    "--noise-std=0.025",
-    "--executor=thread",
-]
-
-# # if __name__ == "__main__":
-
-#     # def main(args):
-# args = parser.parse_args(ARGS)
-#%%
 def main(args):
     # Load PEM from YAML file and determine nominal and calibration parameters
     pem, opts = load_pem_and_opts(args)
@@ -556,7 +509,6 @@ def main(args):
     base = pem.get_nominal_inputs(norm=True)
     params_to_calibrate = pem.get_inputs_by_category("calibration", sort="name")
 
-    print(args.datasets)
 
     # Load data from files
     data = load_multiple_datasets(args.datasets, operating_vars, qois, coords, rename_map=rename_map)
@@ -610,21 +562,17 @@ def main(args):
     print(f"params_to_calibrate: {[p.name for p in params_to_calibrate]}")
     print(f"Number of operating conditions: {len(operating_conditions)}")
 
-    # Prepare output file
-    root_dir = opts.directory
-    logfile = root_dir / "mcmc.csv"
-    delimiter = ","
-    header = delimiter.join(["id"] + [p.name for p in params_to_calibrate] + ["log_posterior"] + ["accepted"])
-    with open(logfile, "w") as fd:
-        print(header, file=fd)
-
     # Set up directory for initial sample
-    _update_opts(opts, root_dir, 0)
+    # TODO: _update_opts() should probably be baked into the samplers/loggers
+    root_dir = opts.directory
+    sample_dir = opts.directory / "samples"
+    os.makedirs(sample_dir, exist_ok=True)
+    _update_opts(opts, sample_dir, 0)
 
     # Set up samplers
     match args.sampler:
         case "dram":
-            sampler = mcmc.DRAMSampler(
+            sampler = sampling.DRAMSampler(
                 params_to_calibrate,
                 data,
                 pem,
@@ -635,9 +583,9 @@ def main(args):
                 init_cov_file=args.init_cov,
             )
         case "prior":
-            sampler = mcmc.PriorSampler(params_to_calibrate, data, pem, base, opts, _log_likelihood(data, base, opts))
+            sampler = sampling.PriorSampler(params_to_calibrate, data, pem, base, opts, _log_likelihood(data, base, opts))
         case "prev-run":
-            sampler = mcmc.PreviousRunSampler(
+            sampler = sampling.PreviousRunSampler(
                 params_to_calibrate, data, pem, base, opts,
                 prev_run_file=args.prev, burn_fraction=0.5, log_likelihood=_log_likelihood(data, base, opts)
             )
@@ -645,56 +593,11 @@ def main(args):
             raise ValueError("Unreachable")
 
     # Initialize sampler parameters and evaluate posterior on init sample
-    max_samples: int = args.max_samples
-    init_sample = sampler.initial_sample()
-    best_logp = sampler.logpdf(init_sample)
-    append_sample_row(logfile, 0, init_sample, best_logp, True)
-    num_accept = 1
+    mcmc_logger = sampling.SampleLogger(sampler, output_dir=root_dir)
+    _update_opts(opts, sample_dir, mcmc_logger.sample_index+1)
 
-    if isinstance(sampler, mcmc.DRAMSampler):
-        burn_fraction = 0.5
-        num_subsample = 1000
-    else:
-        burn_fraction = 0.0
-        num_subsample = None
-
-    # Main sampler loop
-    _update_opts(opts, root_dir, 1)
-    for i, (sample, logp, accepted_bool) in enumerate(sampler):
-        ind = i + 1
-        append_sample_row(logfile, ind, sample, logp, accepted_bool)
-
-        if logp > best_logp:
-            best_logp = logp
-
-        if accepted_bool:
-            num_accept += 1
-
-        print(
-            f"sample: {ind}/{max_samples}, logp: {logp:.3f}, best logp: {best_logp:.3f},",
-            f"accepted: {accepted_bool}, p_accept: {num_accept / (ind) * 100:.1f}%",
-        )
-
-        corner = ind == max_samples or (i > 100 and (i % (args.output_interval * 10) == 0))
-
-        if (ind == max_samples) or (i % args.output_interval == 0):
-            analyze(
-                root_dir.parent,
-                args.datasets,
-                plot_corner=corner,
-                plot_bands=True,
-                plot_traces=True,
-                calc_metrics=False,
-                save_restart=True,
-                proposal_cov=sampler.cov(),
-                subsample=num_subsample,
-                burn_fraction=burn_fraction,
-            )
-
-        if ind >= max_samples:
-            break
-
-        _update_opts(opts, root_dir, ind+1)
+    for i, _ in itertools.islice(enumerate(sampler), args.max_samples):
+        mcmc_logger.update(log=True)
 
 if __name__ == "__main__":
     args = parser.parse_args()
