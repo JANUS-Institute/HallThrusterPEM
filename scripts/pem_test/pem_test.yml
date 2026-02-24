@@ -62,7 +62,7 @@ components: !Component
   - name: Thruster
     model: !!python/name:hallmd.models.thruster.hallthruster_jl
     version: 0.18.1
-    thruster: SPT-100
+    thruster: devices/SPT-100
     julia_script: ../tests/sim_hallthruster.jl
     config:
       discharge_voltage: 300
