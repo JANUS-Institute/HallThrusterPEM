@@ -19,8 +19,6 @@ import json
 import os
 import pickle
 import shutil
-import sys
-import traceback
 import itertools
 from dataclasses import dataclass
 from pathlib import Path
@@ -35,8 +33,11 @@ import amisc.distribution as distributions
 from pem_core import PEM
 from pem_core.data import UNITS, load_multiple_datasets, DataEntry, DataInstance, DataField, interpolate_data_instance
 from pem_core.types import ArrayLike
-from pem_core.sampling import _relative_gaussian_likelihood
+from pem_core.sampling import relative_gaussian_likelihood
 import pem_core.sampling as sampling
+
+# Import data loading configuration from the Hall thruster PEM
+from hallmd.data import HT_OP_VARS, HT_RENAME_MAP, HT_COORDS, HT_QOIS
 
 parser = argparse.ArgumentParser(description="Run MCMC calibration for the Hall thruster PEM.")
 
@@ -360,7 +361,7 @@ def _log_likelihood(
     data: list[DataEntry],
     base_params: dict[str, ArrayLike],
     opts: ExecutionOptions,
-) -> Callable[[PEM, dict[str, ArrayLike]], float]:
+) -> sampling.LikelihoodType:
     """
     Return a log-likelihood function comparing simulation outputs to data
     The likelihood function has signature likeliood(pem, params) -> float
@@ -409,8 +410,8 @@ def _log_likelihood(
 
             sim_vec = np.concatenate(sim_vectors[field_name])
             data_vec = np.concatenate(data_vectors[field_name])
-            distance, likelihood = _relative_gaussian_likelihood(data_vec, sim_vec, opts.noise_std)        
 
+            distance, likelihood = relative_gaussian_likelihood(data_vec, sim_vec, opts.noise_std)        
             component_stats[field_name] = (distance, likelihood)
             L += likelihood
 
@@ -437,92 +438,33 @@ def _log_likelihood(
     return _likelihood_func
 
 
-UNITS.define("Torr = 133.322368 pascal = Torr")
-
-operating_vars = {
-    "discharge voltage": {
-        "unit": UNITS.volts,
-    },
-    "anode mass flow rate": {
-        "unit": UNITS.kg / UNITS.second,
-    },
-    "background pressure": {
-        "unit": UNITS.torr,
-        "default": 0.0,
-    },
-    "magnetic field scale": {
-        "unit": UNITS.dimensionless,
-        "default": 1.0,
-    },
-}
-
-coords = {
-    "z": UNITS.meter,
-    "r": UNITS.meter,
-    "theta": UNITS.rad,
-}
-
-qois = {
-    "cathode coupling voltage": {
-        "unit": UNITS.volts,
-    },
-    "discharge current": {
-        "unit": UNITS.ampere,
-    },
-    "thrust": {
-        "unit": UNITS.newton,
-    },
-    "ion velocity": {
-        "unit": UNITS.meter / UNITS.second,
-        "coords": ("z",),
-    },
-    "ion current density": {
-        "unit": UNITS.ampere / UNITS.meter**2,
-        "coords": ("r", "theta"),
-    },
-}
-
-FLOW_RATE_KEY = "anode mass flow rate"
-
-rename_map = {
-    "anode voltage" : "discharge voltage",
-    "anode current" : "discharge current",
-    "anode flow rate" : FLOW_RATE_KEY,
-    "axial distance from anode": "z",
-    "axial position from anode": "z",
-    "axial ion velocity": "ion velocity",
-    "angular position from thruster centerline": "theta",
-    "radial position from thruster exit": "r",
-}
-
-var_names = {
-    "discharge voltage": "V_a",
-    "anode mass flow rate": "mdot_a",
-    "background pressure": "P_b",
-    "magnetic field scale": "B_hat",
-}
-
 def main(args):
     # Load PEM from YAML file and determine nominal and calibration parameters
     pem, opts = load_pem_and_opts(args)
     component_names = set([c.name for c in pem.components])
-    base = pem.get_nominal_inputs(norm=True)
-    params_to_calibrate = pem.get_inputs_by_category("calibration", sort="name")
-
+    base_vars = pem.get_nominal_inputs(norm=True)
+    calibration_vars = pem.get_inputs_by_category("calibration", sort="name")
 
     # Load data from files
-    data = load_multiple_datasets(args.datasets, operating_vars, qois, coords, rename_map=rename_map)
+    data = load_multiple_datasets(args.datasets, HT_OP_VARS, HT_QOIS, HT_COORDS, rename_map=HT_RENAME_MAP)
     operating_conditions = [d.operating_condition for d in data]
 
+    opcond_short_names = {
+        "discharge voltage": "V_a",
+        "anode mass flow rate": "mdot_a",
+        "background pressure": "P_b",
+        "magnetic field scale": "B_hat",
+    }
+
     # Load operating conditions into input dictionary
-    for (long_name, param) in var_names.items():
+    for (long_name, param) in opcond_short_names.items():
         if param not in pem.inputs():
-            base[param] = 1.0
+            base_vars[param] = 1.0
             continue
 
         inputs_unnorm = np.array([cond[long_name] for cond in operating_conditions])
         p = pem.inputs()[param]
-        base[param] = p.normalize(inputs_unnorm) # type: ignore
+        base_vars[param] = p.normalize(inputs_unnorm) # type: ignore
 
     # Remove data where theta < 0 for ion current density
     for d in data:
@@ -559,7 +501,7 @@ def main(args):
         else:
             pem['Plume'].model_kwargs['sweep_radius'] = np.array([1.0])
 
-    print(f"params_to_calibrate: {[p.name for p in params_to_calibrate]}")
+    print(f"params_to_calibrate: {[p.name for p in calibration_vars]}")
     print(f"Number of operating conditions: {len(operating_conditions)}")
 
     # Set up directory for initial sample
@@ -569,35 +511,25 @@ def main(args):
     os.makedirs(sample_dir, exist_ok=True)
     _update_opts(opts, sample_dir, 0)
 
+    log_likelihood = _log_likelihood(data, base_vars, opts)
+    sampler_args = dict(sample_vars=calibration_vars, data=data, pem=pem, base_vars=base_vars, opts=opts, log_likelihood=log_likelihood, output_dir=root_dir)
+
     # Set up samplers
     match args.sampler:
         case "dram":
-            sampler = sampling.DRAMSampler(
-                params_to_calibrate,
-                data,
-                pem,
-                base,
-                opts,
-                _log_likelihood(data, base, opts),
-                init_sample_file=args.init_sample,
-                init_cov_file=args.init_cov,
-            )
+            sampler = sampling.DRAMSampler(**sampler_args, init_sample_file=args.init_sample, init_cov_file=args.init_cov)
         case "prior":
-            sampler = sampling.PriorSampler(params_to_calibrate, data, pem, base, opts, _log_likelihood(data, base, opts))
+            sampler = sampling.PriorSampler(**sampler_args)
         case "prev-run":
-            sampler = sampling.PreviousRunSampler(
-                params_to_calibrate, data, pem, base, opts,
-                prev_run_file=args.prev, burn_fraction=0.5, log_likelihood=_log_likelihood(data, base, opts)
-            )
+            sampler = sampling.PreviousRunSampler(args.prev, burn_fraction=0.5, **sampler_args)
         case _:
             raise ValueError("Unreachable")
 
     # Initialize sampler parameters and evaluate posterior on init sample
-    mcmc_logger = sampling.SampleLogger(sampler, output_dir=root_dir)
-    _update_opts(opts, sample_dir, mcmc_logger.sample_index+1)
+    _update_opts(opts, sample_dir, sampler.sample_num)
 
-    for i, _ in itertools.islice(enumerate(sampler), args.max_samples):
-        mcmc_logger.update(log=True)
+    for _ in itertools.islice(sampler, args.max_samples):
+        _update_opts(opts, sample_dir, sampler.sample_num)
 
 if __name__ == "__main__":
     args = parser.parse_args()

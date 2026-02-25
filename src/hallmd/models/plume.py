@@ -11,13 +11,14 @@ from amisc.utils import get_logger
 from scipy.integrate import simpson
 from scipy.special import erfi
 from pem_core.constants import TORR_2_PA
+from typing import cast
 
 __all__ = ['current_density']
 
 LOGGER = get_logger(__name__)
 
 
-def current_density(inputs: Dataset, sweep_radius: float | list = 1.0):
+def current_density(inputs: Dataset, sweep_radius: float | list = 1.0) -> Dataset:
     """Compute the semi-empirical ion current density ($j_{ion}$) plume model over a 90 deg sweep, with 0 deg at
     thruster centerline. Also compute the plume divergence angle. Will return the ion current density at 91 points,
     from 0 to 90 deg in 1 deg increments. The angular locations are returned as `j_ion_coords` in radians.
@@ -35,16 +36,17 @@ def current_density(inputs: Dataset, sweep_radius: float | list = 1.0):
                                        `T_c` for corrected thrust (N) if `T` is provided in the inputs.
     """
     # Load plume inputs
-    P_B = inputs['P_b'] * TORR_2_PA  # Background pressure (Torr)
-    c0 = inputs['c0']  # Fit coefficients (-)
-    c1 = inputs['c1']  # (-)
-    c2 = inputs['c2']  # (rad/Pa)
-    c3 = inputs['c3']  # (rad)
-    c4 = inputs['c4']  # (m^-3/Pa)
-    c5 = inputs['c5']  # (m^-3)
-    sigma_cex = inputs['sigma_cex']  # Charge-exchange cross-section (m^2)
-    I_B0 = inputs['I_B0']  # Total initial ion beam current (A)
-    thrust = inputs.get('T', None)  # Thrust (N)
+    input_dict = cast(dict, inputs)
+    P_B = input_dict['P_b'] * TORR_2_PA  # Background pressure (Torr)
+    c0 = input_dict['c0']  # Fit coefficients (-)
+    c1 = input_dict['c1']  # (-)
+    c2 = input_dict['c2']  # (rad/Pa)
+    c3 = input_dict['c3']  # (rad)
+    c4 = input_dict['c4']  # (m^-3/Pa)
+    c5 = input_dict['c5']  # (m^-3)
+    sigma_cex = input_dict['sigma_cex']  # Charge-exchange cross-section (m^2)
+    I_B0 = input_dict['I_B0']  # Total initial ion beam current (A)
+    thrust = input_dict.get('T', None)  # Thrust (N)
     radii = np.atleast_1d(sweep_radius)
 
     # 90 deg angle sweep for ion current density
@@ -154,4 +156,4 @@ def current_density(inputs: Dataset, sweep_radius: float | list = 1.0):
 
     ret['j_ion_coords'] = j_ion_coords
 
-    return ret
+    return cast(Dataset, ret)

@@ -21,14 +21,15 @@ Citations:
 ## Data conventions
 The data used in the PEM is expected to be in a standard format.
 This format may evolve over time to account for more data, but at present, when we read a CSV file, here is what we look for in the columns.
-Note that we treat columns case-insensitively, so `Anode current (A)` is treated the same as `anode current (a)`.
+Note that we treat columns case-insensitively (except the units), so `Anode current (A)` is treated the same as `anode current (A)`.
+Additionally, we automatically convert units to SI as best we can.
 
 ### Operating conditions
 
 Data is imported into a dictionary that maps operating conditions to data.
-An Operating Condition (made concrete in the `OperatingCondition` class) consists of a unique set of an
-anode mass flow rate, a background pressure, and a discharge / anode voltage.
-These quantities are **mandatory** for each data file, but can be provided in a few ways.
+An operating condition consists of a unique set of an anode mass flow rate, a background pressure, a discharge / anode voltage, and a magnetic field scale.
+The flow rate and voltage are mandatory, while the pressure and field scale are optional (and assumed to be 0 and 1, respectively).
+These can be provided in a few ways.
 In cases where multiple options are allowed, the first matching column is chosen.
 
 #### Background pressure
@@ -42,7 +43,7 @@ We look for the following column names in order:
 2. A column named 'total flow rate (mg/s)' and a column named 'anode-cathode flow ratio',
 3. A column named 'total flow rate (mg/s)' and a column named 'cathode flow fraction'.
 
-In all cases, the unit of the flow rate is expected to be mg/s.
+In all cases, the unit of the flow rate is expected to be mass / time.
 For option 2, the cathode flow fraction is expected as a fraction between zero and one.
 For option 3, the anode-cathode flow ratio is unitless and is expected to be greater than one.
 
@@ -57,7 +58,6 @@ In both cases, the unit of the voltage is expected to be Volts.
 ### Data
 
 The following data-fields are all **optional**.
-The `ThrusterData` struct will be populated only with what is provided.
 For each of these quantities, an uncertainty can be provided, either relative or absolute.
 The formats for uncertainties for a quantity of the form '{quantity} ({unit})' are
 1. '{quantity} absolute uncertainty ({unit})'
@@ -84,12 +84,6 @@ We look for one of the following column names in order:
 #### Cathode coupling voltage
 We look for a column called 'cathode coupling voltage (v)'.
 
-### Ion/beam current
-We look for one of the following column names in order:
-1. 'ion current (a)'
-2. 'beam current (a)'
-3. 'ion beam current (a)'
-
 #### Ion current density
 We look for three columns
 
@@ -110,7 +104,7 @@ If one or two of these quantities is provided, we throw an error.
 We look for two columns:
 
 1. Axial position from anode
-Allowed keys: 'axial position from anode (m)'
+Allowed keys: 'axial position from anode (m)', 'axial distance from anode (m)'
 
 2. Ion velocity
 Allowed keys: 'ion velocity (m/s)'
@@ -120,3 +114,63 @@ The ion velocity is assumed to have units of m/s.
 If only one of these quantities is provided, we throw an error.
 
 """  # noqa: E501
+
+from pem_core.data import UNITS
+
+UNITS.define("Torr = 133.322368 pascal = Torr")
+
+HT_OP_VARS = {
+    "discharge voltage": {
+        "unit": UNITS.volts,
+    },
+    "anode mass flow rate": {
+        "unit": UNITS.kg / UNITS.second,
+    },
+    "background pressure": {
+        "unit": UNITS.torr,
+        "default": 0.0,
+    },
+    "magnetic field scale": {
+        "unit": UNITS.dimensionless,
+        "default": 1.0,
+    },
+}
+
+HT_COORDS = {
+    "z": UNITS.meter,
+    "r": UNITS.meter,
+    "theta": UNITS.rad,
+}
+
+HT_QOIS = {
+    "cathode coupling voltage": {
+        "unit": UNITS.volts,
+    },
+    "discharge current": {
+        "unit": UNITS.ampere,
+    },
+    "thrust": {
+        "unit": UNITS.newton,
+    },
+    "ion velocity": {
+        "unit": UNITS.meter / UNITS.second,
+        "coords": ("z",),
+    },
+    "ion current density": {
+        "unit": UNITS.ampere / UNITS.meter**2,
+        "coords": ("r", "theta"),
+    },
+}
+
+FLOW_RATE_KEY = "anode mass flow rate"
+
+HT_RENAME_MAP = {
+    "anode voltage" : "discharge voltage",
+    "anode current" : "discharge current",
+    "anode flow rate" : FLOW_RATE_KEY,
+    "axial distance from anode": "z",
+    "axial position from anode": "z",
+    "axial ion velocity": "ion velocity",
+    "angular position from thruster centerline": "theta",
+    "radial position from thruster exit": "r",
+}
