@@ -115,7 +115,13 @@ If only one of these quantities is provided, we throw an error.
 
 """  # noqa: E501
 
-from pem_core.data import UNITS
+from pem_core.data import UNITS, DataEntry, DataInstance, DataField
+import numpy as np
+import xarray as xr
+
+#==================================================================================================
+# This section defines the operating conditions and QoIs of the Hall thruster PEM
+#==================================================================================================
 
 UNITS.define("Torr = 133.322368 pascal = Torr")
 
@@ -174,3 +180,56 @@ HT_RENAME_MAP = {
     "angular position from thruster centerline": "theta",
     "radial position from thruster exit": "r",
 }
+
+OPCOND_SHORT_NAMES = {
+    "discharge voltage": "V_a",
+    "anode mass flow rate": "mdot_a",
+    "background pressure": "P_b",
+    "magnetic field scale": "B_hat",
+}
+
+#==================================================================================================
+# This section contains further utilities for working with the Hall thruster PEM and data
+#==================================================================================================
+
+def pem_to_xarray(
+        operating_conditions: list[dict[str, float]],
+        outputs: dict, sweep_radii: np.ndarray,
+        use_corrected_thrust: bool = True
+    ) -> list[DataEntry]:
+    """Convert the outputs of the Hall thruster PEM to xarrays so that we can compare them to data"""
+
+    data_entries: list[DataEntry] = []
+
+    for (i, opcond) in enumerate(operating_conditions):
+
+        if use_corrected_thrust:
+            # With multiple radii, we have multiple thrusts. Pick the last one as sweep_radii are sorted.
+            thrust = xr.DataArray(np.atleast_1d(outputs['T_c'][i])[-1])
+        else:
+            thrust = xr.DataArray(outputs['T'][i])
+
+        Id = xr.DataArray(outputs['I_d'][i])
+        Vcc = xr.DataArray(outputs['V_cc'][i])
+
+        z = outputs['u_ion_coords'][i]
+        uion = outputs['u_ion'][i]
+        uion_arr = xr.DataArray(uion, coords=[z], dims=["z"])
+
+        theta = outputs['j_ion_coords'][i]
+        r = sweep_radii
+        jion = np.atleast_3d(outputs['j_ion'])[i, :, :].T
+        jion_arr = xr.DataArray(jion, coords=[r, theta], dims=["r", "theta"])
+
+        instance: DataInstance = {
+            "discharge current": DataField(val=Id, unit="A"),
+            "cathode coupling voltage": DataField(val=Vcc, unit="V"),
+            "thrust": DataField(val=thrust, unit="N"),
+            "ion velocity": DataField(val=uion_arr, unit="m/s"),
+            "ion current density": DataField(val=jion_arr, unit="A/m^2"),
+        }
+
+        entry = DataEntry(operating_condition=opcond, data=instance)
+        data_entries.append(entry)
+
+    return data_entries
