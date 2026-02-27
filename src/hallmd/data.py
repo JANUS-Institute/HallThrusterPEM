@@ -98,55 +98,54 @@ If only one of these quantities is provided, we throw an error.
 
 """  # noqa: E501
 
-from pem_core.data import UNITS, DataEntry, DataInstance, DataField
+from pem_core.data import DataEntry, DataInstance, DataField
 import numpy as np
 import xarray as xr
 
 #==================================================================================================
-# This section defines the operating conditions and QoIs of the Hall thruster PEM
+# This section defines the operating conditions and QoIs of the Hall thruster PEMv1. 
+# For other Hall thruster PEMS, you can define your own versions of these dicts.
 #==================================================================================================
-
-UNITS.define("Torr = 133.322368 pascal = Torr")
 
 HT_OP_VARS = {
     "discharge voltage": {
-        "unit": UNITS.volts,
+        "unit": "V",
     },
     "anode mass flow rate": {
-        "unit": UNITS.kg / UNITS.second,
+        "unit": "kg/s",
     },
     "background pressure": {
-        "unit": UNITS.torr,
+        "unit": "Torr",
         "default": 0.0,
     },
     "magnetic field scale": {
-        "unit": UNITS.dimensionless,
+        "unit": "",
         "default": 1.0,
     },
 }
 
 HT_COORDS = {
-    "z": UNITS.meter,
-    "r": UNITS.meter,
-    "theta": UNITS.rad,
+    "z": "m",
+    "r": "m",
+    "theta": "rad",
 }
 
 HT_QOIS = {
     "cathode coupling voltage": {
-        "unit": UNITS.volts,
+        "unit": "V",
     },
     "discharge current": {
-        "unit": UNITS.ampere,
+        "unit": "A",
     },
     "thrust": {
-        "unit": UNITS.newton,
+        "unit": "N",
     },
     "ion velocity": {
-        "unit": UNITS.meter / UNITS.second,
+        "unit": "m/s",
         "coords": ("z",),
     },
     "ion current density": {
-        "unit": UNITS.ampere / UNITS.meter**2,
+        "unit": "A/m",
         "coords": ("r", "theta"),
     },
 }
