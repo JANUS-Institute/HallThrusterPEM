@@ -1,25 +1,8 @@
-"""The `hallmd.data` package contains a folder for each unique thruster. The experimental data for each thruster
-is further divided by folders for each individual paper or reference. The raw experimental data is contained within
-these folders in any supported format (currently only .csv). Any additional documentation
-for the datasets is encouraged (e.g. citations, descriptions, summaries, etc.) and can be included in the data folders.
-
-## Thrusters
-
-### SPT-100
-Currently the only thruster with available data. Data for the SPT-100 comes from four sources:
-
-1. [Diamant et al. 2014](https://arc.aiaa.org/doi/10.2514/6.2014-3710) - provides thrust and ion current density data as a function of chamber background pressure.
-2. [Macdonald et al. 2019](https://arc.aiaa.org/doi/10.2514/1.B37133) - provides ion velocity profiles for varying chamber pressures.
-3. [Sankovic et al. 1993](https://www.semanticscholar.org/paper/Performance-evaluation-of-the-Russian-SPT-100-at-Sankovic-Hamley/81b7d985669b21aa1a8419277c52e7a879bf3b46) - provides thrust at varying operating conditions.
-4. [Jorns and Byrne. 2021](https://pepl.engin.umich.edu/pdf/2021_PSST_Jorns.pdf) - provides cathode coupling voltages at same conditions as Diamant et al. 2014.
-
-Citations:
-``` title="SPT-100.bib"
---8<-- "hallmd/data/spt100/spt100.bib:citations"
-```
+"""The `hallmd.data` package contains utilities for loading and processing Hall thruster experimental data.
+Example data for the SPT-100 thruster lives in the [pem_data repo](https://github.com/JANUS-Institute/pem_dat).
 
 ## Data conventions
-The data used in the PEM is expected to be in a standard format.
+The data used in the Hall Thruster PEM is expected to be in somewhat standard format.
 This format may evolve over time to account for more data, but at present, when we read a CSV file, here is what we look for in the columns.
 Note that we treat columns case-insensitively (except the units), so `Anode current (A)` is treated the same as `anode current (A)`.
 Additionally, we automatically convert units to SI as best we can.
