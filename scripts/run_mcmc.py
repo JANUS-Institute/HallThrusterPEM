@@ -25,11 +25,11 @@ import numpy as np
 import amisc.distribution as distributions
 
 from pem_core import PEM, ArrayLike, PathLike
-from pem_core.data import DataEntry, extract_data_arrays, interpolate_data_instance, load_multiple_datasets
+from pem_core.data import DataEntry, extract_data_arrays, interpolate_data_instance
 from pem_core.sampling import relative_gaussian_likelihood, LikelihoodType, DRAMSampler, PriorSampler, PreviousRunSampler
 
 # Import data loading configuration from the Hall thruster PEM
-from hallmd.data import HT_OP_VARS, HT_RENAME_MAP, HT_COORDS, HT_QOIS, OPCOND_SHORT_NAMES, pem_to_xarray
+from hallmd.data import pem_to_xarray, load_ht_datasets
 
 parser = argparse.ArgumentParser(description="Run MCMC calibration for the Hall thruster PEM.")
 
@@ -351,6 +351,13 @@ def _log_likelihood(
 
     return _likelihood_func
 
+OPCOND_SHORT_NAMES = {
+    "discharge voltage": "V_a",
+    "anode mass flow rate": "mdot_a",
+    "background pressure": "P_b",
+    "magnetic field scale": "B_hat",
+}
+
 def main(args):
     # Load PEM from YAML file and determine nominal and calibration parameters
     pem, exec_opts = load_pem_and_opts(args)
@@ -359,7 +366,7 @@ def main(args):
     calibration_vars = pem.get_inputs_by_category("calibration", sort="name")
 
     # Load data from files
-    data = load_multiple_datasets(args.datasets, HT_OP_VARS, HT_QOIS, HT_COORDS, HT_RENAME_MAP)
+    data = load_ht_datasets(args.datasets)
     operating_conditions = [d.operating_condition for d in data]
 
     print(f"Calibration variables:\n\t{", ".join([p.name for p in calibration_vars])}")

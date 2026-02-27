@@ -98,7 +98,8 @@ If only one of these quantities is provided, we throw an error.
 
 """  # noqa: E501
 
-from pem_core.data import DataEntry, DataInstance, DataField
+from pem_core.data import DataEntry, DataInstance, DataField, DerivedColumn, load_single_dataset, load_multiple_datasets
+from pem_core.types import PathLike
 import numpy as np
 import xarray as xr
 
@@ -152,6 +153,37 @@ HT_QOIS = {
 
 FLOW_RATE_KEY = "anode mass flow rate"
 
+# ---------------------------------------------------------------------------
+# Derived-column specs for Hall thruster data files.
+# These teach the generic loader how to reconstruct the anode mass flow rate
+# from alternative column combinations that appear in some data sources.
+# Specs are tried in order; the first one whose required columns are all
+# present in the CSV wins.
+# ---------------------------------------------------------------------------
+
+def _flow_from_ratio(df):
+    """anode flow = total flow * ratio / (1 + ratio), where ratio = anode/cathode."""
+    return df["total flow rate"] * df["anode-cathode flow ratio"] / (1 + df["anode-cathode flow ratio"])
+
+def _flow_from_fraction(df):
+    """anode flow = total flow * (1 - cathode_fraction)."""
+    return df["total flow rate"] * (1 - df["cathode flow fraction"])
+
+HT_DERIVED_COLS: list[DerivedColumn] = [
+    DerivedColumn(
+        target=FLOW_RATE_KEY,
+        required=["total flow rate", "anode-cathode flow ratio"],
+        compute=_flow_from_ratio,
+        unit_from="total flow rate",
+    ),
+    DerivedColumn(
+        target=FLOW_RATE_KEY,
+        required=["total flow rate", "cathode flow fraction"],
+        compute=_flow_from_fraction,
+        unit_from="total flow rate",
+    ),
+]
+
 HT_RENAME_MAP = {
     "anode voltage" : "discharge voltage",
     "anode current" : "discharge current",
@@ -163,16 +195,46 @@ HT_RENAME_MAP = {
     "radial position from thruster exit": "r",
 }
 
-OPCOND_SHORT_NAMES = {
-    "discharge voltage": "V_a",
-    "anode mass flow rate": "mdot_a",
-    "background pressure": "P_b",
-    "magnetic field scale": "B_hat",
-}
-
 #==================================================================================================
 # This section contains further utilities for working with the Hall thruster PEM and data
 #==================================================================================================
+
+def load_ht_dataset(
+    file: PathLike,
+    op_vars: dict | None = None,
+    qois: dict | None = None,
+) -> list[DataEntry]:
+    """Load a Hall thruster CSV data file using the standard HT schema.
+
+    Wraps :func:`pem_core.data.load_single_dataset` with the Hall-thruster
+    defaults (`HT_OP_VARS`, `HT_QOIS`, `HT_COORDS`, `HT_RENAME_MAP`,
+    `HT_DERIVED_COLS`) so that callers don't have to supply them manually.
+    Custom ``op_vars`` / ``qois`` dicts, if provided, *replace* (not extend)
+    the defaults.
+    """
+    return load_single_dataset(
+        file,
+        operating_vars=op_vars if op_vars is not None else HT_OP_VARS,
+        qois=qois if qois is not None else HT_QOIS,
+        coords=HT_COORDS,
+        rename_map=HT_RENAME_MAP,
+        derived_cols=HT_DERIVED_COLS,
+    )
+
+def load_ht_datasets(
+    files: list[PathLike],
+    op_vars: dict | None = None,
+    qois: dict | None = None,
+) -> list[DataEntry]:
+    """Load and merge multiple Hall thruster CSV files. See `load_ht_dataset`."""
+    return load_multiple_datasets(
+        files,
+        operating_vars=op_vars if op_vars is not None else HT_OP_VARS,
+        qois=qois if qois is not None else HT_QOIS,
+        coords=HT_COORDS,
+        rename_map=HT_RENAME_MAP,
+        derived_cols=HT_DERIVED_COLS,
+    )
 
 def pem_to_xarray(
         operating_conditions: list[dict[str, float]],
