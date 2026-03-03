@@ -751,7 +751,7 @@ requires-dist = [
     { name = "mpi4py", marker = "extra == 'mpi'", specifier = ">=3.1" },
     { name = "numpy", specifier = ">=2.0" },
     { name = "pandas", specifier = ">=3.0.1" },
-    { name = "pem-core", git = "https://github.com/JANUS-institute/pem_core.git" },
+    { name = "pem-core", git = "https://github.com/JANUS-Institute/pem_core.git" },
     { name = "pint", specifier = ">=0.25.2" },
     { name = "scipy", specifier = ">=1.14" },
     { name = "uqtils", marker = "extra == 'scripts'", specifier = ">=0.4.2" },
@@ -1614,7 +1614,7 @@ wheels = [
 [[package]]
 name = "pem-core"
 version = "0.1.0"
-source = { git = "https://github.com/JANUS-institute/pem_core.git#a3496c4d9a49204911b38301506555e25495cd16" }
+source = { git = "https://github.com/JANUS-Institute/pem_core.git#a3496c4d9a49204911b38301506555e25495cd16" }
 dependencies = [
     { name = "amisc" },
     { name = "numpy" },

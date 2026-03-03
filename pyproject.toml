@@ -13,10 +13,10 @@ authors = [
 dependencies = [
     "numpy>=2.0",
     "pandas>=3.0.1",
-    "pem-core",
     "pint>=0.25.2",
     "scipy>=1.14",
     "xarray>=2026.2.0",
+    "pem-core @ git+https://github.com/JANUS-Institute/pem_core.git",
 ]
 requires-python = ">=3.11"
 readme = "README.md"
@@ -75,9 +75,6 @@ major_version_zero = true
 annotated_tag = true
 post_bump_hooks = ["git push --follow-tags"]
 changelog_start_rev = "v0.2.0"
-
-[tool.uv.sources]
-pem-core = { git = "https://github.com/JANUS-institute/pem_core.git" }
 
 [tool.pdm.scripts]
 bump = "cz bump {args}"
