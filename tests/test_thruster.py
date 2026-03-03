@@ -3,6 +3,9 @@
 import copy
 import json
 from pathlib import Path
+from typing import cast
+import os
+from urllib.request import urlretrieve
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -14,12 +17,30 @@ from hallmd.models.thruster import (
     _convert_to_pem,
     hallthruster_jl,
 )
-from HallThrusterPEM.scripts.install_hallthruster import main as install_hallthruster
+
+from pem_core.types import Dataset
+
+from scripts.install_hallthruster import main as install_hallthruster
 
 SHOW_PLOTS = False
 
 install_hallthruster("1.11", HALLTHRUSTER_VERSION_DEFAULT, None, True, False)
 
+# Download data
+BFIELD_URL = "https://raw.githubusercontent.com/JANUS-Institute/pem_data/refs/heads/main/devices/SPT-100/bfield_spt100.csv"
+THRUSTER_URL = "https://raw.githubusercontent.com/JANUS-Institute/pem_data/refs/heads/main/devices/SPT-100/thruster.yml"
+THRUSTER_PATH = Path("tests/SPT-100")
+BFIELD_FILE = THRUSTER_PATH / "bfield_spt100.csv"
+THRUSTER_FILE = THRUSTER_PATH / "thruster.yml"
+
+if not os.path.exists(THRUSTER_PATH):
+    os.makedirs(THRUSTER_PATH)
+
+if not os.path.exists(BFIELD_FILE):
+    urlretrieve(BFIELD_URL, BFIELD_FILE)
+
+if not os.path.exists(THRUSTER_FILE):
+    urlretrieve(THRUSTER_URL, THRUSTER_FILE)
 
 def test_julia_conversion():
     """Test that we can set arbitrary values in a HallThruster config struct from corresponding PEM values."""
@@ -29,6 +50,8 @@ def test_julia_conversion():
     pem_to_julia["new_var"] = ["new", 1, "expanded_variable_name"]
     pem_to_julia["new_output"] = ["output", "time_resolved", "long_output_name"]
 
+    pem = cast(Dataset, pem)
+
     _convert_to_julia(pem, julia, pem_to_julia)
 
     assert julia["config"]["discharge_voltage"] == 250
@@ -36,8 +59,8 @@ def test_julia_conversion():
     assert julia["output"]["average"]["thrust"] == 2
     assert isinstance(julia["new"], list)
     assert len(julia["new"]) == 2
-    assert julia["new"][0] == {}
-    assert julia["new"][1]["expanded_variable_name"] == 0.5
+    assert julia["new"][0] == {} # type: ignore
+    assert julia["new"][1]["expanded_variable_name"] == 0.5 # type: ignore
 
     # Test the reverse conversion
     julia["output"].update({"time_resolved": {"long_output_name": 0.5}})
@@ -61,11 +84,13 @@ def test_sim_hallthruster_jl(tmp_path, plots=SHOW_PLOTS, git_ref=HALLTHRUSTER_VE
         thruster_inputs,
         config=config,
         simulation=simulation,
+        thruster=THRUSTER_PATH,
         postprocess=postprocess,
         julia_script=(Path(__file__).parent / "sim_hallthruster.jl").resolve(),
         output_path=tmp_path,
         version=git_ref,
     )
+    outputs = cast(dict, outputs)
 
     for key in ["T", "I_B0", "I_d", "u_ion", "u_ion_coords"]:
         assert key in outputs
@@ -130,18 +155,18 @@ def test_run_hallthruster_jl(tmp_path, plots=SHOW_PLOTS, git_ref=HALLTHRUSTER_VE
     }
     postprocess = {"average_start_time": 5e-4}
     model_fidelity = (int(num_cells / 50) - 2, 2)
-    thruster = "SPT-100"
 
     outputs = hallthruster_jl(
         pem_inputs,
         config=config,
         simulation=simulation,
+        thruster=THRUSTER_PATH,
         postprocess=postprocess,
         model_fidelity=model_fidelity,
-        thruster=thruster,
         version=git_ref,
         output_path=tmp_path,
     )
+    outputs = cast(dict, outputs)
     pem_inputs["z0"] = -0.15
     outputs_shift = hallthruster_jl(
         pem_inputs,
@@ -149,10 +174,11 @@ def test_run_hallthruster_jl(tmp_path, plots=SHOW_PLOTS, git_ref=HALLTHRUSTER_VE
         simulation=simulation,
         postprocess=postprocess,
         model_fidelity=model_fidelity,
-        thruster=thruster,
+        thruster=THRUSTER_PATH,
         version=git_ref,
         output_path=tmp_path,
     )
+    outputs_shift = cast(dict, outputs_shift)
     print(f"Cost: {outputs['model_cost']} s")
 
     for key in ["T", "I_B0", "I_d", "u_ion", "u_ion_coords"]:

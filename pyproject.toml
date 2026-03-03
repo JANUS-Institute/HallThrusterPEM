@@ -11,7 +11,6 @@ authors = [
     {name = "Benjamin Jorns", email = "bjorns@umich.edu"}
 ]
 dependencies = [
-    "amisc",
     "numpy>=2.0",
     "pandas>=3.0.1",
     "pem-core",
@@ -78,8 +77,7 @@ post_bump_hooks = ["git push --follow-tags"]
 changelog_start_rev = "v0.2.0"
 
 [tool.uv.sources]
-amisc = { path = "../amisc", editable = true }
-pem-core = { path = "../pem_core", editable = true }
+pem-core = { git = "https://github.com/JANUS-institute/pem_core.git" }
 
 [tool.pdm.scripts]
 bump = "cz bump {args}"

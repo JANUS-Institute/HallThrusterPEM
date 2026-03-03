@@ -13,7 +13,7 @@ resolution-markers = [
 [[package]]
 name = "amisc"
 version = "0.8.1"
-source = { editable = "../amisc" }
+source = { git = "https://github.com/eckelsjd/amisc#2fc21546f4eb38db291b3ad7d7ad3ebfaa4cc98a" }
 dependencies = [
     { name = "dill" },
     { name = "matplotlib" },
@@ -23,47 +23,6 @@ dependencies = [
     { name = "pyyaml" },
     { name = "scikit-learn" },
     { name = "scipy" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "dill", specifier = ">=0.3.9" },
-    { name = "matplotlib", specifier = ">=3.9" },
-    { name = "networkx", specifier = ">=3.2" },
-    { name = "numpy", specifier = ">=2.0" },
-    { name = "pydantic", specifier = ">=2.9.1,!=2.12.*" },
-    { name = "pyyaml", specifier = ">=6.0.2" },
-    { name = "scikit-learn", specifier = ">=1.6.1" },
-    { name = "scipy", specifier = ">=1.14" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "commitizen", specifier = ">=4.1" },
-    { name = "copier", specifier = ">=9.3" },
-    { name = "copier-templates-extensions", specifier = ">=0.3" },
-    { name = "nbstripout", specifier = ">=0.7.1" },
-    { name = "pre-commit", specifier = ">=3.8" },
-    { name = "ruff", specifier = ">=0.6" },
-]
-doc = [
-    { name = "markdown-exec", extras = ["ansi"], specifier = ">=1.9" },
-    { name = "mkdocs", specifier = ">=1.5" },
-    { name = "mkdocs-coverage", specifier = ">=1.0" },
-    { name = "mkdocs-gen-files", specifier = ">=0.5" },
-    { name = "mkdocs-git-committers-plugin-2", specifier = ">=2.3" },
-    { name = "mkdocs-git-revision-date-localized-plugin", specifier = ">=1.2" },
-    { name = "mkdocs-jupyter", specifier = ">=0.25.1" },
-    { name = "mkdocs-literate-nav", specifier = ">=0.6" },
-    { name = "mkdocs-material", specifier = ">=9.5" },
-    { name = "mkdocs-redirects", specifier = ">=1.2" },
-    { name = "mkdocstrings", extras = ["python"], specifier = ">=0.24" },
-]
-jupyter = [{ name = "jupyterlab", specifier = ">=4.2.5" }]
-test = [
-    { name = "pytest", specifier = ">=7.4" },
-    { name = "pytest-cov", specifier = ">=4.1" },
-    { name = "uqtils", specifier = ">=0.4.2" },
 ]
 
 [[package]]
@@ -737,7 +696,6 @@ name = "hallmd"
 version = "0.2.0"
 source = { editable = "." }
 dependencies = [
-    { name = "amisc" },
     { name = "numpy" },
     { name = "pandas" },
     { name = "pem-core" },
@@ -787,14 +745,13 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "amisc", editable = "../amisc" },
     { name = "h5py", marker = "extra == 'scripts'", specifier = ">=3.10.0" },
     { name = "matplotlib", marker = "extra == 'scripts'", specifier = ">=3.9" },
     { name = "mcmciterators", marker = "extra == 'scripts'", git = "https://github.com/goroda/MCMCIterators" },
     { name = "mpi4py", marker = "extra == 'mpi'", specifier = ">=3.1" },
     { name = "numpy", specifier = ">=2.0" },
     { name = "pandas", specifier = ">=3.0.1" },
-    { name = "pem-core", editable = "../pem_core" },
+    { name = "pem-core", git = "https://github.com/JANUS-institute/pem_core.git" },
     { name = "pint", specifier = ">=0.25.2" },
     { name = "scipy", specifier = ">=1.14" },
     { name = "uqtils", marker = "extra == 'scripts'", specifier = ">=0.4.2" },
@@ -1657,7 +1614,7 @@ wheels = [
 [[package]]
 name = "pem-core"
 version = "0.1.0"
-source = { editable = "../pem_core" }
+source = { git = "https://github.com/JANUS-institute/pem_core.git#a3496c4d9a49204911b38301506555e25495cd16" }
 dependencies = [
     { name = "amisc" },
     { name = "numpy" },
@@ -1665,18 +1622,6 @@ dependencies = [
     { name = "pint" },
     { name = "xarray" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "amisc", editable = "../amisc" },
-    { name = "numpy" },
-    { name = "pandas" },
-    { name = "pint" },
-    { name = "xarray" },
-]
-
-[package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=8.0" }]
 
 [[package]]
 name = "pillow"

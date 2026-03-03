@@ -3,6 +3,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.integrate import simpson
+from typing import cast
 
 from hallmd.models.plume import current_density
 
@@ -27,7 +28,8 @@ def test_random_samples(plots=SHOW_PLOTS):
     }
 
     r_p = np.random.rand(25) * 0.2 + 1
-    outputs_rand = current_density(inputs_rand, radius_arr=r_p)
+    outputs_rand = current_density(inputs_rand, sweep_radius=r_p)
+    outputs_rand = cast(dict, outputs_rand)
 
     assert outputs_rand['j_ion'].shape == (N, 91, 25)  # (..., angles, radii)
 
@@ -72,7 +74,8 @@ def test_pressure_sweep(plots=SHOW_PLOTS):
         'sigma_cex': 55e-20,
         'I_B0': 3,
     }
-    outputs_sweep = current_density(inputs_sweep, radius_arr=1)
+    outputs_sweep = current_density(inputs_sweep, sweep_radius=1)
+    outputs_sweep = cast(dict, outputs_sweep)
 
     min_jion = np.min(outputs_sweep['j_ion'])
     max_jion = np.max(outputs_sweep['j_ion'])

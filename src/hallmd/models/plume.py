@@ -6,19 +6,20 @@ Includes:
 """
 
 import numpy as np
-from amisc.typing import Dataset
-from amisc.utils import get_logger
+from typing import cast
+
 from scipy.integrate import simpson
 from scipy.special import erfi
+
 from pem_core.constants import TORR_2_PA
-from typing import cast
+from pem_core.types import Dataset, ArrayLike
+from pem_core import get_logger
 
 __all__ = ['current_density']
 
 LOGGER = get_logger(__name__)
 
-
-def current_density(inputs: Dataset, sweep_radius: float | list = 1.0) -> Dataset:
+def current_density(inputs: Dataset | dict, sweep_radius: float | ArrayLike = 1.0) -> Dataset:
     """Compute the semi-empirical ion current density ($j_{ion}$) plume model over a 90 deg sweep, with 0 deg at
     thruster centerline. Also compute the plume divergence angle. Will return the ion current density at 91 points,
     from 0 to 90 deg in 1 deg increments. The angular locations are returned as `j_ion_coords` in radians.

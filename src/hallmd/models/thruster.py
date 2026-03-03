@@ -24,13 +24,14 @@ import time
 import warnings
 from importlib import resources
 from pathlib import Path
-from typing import Callable, Literal, Optional
+from typing import Callable, Optional
 import typing
 
 import numpy as np
-from amisc.typing import Dataset
+from pem_core.types import Dataset
+from pem_core.constants import AVOGADRO_CONSTANT, FUNDAMENTAL_CHARGE, MOLECULAR_WEIGHTS
 
-from hallmd.utils import AVOGADRO_CONSTANT, FUNDAMENTAL_CHARGE, MOLECULAR_WEIGHTS, load_thruster
+from hallmd.utils import load_thruster
 
 __all__ = ["run_hallthruster_jl", "hallthruster_jl", "get_jl_env", "PEM_TO_JULIA", "JL_BINARY"]
 
@@ -41,7 +42,6 @@ with resources.files("hallmd.models").joinpath("pem_to_julia.json").open("r") as
     PEM_TO_JULIA = json.load(fd)
 
 assert isinstance(PEM_TO_JULIA, dict)
-
 
 def get_jl_binary():
     """use the juliaup config file to find out where the default julia binary is stored.
@@ -177,7 +177,7 @@ def _default_model_fidelity(model_fidelity: tuple, json_config: dict, cfl: float
 def _format_hallthruster_jl_input(
     thruster_inputs: Dataset,
     pem_to_julia: dict,
-    thruster: dict | str = "SPT-100",
+    thruster: Path | str | dict = "SPT-100",
     config: dict | None = None,
     simulation: dict | None = None,
     postprocess: dict | None = None,
@@ -219,7 +219,7 @@ def _format_hallthruster_jl_input(
     }
 
     # Necessary to load thruster specs separately from the config (to protect sensitive data)
-    if isinstance(thruster, str):
+    if isinstance(thruster, str) or isinstance(thruster, Path):
         thruster = load_thruster(thruster)
 
     if thruster is not None:
@@ -374,8 +374,8 @@ def run_hallthruster_jl(
     return output_data
 
 def hallthruster_jl(
-    thruster_inputs: Dataset | None = None,
-    thruster: str | dict = "SPT-100",
+    thruster_inputs: Dataset | dict | None = None,
+    thruster: Path | str | dict = "SPT-100",
     config: Optional[dict] = None,
     simulation: Optional[dict] = None,
     postprocess: Optional[dict] = None,
@@ -455,7 +455,7 @@ def hallthruster_jl(
         tmp.update(pem_to_julia)
         _pem_to_julia = tmp
 
-    thruster_inputs = thruster_inputs or typing.cast(Dataset, {})
+    thruster_inputs = typing.cast(Dataset, {} if thruster_inputs is None else thruster_inputs)
 
     # Format PEM inputs for HallThruster.jl
     json_data = _format_hallthruster_jl_input(

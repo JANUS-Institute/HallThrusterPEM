@@ -4,25 +4,8 @@ Includes:
 """
 import json
 import os
-from importlib import resources
 from pathlib import Path
-
 import yaml
-
-
-AVOGADRO_CONSTANT = 6.02214076e23      # Avogadro constant (mol^-1)
-FUNDAMENTAL_CHARGE = 1.602176634e-19   # Fundamental charge (C)
-BOLTZMANN_CONSTANT = 1.380649e-23      # Boltzmann constant (J/K)
-TORR_2_PA = 133.322                    # Conversion factor from Torr to Pa
-MOLECULAR_WEIGHTS = {
-    'Xenon': 131.293,
-    'Argon': 39.948,
-    'Krypton': 83.798,
-    'Bismuth': 208.98,
-    'Hydrogen': 1.008,
-    'Mercury': 200.59
-}
-
 
 def _path_in_dict(value, data: dict) -> list:
     """Recursively check if a value is in a dictionary and return the list of access keys to the value."""
@@ -36,7 +19,7 @@ def _path_in_dict(value, data: dict) -> list:
     return []           # value not found
 
 
-def load_thruster(thruster_dir: str, thruster_filename: str = 'thruster.yml') -> dict:
+def load_thruster(thruster_dir: str | Path, thruster_filename: str = 'thruster.yml') -> dict:
     """Load a device configuration from the `device_dir` directory. The `device_file` must be located at
     `device_dir/device_name/device_file`. All other files in the directory, if referenced in `device_file`, will
     be converted to an absolute path.

@@ -5,9 +5,9 @@ Includes:
 - `cathode_coupling()` - cathode coupling model with pressure dependence (Jorns 2021)
 """
 import numpy as np
-from amisc.typing import Dataset
 from typing import cast
 
+from pem_core.types import Dataset
 from pem_core.constants import TORR_2_PA
 
 __all__ = ['cathode_coupling']
