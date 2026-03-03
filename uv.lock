@@ -1660,10 +1660,23 @@ version = "0.1.0"
 source = { editable = "../pem_core" }
 dependencies = [
     { name = "amisc" },
+    { name = "numpy" },
+    { name = "pandas" },
+    { name = "pint" },
+    { name = "xarray" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "amisc", editable = "../amisc" }]
+requires-dist = [
+    { name = "amisc", editable = "../amisc" },
+    { name = "numpy" },
+    { name = "pandas" },
+    { name = "pint" },
+    { name = "xarray" },
+]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=8.0" }]
 
 [[package]]
 name = "pillow"

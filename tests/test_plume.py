@@ -27,7 +27,7 @@ def test_random_samples(plots=SHOW_PLOTS):
     }
 
     r_p = np.random.rand(25) * 0.2 + 1
-    outputs_rand = current_density(inputs_rand, sweep_radius=r_p)
+    outputs_rand = current_density(inputs_rand, radius_arr=r_p)
 
     assert outputs_rand['j_ion'].shape == (N, 91, 25)  # (..., angles, radii)
 
@@ -72,7 +72,7 @@ def test_pressure_sweep(plots=SHOW_PLOTS):
         'sigma_cex': 55e-20,
         'I_B0': 3,
     }
-    outputs_sweep = current_density(inputs_sweep, sweep_radius=1)
+    outputs_sweep = current_density(inputs_sweep, radius_arr=1)
 
     min_jion = np.min(outputs_sweep['j_ion'])
     max_jion = np.max(outputs_sweep['j_ion'])

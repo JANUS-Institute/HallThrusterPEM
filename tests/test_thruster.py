@@ -14,7 +14,7 @@ from hallmd.models.thruster import (
     _convert_to_pem,
     hallthruster_jl,
 )
-from scripts.install_hallthruster import main as install_hallthruster
+from HallThrusterPEM.scripts.install_hallthruster import main as install_hallthruster
 
 SHOW_PLOTS = False
 
