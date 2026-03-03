@@ -1,9 +1,9 @@
 """Testing for package utilities."""
 import os
-from importlib import resources
 from pathlib import Path
 
 from hallmd.utils import _path_in_dict, load_thruster
+
 
 def test_path_in_dict():
     """Check recursively searching a dictionary for a value."""

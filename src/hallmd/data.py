@@ -98,10 +98,10 @@ If only one of these quantities is provided, we throw an error.
 
 """  # noqa: E501
 
-from pem_core.data import DataEntry, DataInstance, DataField, DerivedColumn, load_single_dataset, load_multiple_datasets
-from pem_core.types import PathLike
 import numpy as np
 import xarray as xr
+from pem_core.data import DataEntry, DataField, DataInstance, DerivedColumn, load_multiple_datasets, load_single_dataset
+from pem_core.types import PathLike
 
 #==================================================================================================
 # This section defines the operating conditions and QoIs of the Hall thruster PEMv1. 

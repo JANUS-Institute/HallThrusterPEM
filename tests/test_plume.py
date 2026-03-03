@@ -1,9 +1,10 @@
 """Test the ion current density plume model."""
 
+from typing import cast
+
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.integrate import simpson
-from typing import cast
 
 from hallmd.models.plume import current_density
 

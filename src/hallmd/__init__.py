@@ -9,6 +9,6 @@ Alex Gorodetsky
 The `hallmd` package contains one sub-package:
 
 - `models` - Contains the sub-models for each discipline in the Hall thruster system.
-"""
+""" #noqa: E501
 
 __version__ = '0.3.0'

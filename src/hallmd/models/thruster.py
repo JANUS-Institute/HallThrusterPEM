@@ -21,15 +21,15 @@ import string
 import subprocess
 import tempfile
 import time
+import typing
 import warnings
 from importlib import resources
 from pathlib import Path
 from typing import Callable, Optional
-import typing
 
 import numpy as np
-from pem_core.types import Dataset
 from pem_core.constants import AVOGADRO_CONSTANT, FUNDAMENTAL_CHARGE, MOLECULAR_WEIGHTS
+from pem_core.types import Dataset
 
 from hallmd.utils import load_thruster
 

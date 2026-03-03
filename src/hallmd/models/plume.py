@@ -5,15 +5,14 @@ Includes:
 - `current_density()` - Semi-empirical ion current density model with $1/r^2$ Gaussian beam.
 """
 
-import numpy as np
 from typing import cast
 
+import numpy as np
+from pem_core import get_logger
+from pem_core.constants import TORR_2_PA
+from pem_core.types import ArrayLike, Dataset
 from scipy.integrate import simpson
 from scipy.special import erfi
-
-from pem_core.constants import TORR_2_PA
-from pem_core.types import Dataset, ArrayLike
-from pem_core import get_logger
 
 __all__ = ['current_density']
 

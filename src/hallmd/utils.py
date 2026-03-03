@@ -5,7 +5,9 @@ Includes:
 import json
 import os
 from pathlib import Path
+
 import yaml
+
 
 def _path_in_dict(value, data: dict) -> list:
     """Recursively check if a value is in a dictionary and return the list of access keys to the value."""
@@ -58,7 +60,9 @@ def load_thruster(thruster_dir: str | Path, thruster_filename: str = 'thruster.y
         elif thruster_file.suffix == '.json':
             config = json.load(fd)
         else:
-            raise ValueError(f'Unsupported file type "{thruster_file.suffix}". Only .yml and .json files are supported.')
+            raise ValueError(
+                f'Unsupported file type "{thruster_file.suffix}". Only .yml and .json files are supported.'
+            )
 
     # Convert all relative paths to absolute paths for loading bfields, etc
     for root, _, files in os.walk(thruster_dir):

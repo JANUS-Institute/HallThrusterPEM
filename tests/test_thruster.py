@@ -2,13 +2,14 @@
 
 import copy
 import json
+import os
 from pathlib import Path
 from typing import cast
-import os
 from urllib.request import urlretrieve
 
 import matplotlib.pyplot as plt
 import numpy as np
+from pem_core.types import Dataset
 
 from hallmd.models.thruster import (
     HALLTHRUSTER_VERSION_DEFAULT,
@@ -17,9 +18,6 @@ from hallmd.models.thruster import (
     _convert_to_pem,
     hallthruster_jl,
 )
-
-from pem_core.types import Dataset
-
 from scripts.install_hallthruster import main as install_hallthruster
 
 SHOW_PLOTS = False
