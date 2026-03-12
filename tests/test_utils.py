@@ -1,9 +1,8 @@
 """Testing for package utilities."""
 import os
-from importlib import resources
 from pathlib import Path
 
-from hallmd.utils import _path_in_dict, load_device
+from hallmd.utils import _path_in_dict, load_thruster
 
 
 def test_path_in_dict():
@@ -44,14 +43,6 @@ def test_path_in_dict():
 
 def test_load_device(tmp_path):
     """Test loading a device configuration."""
-    # Test loading SPT-100 device configuration
-    device_dir = resources.files('hallmd.devices')
-    config = load_device('SPT-100')
-    abs_mag_file = Path(device_dir / 'SPT-100' / 'bfield_spt100.csv').resolve().as_posix()
-    assert config == {'name': 'SPT-100',
-                      'geometry': {'channel_length': 0.025, 'inner_radius': 0.035, 'outer_radius': 0.05},
-                      'magnetic_field': {'file': abs_mag_file},
-                      'shielded': False}
 
     # Test a nested device configuration
     new_device_dir = tmp_path / 'nested_device'
@@ -65,7 +56,7 @@ def test_load_device(tmp_path):
     with open(new_device_dir / 'data' / 'other_file.txt', 'w', encoding='utf-8') as fd:
         fd.write('other data')
 
-    config = load_device('nested_device', 'my_device.yml', tmp_path)
+    config = load_thruster(new_device_dir, 'my_device.yml')
     abs_file = Path(new_device_dir / 'data' / 'my_file.txt').resolve().as_posix()
     abs_other_file = Path(new_device_dir / 'data' / 'other_file.txt').resolve().as_posix()
 

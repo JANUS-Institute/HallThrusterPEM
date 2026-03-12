@@ -5,20 +5,20 @@ Includes:
 - `current_density()` - Semi-empirical ion current density model with $1/r^2$ Gaussian beam.
 """
 
+from typing import cast
+
 import numpy as np
-from amisc.typing import Dataset
-from amisc.utils import get_logger
+from pem_core import get_logger
+from pem_core.constants import TORR_2_PA
+from pem_core.types import ArrayLike, Dataset
 from scipy.integrate import simpson
 from scipy.special import erfi
-
-from hallmd.utils import TORR_2_PA
 
 __all__ = ['current_density']
 
 LOGGER = get_logger(__name__)
 
-
-def current_density(inputs: Dataset, sweep_radius: float | list = 1.0):
+def current_density(inputs: Dataset | dict, sweep_radius: float | ArrayLike = 1.0) -> Dataset:
     """Compute the semi-empirical ion current density ($j_{ion}$) plume model over a 90 deg sweep, with 0 deg at
     thruster centerline. Also compute the plume divergence angle. Will return the ion current density at 91 points,
     from 0 to 90 deg in 1 deg increments. The angular locations are returned as `j_ion_coords` in radians.
@@ -36,17 +36,18 @@ def current_density(inputs: Dataset, sweep_radius: float | list = 1.0):
                                        `T_c` for corrected thrust (N) if `T` is provided in the inputs.
     """
     # Load plume inputs
-    P_B = inputs['P_b'] * TORR_2_PA  # Background pressure (Torr)
-    c0 = inputs['c0']  # Fit coefficients (-)
-    c1 = inputs['c1']  # (-)
-    c2 = inputs['c2']  # (rad/Pa)
-    c3 = inputs['c3']  # (rad)
-    c4 = inputs['c4']  # (m^-3/Pa)
-    c5 = inputs['c5']  # (m^-3)
-    sigma_cex = inputs['sigma_cex']  # Charge-exchange cross-section (m^2)
-    I_B0 = inputs['I_B0']  # Total initial ion beam current (A)
-    thrust = inputs.get('T', None)  # Thrust (N)
-    sweep_radius = np.atleast_1d(sweep_radius)
+    input_dict = cast(dict, inputs)
+    P_B = input_dict['P_b'] * TORR_2_PA  # Background pressure (Torr)
+    c0 = input_dict['c0']  # Fit coefficients (-)
+    c1 = input_dict['c1']  # (-)
+    c2 = input_dict['c2']  # (rad/Pa)
+    c3 = input_dict['c3']  # (rad)
+    c4 = input_dict['c4']  # (m^-3/Pa)
+    c5 = input_dict['c5']  # (m^-3)
+    sigma_cex = input_dict['sigma_cex']  # Charge-exchange cross-section (m^2)
+    I_B0 = input_dict['I_B0']  # Total initial ion beam current (A)
+    thrust = input_dict.get('T', None)  # Thrust (N)
+    radii = np.atleast_1d(sweep_radius)
 
     # 90 deg angle sweep for ion current density
     alpha_rad = np.linspace(0, np.pi / 2, 91)
@@ -91,10 +92,10 @@ def current_density(inputs: Dataset, sweep_radius: float | list = 1.0):
         n = np.expand_dims(n, axis=(-1, -2))
         sigma_cex = np.expand_dims(sigma_cex, axis=(-1, -2))
 
-        decay = np.exp(-sweep_radius * n * sigma_cex)  # (..., 1, r)
-        j_cex = I_B0 * (1 - decay) / (2 * np.pi * sweep_radius**2)
+        decay = np.exp(-radii * n * sigma_cex)  # (..., 1, r)
+        j_cex = I_B0 * (1 - decay) / (2 * np.pi * radii**2)
 
-        base_density = I_B0 * decay / sweep_radius**2
+        base_density = I_B0 * decay / radii**2
         j_beam = base_density * A1 * np.exp(-((alpha_rad[..., np.newaxis] / alpha1) ** 2))
         j_scat = base_density * A2 * np.exp(-((alpha_rad[..., np.newaxis] / alpha2) ** 2))
 
@@ -126,7 +127,7 @@ def current_density(inputs: Dataset, sweep_radius: float | list = 1.0):
     div_angle = np.arccos(cos_div)  # Divergence angle (rad) - (..., r)
 
     # Squeeze last dim if only a single radius was passed
-    if sweep_radius.shape[0] == 1:
+    if radii.shape[0] == 1:
         j_ion = np.squeeze(j_ion, axis=-1)
         div_angle = np.squeeze(div_angle, axis=-1)
 
@@ -134,7 +135,7 @@ def current_density(inputs: Dataset, sweep_radius: float | list = 1.0):
 
     if thrust is not None:
         thrust_corrected = np.expand_dims(thrust, axis=-1) * cos_div
-        if sweep_radius.shape[0] == 1:
+        if radii.shape[0] == 1:
             thrust_corrected = np.squeeze(thrust_corrected, axis=-1)
         ret['T_c'] = thrust_corrected
 
@@ -148,11 +149,11 @@ def current_density(inputs: Dataset, sweep_radius: float | list = 1.0):
     #     j_ion = f(j_ion_coords)  # (..., num_pts)
 
     # Broadcast coords to same loop shape as j_ion (all use the same coords -- store in object array)
-    last_axis = -1 if sweep_radius.shape[0] == 1 else -2
+    last_axis = -1 if radii.shape[0] == 1 else -2
     j_ion_coords = np.empty(j_ion.shape[:last_axis], dtype=object)
     for index in np.ndindex(j_ion.shape[:last_axis]):
         j_ion_coords[index] = alpha_rad
 
     ret['j_ion_coords'] = j_ion_coords
 
-    return ret
+    return cast(Dataset, ret)

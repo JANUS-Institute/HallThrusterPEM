@@ -6,7 +6,7 @@
 ![build](https://img.shields.io/github/actions/workflow/status/JANUS-Institute/HallThrusterPEM/deploy.yml?logo=github)
 ![docs](https://img.shields.io/github/actions/workflow/status/JANUS-Institute/HallThrusterPEM/docs.yml?logo=materialformkdocs&logoColor=%2523cccccc&label=docs)
 ![tests](https://img.shields.io/github/actions/workflow/status/JANUS-Institute/HallThrusterPEM/tests.yml?logo=github&logoColor=%2523cccccc&label=tests)
-![Code Coverage](https://img.shields.io/badge/coverage-77%25-yellowgreen?logo=codecov)
+![Code Coverage](https://img.shields.io/badge/coverage-74%25-yellow?logo=codecov)
 [![Journal article](https://img.shields.io/badge/DOI-10.1007/s44205--024--00079--w-blue)](https://rdcu.be/dVmim)
 
 A prototype of a predictive engineering model (PEM) of a Hall thruster.
@@ -47,43 +47,12 @@ pdm run scripts/install_hallthruster.py --julia-version=X.XX.X --hallthruster-ve
 See the [scripts](https://github.com/JANUS-Institute/HallThrusterPEM/blob/main/scripts) folder for workflows for data generation, parameter inference, and analysis using `hallmd`.
 This directory also contains information needed to replicate the results in our publications.
 
-## 📍 Standalone usage
-
-Below, we demonstrate how to use `hallmd` to run HallThruster.jl on a simple config file.
-
-```python
-import matplotlib.pyplot as plt
-
-from hallmd.models import hallthruster_jl
-
-config = {
-    'discharge_voltage': 300,
-    'anode_mass_flow_rate': 5e-6,
-    'background_pressure_Torr': 1e-5,
-    'propellant': 'Xenon',
-    'domain': [0, 0.08]
-}
-
-outputs = hallthruster_jl(thruster='SPT-100', config=config)
-
-ion_velocity = outputs['u_ion']
-grid = outputs['u_ion_coords']
-
-fig, ax = plt.subplots()
-ax.plot(grid, ion_velocity)
-ax.set_xlabel('Axial location (m)')
-ax.set_ylabel('Ion velocity (m/s)')
-plt.show()
-```
-
 ## 🗂️ Project structure
 ```tree
 HallThrusterPEM
     docs/
     scripts/           # Scripts for building predictive engineering models (PEMs)
         pem_v0/        # PEM v0 coupling of cathode -> thruster -> plume
-        pem_v1/        # PEM v1, same coupling but updated models and parameterization
-        pem_mcmc/      # Internal package for MCMC inference
     src/hallmd         # Python package source code root
         models/        # Python wrappers for sub-models
         data/          # Experimental data
@@ -98,9 +67,6 @@ For more info on building PEMs with `hallmd`, see the [scripts](https://github.c
 ## 🏗️ Contributing
 See the [contribution](https://github.com/JANUS-Institute/HallThrusterPEM/blob/main/CONTRIBUTING.md) guidelines.
 
-## 📖 Reference
-[[1](https://rdcu.be/dVmim)] Eckels, J. et al., "Hall thruster model improvement by multidisciplinary uncertainty quantification," _Journal of Electric Propulsion_, vol 3, no 19, September 2024.
-
 ## Funding declaration
 
 Funding for this work was provided by NASA in part through the [Joint Advanced Propulsion Institute (JANUS)](https://januselectricpropulsion.com/), a NASA Space Technology Research Institute, under grant number 80NSSC21K1118, as well as in part through a NASA Space Technology Graduate Research Opportunity grant 80NSSC23K1181.
@@ -108,5 +74,6 @@ This research was additionally supported in part through computational resources
 
 ## 📖 References
 [[1](https://rdcu.be/dVmim)] Eckels, J. et al., "Hall thruster model improvement by multidisciplinary uncertainty quantification," _Journal of Electric Propulsion_, vol 3, no 19, September 2024.
+[[2](https://rdcu.be/dVmim)] Marks, T. et al., "Uncertainty quantification of a multi-component Hall thruster model at varying facility pressures". _Journal of Applied Physics_, 138(15). October 2025.
 
 <sup><sub>Made with the [copier-numpy](https://github.com/eckelsjd/copier-numpy.git) template.</sub></sup>

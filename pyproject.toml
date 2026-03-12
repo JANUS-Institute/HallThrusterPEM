@@ -12,8 +12,11 @@ authors = [
 ]
 dependencies = [
     "numpy>=2.0",
+    "pandas>=3.0.1",
+    "pint>=0.25.2",
     "scipy>=1.14",
-    "amisc>=0.7.3",
+    "xarray>=2026.2.0",
+    "pem-core @ git+https://github.com/JANUS-Institute/pem_core.git",
 ]
 requires-python = ">=3.11"
 readme = "README.md"
@@ -33,7 +36,7 @@ scripts = [
     "uqtils>=0.4.2",
     "h5py>=3.10.0",
     "matplotlib>=3.9",
-    "MCMCIterators @ git+https://github.com/archermarx/MCMCIterators",
+    "MCMCIterators @ git+https://github.com/goroda/MCMCIterators",
 ]
 
 [project.urls]
@@ -87,6 +90,8 @@ dev = [
     "pre-commit>=3.8",
     "commitizen>=3.29",
     "nbstripout>=0.7.1",
+    "pytest>=9.0.2",
+    "pytest-cov>=7.0.0",
 ]
 test = [
     "pytest>=7.4",

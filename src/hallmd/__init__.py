@@ -2,15 +2,13 @@
 disciplines to simulate a Hall thruster operating in a vacuum chamber. Uses uncertainty quantification techniques
 to extrapolate model predictions to a space-like environment.
 
-- Authors - Joshua Eckels (eckelsjd@umich.edu), Thomas Marks, Madison Allen, Declan Brick, Benjamin Jorns,
+- Authors - Joshua Eckels (eckelsjd@umich.edu), Thomas Marks, Collin Whittaker, Madison Allen, Declan Brick, Benjamin Jorns,
 Alex Gorodetsky
 - License - GPL-3.0
 
-The `hallmd` package contains three sub-packages:
+The `hallmd` package contains one sub-package:
 
 - `models` - Contains the sub-models for each discipline in the Hall thruster system.
-- `devices` - Contains information about specific devices (thrusters and other equipment).
-- `data` - Contains experimental data for validating the models.
-"""
+""" #noqa: E501
 
-__version__ = '0.2.0'
+__version__ = '0.3.0'

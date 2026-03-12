@@ -1,30 +1,12 @@
 """Module to provide utilities for the `hallmd` package.
 
 Includes:
-
-- `load_device()` - Load a device configuration from the `hallmd.devices` directory.
 """
 import json
 import os
-from importlib import resources
 from pathlib import Path
 
 import yaml
-
-__all__ = ['load_device']
-
-AVOGADRO_CONSTANT = 6.02214076e23      # Avogadro constant (mol^-1)
-FUNDAMENTAL_CHARGE = 1.602176634e-19   # Fundamental charge (C)
-BOLTZMANN_CONSTANT = 1.380649e-23      # Boltzmann constant (J/K)
-TORR_2_PA = 133.322                    # Conversion factor from Torr to Pa
-MOLECULAR_WEIGHTS = {
-    'Xenon': 131.293,
-    'Argon': 39.948,
-    'Krypton': 83.798,
-    'Bismuth': 208.98,
-    'Hydrogen': 1.008,
-    'Mercury': 200.59
-}
 
 
 def _path_in_dict(value, data: dict) -> list:
@@ -39,7 +21,7 @@ def _path_in_dict(value, data: dict) -> list:
     return []           # value not found
 
 
-def load_device(device_name: str, device_file: str = 'device.yml', device_dir: str | Path = None) -> dict:
+def load_thruster(thruster_dir: str | Path, thruster_filename: str = 'thruster.yml') -> dict:
     """Load a device configuration from the `device_dir` directory. The `device_file` must be located at
     `device_dir/device_name/device_file`. All other files in the directory, if referenced in `device_file`, will
     be converted to an absolute path.
@@ -47,13 +29,12 @@ def load_device(device_name: str, device_file: str = 'device.yml', device_dir: s
     !!! Example "Loading a device configuration"
         Currently, the only provided device configuration is for the SPT-100 thruster.
         ```python
-        from hallmd.utils import load_device
+        from hallmd.utils import load_thruster
 
-        device = load_device('SPT-100')
+        device = load_thruster('devices/SPT-100')
         ```
 
-    You may put custom configurations in the `hallmd.devices` directory or specify a custom directory with a custom
-    configuration file:
+    The format of a device file is as follows
     ```yaml
     name: MyDevice
     geometry:
@@ -71,29 +52,25 @@ def load_device(device_name: str, device_file: str = 'device.yml', device_dir: s
     :param device_dir: directory containing the devices. If None, the `hallmd.devices` directory is used.
     :return: dictionary containing the device configuration
     """
-    device_dir = resources.files('hallmd.devices') if device_dir is None else Path(device_dir)
-    if not (device_dir / device_name).exists():
-        raise FileNotFoundError(f'Device directory "{device_name}" not found in the device folder.')
-    if not (device_dir / device_name / device_file).exists():
-        raise FileNotFoundError(f'Device configuration file "{device_file}" not found in the "{device_name}" '
-                                f'directory. Please rename or specify the configuration file as "{device_file}".')
+    thruster_file = Path(thruster_dir) / thruster_filename
 
-    config_file = device_dir / device_name / device_file
-    with open(config_file, 'r', encoding='utf-8') as fd:
-        if config_file.suffix == '.yml':
+    with open(thruster_file, 'r', encoding='utf-8') as fd:
+        if thruster_file.suffix == '.yml':
             config = yaml.safe_load(fd)
-        elif config_file.suffix == '.json':
+        elif thruster_file.suffix == '.json':
             config = json.load(fd)
         else:
-            raise ValueError(f'Unsupported file type "{config_file.suffix}". Only .yml and .json files are supported.')
+            raise ValueError(
+                f'Unsupported file type "{thruster_file.suffix}". Only .yml and .json files are supported.'
+            )
 
-    # Convert all relative paths to absolute paths
-    for root, _, files in os.walk(device_dir / device_name):
+    # Convert all relative paths to absolute paths for loading bfields, etc
+    for root, _, files in os.walk(thruster_dir):
         for file in files:
-            if file != device_file:
+            if file != thruster_file:
                 # Check if the posix file path from root is in the config (i.e. "./file.csv")
                 root_path = Path(root) / file  # Path like "hallmd/devices/SPT-100/path/to/file.csv"
-                rel_path = root_path.relative_to(device_dir / device_name)  # Just the path/to/file.csv part (relative)
+                rel_path = root_path.relative_to(thruster_dir)  # Just the path/to/file.csv part (relative)
                 dict_path = _path_in_dict(rel_path.as_posix(), config)
                 if len(dict_path) == 0:
                     # Check if the plain filename is in the config (i.e. file.csv); will only pick first match

@@ -4,10 +4,11 @@ Includes:
 
 - `cathode_coupling()` - cathode coupling model with pressure dependence (Jorns 2021)
 """
-import numpy as np
-from amisc.typing import Dataset
+from typing import cast
 
-from hallmd.utils import TORR_2_PA
+import numpy as np
+from pem_core.constants import TORR_2_PA
+from pem_core.types import Dataset
 
 __all__ = ['cathode_coupling']
 
@@ -20,17 +21,18 @@ def cathode_coupling(inputs: Dataset) -> Dataset:
                    and P_T (Torr).
     :returns outputs: output arrays - `V_cc` for cathode coupling voltage (V).
     """
+    input_dict = cast(dict, inputs)
     # Load inputs
-    PB = inputs['P_b'] * TORR_2_PA          # Background Pressure (Torr)
-    Va = inputs['V_a']                      # Anode voltage (V)
-    Te = inputs['T_e']                      # Electron temperature at the cathode (eV)
-    V_vac = inputs['V_vac']                 # Vacuum coupling voltage model parameter (V)
-    Pstar = inputs['Pstar'] * TORR_2_PA     # Model parameter P* (Torr)
-    PT = inputs['P_T'] * TORR_2_PA          # Model parameter P_T (Torr)
+    PB = input_dict['P_b'] * TORR_2_PA          # Background Pressure (Torr)
+    Va = input_dict['V_a']                      # Anode voltage (V)
+    Te = input_dict['T_e']                      # Electron temperature at the cathode (eV)
+    V_vac = input_dict['V_vac']                 # Vacuum coupling voltage model parameter (V)
+    Pstar = input_dict['Pstar'] * TORR_2_PA     # Model parameter P* (Torr)
+    PT = input_dict['P_T'] * TORR_2_PA          # Model parameter P_T (Torr)
 
     # Compute cathode coupling voltage
     V_cc = np.atleast_1d(V_vac + Te * np.log(1 + PB / PT) - (Te / (PT + Pstar)) * PB)
     V_cc[V_cc < 0] = 0
     ind = np.where(V_cc > Va)
     V_cc[ind] = np.atleast_1d(Va)[ind]
-    return {'V_cc': V_cc}
+    return cast(Dataset, {'V_cc': V_cc})
