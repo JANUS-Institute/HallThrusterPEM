@@ -43,6 +43,7 @@ with resources.files("hallmd.models").joinpath("pem_to_julia.json").open("r") as
 
 assert isinstance(PEM_TO_JULIA, dict)
 
+
 def get_jl_binary():
     """use the juliaup config file to find out where the default julia binary is stored.
     if juliaup is not installed, returns 'julia'.
@@ -56,6 +57,9 @@ def get_jl_binary():
     juliaup_dir = Path(f"{home}/.julia/juliaup")
     juliaup_json = juliaup_dir / "juliaup.json"
     if not os.path.exists(juliaup_json):
+        alt_launcher = Path(f"{home}/.juliaup/bin/julia")
+        if alt_launcher.exists():
+            return str(alt_launcher)
         return "julia"
 
     with open(juliaup_json, "r") as fd:
@@ -66,6 +70,9 @@ def get_jl_binary():
     channels = jl_config["InstalledChannels"]
 
     version = versions[channels[default]["Version"]]
+    if binary_path := version.get("BinaryPath"):
+        return juliaup_dir / Path(binary_path)
+
     path = juliaup_dir / version["Path"] / "bin" / "julia"
     return path
 
@@ -237,7 +244,7 @@ def _format_hallthruster_jl_input(
     if model_fidelity is not None:
         if fidelity_function is None:
             fidelity_function = _default_model_fidelity
-            
+
         assert isinstance(fidelity_function, Callable)
         fidelity_overrides = fidelity_function(model_fidelity, json_config)
         _convert_to_julia(fidelity_overrides, json_config, pem_to_julia)
@@ -294,13 +301,7 @@ def run_hallthruster_jl(
         with open(json_input, "r") as fp:
             _json_dict = json.load(fp)
 
-    tempfile_args = {
-        "suffix": ".json",
-        "prefix": "hallthruster_jl_",
-        "mode": "w",
-        "delete": False,
-        "encoding": "utf-8"
-    }
+    tempfile_args = {"suffix": ".json", "prefix": "hallthruster_jl_", "mode": "w", "delete": False, "encoding": "utf-8"}
 
     # Get output file path. If one not provided, create a temporary
     temp_out = False
@@ -372,6 +373,7 @@ def run_hallthruster_jl(
                     del d2["output_file"]
 
     return output_data
+
 
 def hallthruster_jl(
     thruster_inputs: Dataset | dict | None = None,
