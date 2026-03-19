@@ -1,0 +1,33 @@
+amisc @ git+https://github.com/archermarx/amisc.git@ad5d48afe40b7db6ae59b7393c7c36e6eab19c6f
+annotated-types==0.7.0
+contourpy==1.3.3
+cycler==0.12.1
+dill==0.4.1
+flexcache==0.3
+flexparser==0.4
+fonttools==4.62.1
+-e git+ssh://git@github.com/JANUS-Institute/HallThrusterPEM.git@67d39e120b008291c09a5cc9e0c4d567b13d8f2e#egg=hallmd
+joblib==1.5.3
+kiwisolver==1.5.0
+matplotlib==3.10.8
+MCMCIterators @ git+https://github.com/goroda/MCMCIterators.git@6f9c2054a584bc69f134b5576c3fe94c4d4d5a81
+networkx==3.6.1
+numpy==2.4.3
+packaging==26.0
+pandas==3.0.1
+pem-core @ git+https://github.com/JANUS-Institute/pem_core.git@7748eb200f4791fcd7846466114ef0e14a90b860
+pillow==12.1.1
+Pint==0.25.2
+platformdirs==4.9.4
+pydantic==2.12.5
+pydantic_core==2.41.5
+pyparsing==3.3.2
+python-dateutil==2.9.0.post0
+PyYAML==6.0.3
+scikit-learn==1.8.0
+scipy==1.17.1
+six==1.17.0
+threadpoolctl==3.6.0
+typing-inspection==0.4.2
+typing_extensions==4.15.0
+xarray==2026.2.0
